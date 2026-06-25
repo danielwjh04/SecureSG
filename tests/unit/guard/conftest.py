@@ -26,6 +26,11 @@ class _StubProvider(ModelProvider):
             raise InferenceError("stub forced inference failure")
         return SemanticAssessment(task=task, p_unsafe=self._p_unsafe)
 
+    async def generate(self, prompt: str, *, grammar: str | None = None) -> str:
+        if self._raises:
+            raise InferenceError("stub forced inference failure")
+        return ""
+
 
 @pytest.fixture
 def make_provider() -> Callable[..., ModelProvider]:

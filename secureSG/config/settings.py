@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     genesis_seed: str = "securesg-genesis-v1"
     sqlite_journal_mode: str = "WAL"
     policy_dir: Path = Path(__file__).resolve().parent.parent / "policies"
+    proposed_policy_dir: Path = (
+        Path(__file__).resolve().parent.parent / "policies" / "proposed"
+    )
 
     # GuardFormer semantic layer (SP3). model_path is unset until weights exist.
     model_path: Path | None = None
@@ -42,6 +45,7 @@ class Settings(BaseSettings):
     model_threads: int = 4
     model_max_output_tokens: int = 1
     model_logprobs_top_k: int = 20
+    model_author_max_tokens: int = 512
     semantic_block_threshold: float = 0.80
     semantic_review_threshold: float = 0.50
 

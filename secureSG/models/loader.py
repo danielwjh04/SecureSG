@@ -33,6 +33,7 @@ def load_guard_provider(settings: Settings) -> QwenGuardProvider:
         llm,
         max_output_tokens=settings.model_max_output_tokens,
         logprobs_top_k=settings.model_logprobs_top_k,
+        author_max_tokens=settings.model_author_max_tokens,
     )
 
 

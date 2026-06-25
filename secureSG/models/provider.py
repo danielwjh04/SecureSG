@@ -18,3 +18,8 @@ class ModelProvider(ABC):
     async def assess(self, content: str, task: AssessmentTask) -> SemanticAssessment:
         """Return the probability that ``content`` is unsafe for ``task``."""
         ...
+
+    @abstractmethod
+    async def generate(self, prompt: str, *, grammar: str | None = None) -> str:
+        """Generate text for ``prompt``, optionally constrained by a GBNF grammar."""
+        ...

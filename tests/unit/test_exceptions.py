@@ -2,6 +2,7 @@
 
 from secureSG.exceptions import (
     AuditError,
+    AuthoringError,
     ChainIntegrityError,
     InferenceError,
     ModelError,
@@ -44,3 +45,8 @@ def test_model_errors_carry_message() -> None:
     err = ModelLoadError("weights not found at /x")
     assert str(err) == "weights not found at /x"
     assert isinstance(err, SecureSGError)
+
+
+def test_authoring_error_is_securesg_error() -> None:
+    assert issubclass(AuthoringError, SecureSGError)
+    assert isinstance(AuthoringError("bad policy proposal"), SecureSGError)

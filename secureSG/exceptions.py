@@ -33,3 +33,7 @@ class ModelLoadError(ModelError):
 
 class InferenceError(ModelError):
     """Raised when an inference fails or yields a degenerate, unusable result."""
+
+
+class AuthoringError(SecureSGError):
+    """Raised when LLM policy authoring yields invalid or ungrounded output."""

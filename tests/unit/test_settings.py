@@ -27,6 +27,8 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "MODEL_LOGPROBS_TOP_K",
         "SEMANTIC_BLOCK_THRESHOLD",
         "SEMANTIC_REVIEW_THRESHOLD",
+        "MODEL_AUTHOR_MAX_TOKENS",
+        "PROPOSED_POLICY_DIR",
     ):
         monkeypatch.delenv(f"SECURESG_{key}", raising=False)
 
@@ -122,3 +124,13 @@ def test_rejects_non_positive_review_threshold(
     monkeypatch.setenv("SECURESG_SEMANTIC_REVIEW_THRESHOLD", "0.0")
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
+
+
+def test_model_author_max_tokens_has_positive_default(clean_env: None) -> None:
+    assert Settings(_env_file=None).model_author_max_tokens > 0
+
+
+def test_proposed_policy_dir_sits_under_policies(clean_env: None) -> None:
+    proposed = Settings(_env_file=None).proposed_policy_dir
+    assert proposed.name == "proposed"
+    assert proposed.parent.name == "policies"

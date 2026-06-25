@@ -96,7 +96,8 @@ class _CompletionModel(Protocol):
         *,
         max_tokens: int,
         temperature: float,
-        logprobs: int,
+        logprobs: int | None = ...,
+        grammar: object | None = ...,
     ) -> Any: ...
 
 
@@ -109,10 +110,12 @@ class QwenGuardProvider(ModelProvider):
         *,
         max_output_tokens: int,
         logprobs_top_k: int,
+        author_max_tokens: int,
     ) -> None:
         self._llm = llm
         self._max_output_tokens = max_output_tokens
         self._logprobs_top_k = logprobs_top_k
+        self._author_max_tokens = author_max_tokens
         self._lock = asyncio.Lock()
 
     async def assess(
@@ -143,3 +146,33 @@ class QwenGuardProvider(ModelProvider):
             "top_logprobs"
         ]
         return per_token[0] if per_token else {}
+
+    async def generate(self, prompt: str, *, grammar: str | None = None) -> str:
+        """Generate text for ``prompt``, optionally constrained by a GBNF grammar.
+
+        Serialized and run off the event loop, like ``assess``.
+        Time complexity: O(prompt + generated tokens). Space complexity: O(1).
+        """
+        async with self._lock:
+            return await asyncio.to_thread(self._complete_text, prompt, grammar)
+
+    def _complete_text(self, prompt: str, grammar: str | None) -> str:
+        completion = self._llm.create_completion(
+            prompt=prompt,
+            max_tokens=self._author_max_tokens,
+            temperature=0.0,
+            grammar=self._compile_grammar(grammar),
+        )
+        text: str = completion["choices"][0]["text"]
+        return text
+
+    @staticmethod
+    def _compile_grammar(grammar: str | None) -> object | None:  # pragma: no cover
+        # reason: LlamaGrammar.from_string needs the native llama_cpp wheel; the
+        # grammar path runs only under the @pytest.mark.model authoring test.
+        if grammar is None:
+            return None
+        from llama_cpp import LlamaGrammar
+
+        compiled: object = LlamaGrammar.from_string(grammar)
+        return compiled
