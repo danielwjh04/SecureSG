@@ -8,14 +8,12 @@ taints the field at the highest matched tier — catching a secret embedded as a
 substring of a larger, benign-looking value.
 """
 
-from collections import deque
 from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import IntEnum
 
+from secureSG.guard.matching import AhoCorasick
 from secureSG.schemas.tool_call import JsonValue
-
-_ROOT = 0
 
 
 class TaintTier(IntEnum):
@@ -34,62 +32,6 @@ class TaintLabel:
     tier: TaintTier
 
 
-class _AhoCorasick:
-    """Multi-pattern substring matcher.
-
-    Time complexity: search is O(n + matches) in the text length, after an
-    O(sum of pattern lengths) build. Space complexity: O(sum of pattern lengths).
-    """
-
-    def __init__(self) -> None:
-        self._goto: list[dict[str, int]] = [{}]
-        self._fail: list[int] = [_ROOT]
-        self._output: list[set[int]] = [set()]
-        self._dirty = False
-
-    def add(self, pattern: str, index: int) -> None:
-        node = _ROOT
-        for char in pattern:
-            nxt = self._goto[node].get(char)
-            if nxt is None:
-                nxt = len(self._goto)
-                self._goto.append({})
-                self._fail.append(_ROOT)
-                self._output.append(set())
-                self._goto[node][char] = nxt
-            node = nxt
-        self._output[node].add(index)
-        self._dirty = True
-
-    def _build(self) -> None:
-        queue: deque[int] = deque()
-        for child in self._goto[_ROOT].values():
-            self._fail[child] = _ROOT
-            queue.append(child)
-        while queue:
-            node = queue.popleft()
-            for char, nxt in self._goto[node].items():
-                queue.append(nxt)
-                fallback = self._fail[node]
-                while fallback != _ROOT and char not in self._goto[fallback]:
-                    fallback = self._fail[fallback]
-                self._fail[nxt] = self._goto[fallback].get(char, _ROOT)
-                self._output[nxt] |= self._output[self._fail[nxt]]
-        self._dirty = False
-
-    def search(self, text: str) -> set[int]:
-        if self._dirty:
-            self._build()
-        matches: set[int] = set()
-        node = _ROOT
-        for char in text:
-            while node != _ROOT and char not in self._goto[node]:
-                node = self._fail[node]
-            node = self._goto[node].get(char, _ROOT)
-            matches |= self._output[node]
-        return matches
-
-
 def _iter_strings(value: JsonValue) -> Iterator[str]:
     """Yield every string leaf in a JSON value."""
     if isinstance(value, str):
@@ -106,7 +48,7 @@ class SessionTaintStore:
     """Per-session registry of tainted values with substring scanning."""
 
     def __init__(self) -> None:
-        self._automaton = _AhoCorasick()
+        self._automaton = AhoCorasick()
         self._labels: list[TaintLabel] = []
         self._index_of: dict[str, int] = {}
 
