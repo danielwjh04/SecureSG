@@ -12,6 +12,11 @@ pyyaml>=6.0
 llama-cpp-python>=0.2.90   # local Qwen3-0.6B Q4_K_M GGUF inference (CPU)
 huggingface-hub>=0.24      # one-time weights download (scripts/fetch_model.py)
 
+# Runtime — SP4 (Warden embeddings). Lazy-imported and gated like the SP3 model;
+# the non-gated test suite runs on a stub and needs neither.
+sentence-transformers>=3.0  # all-MiniLM-L6-v2 sentence embeddings (CPU)
+torch>=2.2                  # sentence-transformers backend
+
 # Test tooling
 pytest>=8.0
 pytest-asyncio>=0.23

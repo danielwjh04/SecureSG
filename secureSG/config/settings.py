@@ -49,6 +49,15 @@ class Settings(BaseSettings):
     semantic_block_threshold: float = 0.80
     semantic_review_threshold: float = 0.50
 
+    # Warden governance (SP4).
+    embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
+    drift_review_threshold: float = 0.45
+    drift_block_threshold: float = 0.20
+    tool_risk_threshold: float = 0.45
+    risk_anchors_path: Path = (
+        Path(__file__).resolve().parent.parent / "warden" / "risk_anchors.yaml"
+    )
+
     @model_validator(mode="after")
     def _validate_thresholds(self) -> Self:
         """Fail loudly unless ``0 < review < block <= 1`` (fail-closed config).
@@ -65,6 +74,26 @@ class Settings(BaseSettings):
                 "semantic thresholds must satisfy 0 < review < block <= 1; got "
                 f"review={self.semantic_review_threshold}, "
                 f"block={self.semantic_block_threshold}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_drift_thresholds(self) -> Self:
+        """Drift similarity floors: ``0 <= block < review <= 1``; risk in [0, 1]."""
+        if not (
+            0.0
+            <= self.drift_block_threshold
+            < self.drift_review_threshold
+            <= 1.0
+        ):
+            raise ValueError(
+                "drift thresholds must satisfy 0 <= block < review <= 1; got "
+                f"block={self.drift_block_threshold}, "
+                f"review={self.drift_review_threshold}"
+            )
+        if not (0.0 <= self.tool_risk_threshold <= 1.0):
+            raise ValueError(
+                f"tool_risk_threshold must be in [0, 1]; got {self.tool_risk_threshold}"
             )
         return self
 

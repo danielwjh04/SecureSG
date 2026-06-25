@@ -38,5 +38,5 @@ plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
 # Native wheels without bundled type stubs; imported lazily in gated paths.
-module = ["llama_cpp", "huggingface_hub"]
+module = ["llama_cpp", "huggingface_hub", "sentence_transformers", "torch"]
 ignore_missing_imports = true

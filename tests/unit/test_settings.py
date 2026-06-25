@@ -29,6 +29,11 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "SEMANTIC_REVIEW_THRESHOLD",
         "MODEL_AUTHOR_MAX_TOKENS",
         "PROPOSED_POLICY_DIR",
+        "EMBEDDING_MODEL_NAME",
+        "DRIFT_REVIEW_THRESHOLD",
+        "DRIFT_BLOCK_THRESHOLD",
+        "TOOL_RISK_THRESHOLD",
+        "RISK_ANCHORS_PATH",
     ):
         monkeypatch.delenv(f"SECURESG_{key}", raising=False)
 
@@ -134,3 +139,40 @@ def test_proposed_policy_dir_sits_under_policies(clean_env: None) -> None:
     proposed = Settings(_env_file=None).proposed_policy_dir
     assert proposed.name == "proposed"
     assert proposed.parent.name == "policies"
+
+
+def test_drift_thresholds_have_valid_default_ordering(clean_env: None) -> None:
+    settings = Settings(_env_file=None)
+    assert (
+        0.0
+        <= settings.drift_block_threshold
+        < settings.drift_review_threshold
+        <= 1.0
+    )
+
+
+def test_tool_risk_threshold_in_range(clean_env: None) -> None:
+    assert 0.0 <= Settings(_env_file=None).tool_risk_threshold <= 1.0
+
+
+def test_risk_anchors_path_points_into_warden(clean_env: None) -> None:
+    path = Settings(_env_file=None).risk_anchors_path
+    assert path.name == "risk_anchors.yaml"
+    assert path.parent.name == "warden"
+
+
+def test_rejects_drift_block_not_below_review(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SECURESG_DRIFT_BLOCK_THRESHOLD", "0.6")
+    monkeypatch.setenv("SECURESG_DRIFT_REVIEW_THRESHOLD", "0.5")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
+
+
+def test_rejects_tool_risk_threshold_above_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SECURESG_TOOL_RISK_THRESHOLD", "1.5")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
