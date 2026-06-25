@@ -9,7 +9,9 @@ consulted only on flagged calls and on untrusted tool results, and only ever to
 """
 
 import json
+from collections.abc import Sequence
 from datetime import UTC, datetime
+from functools import reduce
 from typing import Any
 from uuid import UUID
 
@@ -19,7 +21,7 @@ from secureSG.audit.logger import AuditLogger
 from secureSG.config.settings import fail_mode_for
 from secureSG.exceptions import ModelError
 from secureSG.guard.policy import CompiledPolicy
-from secureSG.guard.screening import Screener
+from secureSG.guard.screening import Screener, escalate_verdict
 from secureSG.guard.taint import SessionTaintStore, TaintLabel, TaintTier
 from secureSG.schemas.audit import AuditRecord
 from secureSG.schemas.tool_call import JsonValue, ToolCallSchema, ToolResult
@@ -31,6 +33,31 @@ def _result_text(result: JsonValue) -> str:
     if isinstance(result, str):
         return result
     return json.dumps(result, sort_keys=True)
+
+
+def _audit_details(
+    verdict: PolicyVerdict,
+    external_signals: Sequence[PolicyVerdict],
+    session_id: str | None,
+) -> dict[str, Any]:
+    """Build audit details, additively enriched with contributing context.
+
+    The base record is the enforced verdict's reason and rule_id. Non-ALLOW
+    external signals (drift, trajectory) are recorded as provenance, and the
+    session id is stamped when supplied; both keys are omitted otherwise, so the
+    default-path payload is byte-identical to a call with no signals.
+
+    Time complexity: O(number of signals). Space complexity: O(same).
+    """
+    details: dict[str, Any] = {"reason": verdict.reason, "rule_id": verdict.rule_id}
+    contributing = [s for s in external_signals if s.verdict is not Verdict.ALLOW]
+    if contributing:
+        details["signals"] = [
+            {"verdict": s.verdict.value, "rule_id": s.rule_id} for s in contributing
+        ]
+    if session_id is not None:
+        details["session_id"] = session_id
+    return details
 
 
 class Enforcer:
@@ -110,17 +137,25 @@ class Enforcer:
         raw_call: dict[str, Any],
         taint_store: SessionTaintStore,
         transaction_id: UUID,
+        *,
+        external_signals: Sequence[PolicyVerdict] = (),
+        session_id: str | None = None,
     ) -> PolicyVerdict:
         """Decide a verdict for a call, optionally adjudicate it, and audit it.
 
-        ``_decide`` is the pure deterministic baseline. When a screener is present
-        and the baseline is flagged (no rule, or HUMAN_APPROVAL_REQUIRED) and not
-        already BLOCK, the semantic model may *tighten* it. The final verdict is
-        appended to the audit chain idempotently.
+        ``_decide`` is the pure deterministic baseline. Any ``external_signals``
+        (drift, trajectory) are folded in by severity-max first — so a BLOCK
+        signal short-circuits the model — then, when a screener is present and
+        the verdict is still flagged (no rule, or HUMAN_APPROVAL_REQUIRED) and
+        not BLOCK, the semantic model may *tighten* it further. The final,
+        enforced verdict is appended to the audit chain idempotently, with
+        contributing signals and the session id recorded in its details.
 
-        Time complexity: O(argument size) + optional O(inference) + O(1) append.
+        Time complexity: O(argument size + signals) + optional O(inference)
+        + O(1) append. Space complexity: O(1).
         """
-        verdict = self._decide(raw_call, taint_store)
+        baseline = self._decide(raw_call, taint_store)
+        verdict = reduce(escalate_verdict, external_signals, baseline)
         if self._screener is not None and self._should_adjudicate(verdict):
             call = ToolCallSchema.model_validate(raw_call)
             verdict = await self._screener.assess_call(call, verdict)
@@ -130,7 +165,7 @@ class Enforcer:
                 created_at=datetime.now(UTC),
                 verdict=verdict.verdict,
                 tool_name=verdict.tool_name,
-                details={"reason": verdict.reason, "rule_id": verdict.rule_id},
+                details=_audit_details(verdict, external_signals, session_id),
             )
         )
         return verdict
@@ -146,7 +181,11 @@ class Enforcer:
         )
 
     async def screen_result(
-        self, result: ToolResult, transaction_id: UUID
+        self,
+        result: ToolResult,
+        transaction_id: UUID,
+        *,
+        session_id: str | None = None,
     ) -> PolicyVerdict:
         """Screen an untrusted tool result for injection and audit the verdict.
 
@@ -180,7 +219,7 @@ class Enforcer:
                 created_at=datetime.now(UTC),
                 verdict=verdict.verdict,
                 tool_name=result.tool_name,
-                details={"reason": verdict.reason, "rule_id": verdict.rule_id},
+                details=_audit_details(verdict, (), session_id),
             )
         )
         return verdict

@@ -1,9 +1,11 @@
 """Tests for the deterministic enforcer verdict engine."""
 
+import json
+import sqlite3
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
@@ -18,10 +20,41 @@ from secureSG.guard.policy import load_policy
 from secureSG.guard.screening import Screener
 from secureSG.guard.taint import SessionTaintStore
 from secureSG.models.provider import ModelProvider
+from secureSG.schemas.assessment import AssessmentTask, SemanticAssessment
 from secureSG.schemas.tool_call import ToolResult
-from secureSG.schemas.verdict import Verdict
+from secureSG.schemas.verdict import PolicyVerdict, Verdict
 
 GENESIS = derive_genesis_hash("enforcer-test")
+
+
+class _CountingProvider(ModelProvider):
+    """Records how many times the model is consulted, so skips are observable."""
+
+    def __init__(self, p_unsafe: float = 0.0) -> None:
+        self.assess_calls = 0
+        self._p_unsafe = p_unsafe
+
+    async def assess(self, content: str, task: AssessmentTask) -> SemanticAssessment:
+        self.assess_calls += 1
+        return SemanticAssessment(task=task, p_unsafe=self._p_unsafe)
+
+    async def generate(self, prompt: str, *, grammar: str | None = None) -> str:
+        return ""
+
+
+def _read_details(db_path: Path, transaction_id: UUID) -> dict[str, Any]:
+    connection = sqlite3.connect(str(db_path))
+    try:
+        row = connection.execute(
+            "SELECT payload FROM audit_log WHERE transaction_id = ?",
+            (str(transaction_id),),
+        ).fetchone()
+    finally:
+        connection.close()
+    assert row is not None
+    payload: dict[str, Any] = json.loads(row[0])
+    details: dict[str, Any] = payload["details"]
+    return details
 
 
 def call(name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -283,3 +316,134 @@ async def test_evaluate_denylist_block_skips_model(
     assert verdict.verdict is Verdict.BLOCK
     assert verdict.rule_id == "denylist"
     await logger.close()
+
+
+def _signal(verdict: Verdict, rule_id: str, tool: str) -> PolicyVerdict:
+    return PolicyVerdict(
+        verdict=verdict, reason="external signal", rule_id=rule_id, tool_name=tool
+    )
+
+
+async def test_empty_external_signals_is_unchanged(enforcer: Enforcer) -> None:
+    verdict = await enforcer.evaluate(
+        call("read_file", {"path": "/x"}),
+        SessionTaintStore(),
+        uuid4(),
+        external_signals=(),
+    )
+    assert verdict.verdict is Verdict.ALLOW
+    assert verdict.rule_id == "policy.read_file"
+
+
+async def test_block_signal_short_circuits_the_model(tmp_path: Path) -> None:
+    policy_dir = tmp_path / "policy"
+    policy_dir.mkdir()
+    (policy_dir / "p.yaml").write_text("{}\n")  # read_file: no rule -> would adjudicate
+    provider = _CountingProvider()
+    enforcer, logger = await build_guarded_enforcer(
+        tmp_path / "audit.db", provider, policy_dir
+    )
+    signal = _signal(Verdict.BLOCK, "trajectory.sensitive_to_external", "read_file")
+    verdict = await enforcer.evaluate(
+        call("read_file", {"path": "/x"}),
+        SessionTaintStore(),
+        uuid4(),
+        external_signals=[signal],
+    )
+    assert verdict.verdict is Verdict.BLOCK
+    assert verdict.rule_id == "trajectory.sensitive_to_external"
+    assert provider.assess_calls == 0  # folded BLOCK skipped the LLM
+    await logger.close()
+
+
+async def test_human_approval_signal_triggers_model_and_escalates(
+    tmp_path: Path, make_provider: Callable[..., ModelProvider]
+) -> None:
+    # read_file has a clear ALLOW rule (model normally skipped); a HAR signal
+    # folded in BEFORE adjudication makes the model run and a high p_unsafe
+    # escalates to BLOCK. Were the fold applied after, the result would be HAR.
+    enforcer, logger = await build_guarded_enforcer(
+        tmp_path / "audit.db", make_provider(0.99)
+    )
+    signal = _signal(Verdict.HUMAN_APPROVAL_REQUIRED, "drift.intent", "read_file")
+    verdict = await enforcer.evaluate(
+        call("read_file", {"path": "/x"}),
+        SessionTaintStore(),
+        uuid4(),
+        external_signals=[signal],
+    )
+    assert verdict.verdict is Verdict.BLOCK
+    assert verdict.rule_id == "semantic.call_risk"
+    await logger.close()
+
+
+async def test_audit_details_record_contributing_signals_and_session(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "audit.db"
+    enforcer, logger = await build_enforcer(db_path)
+    transaction_id = uuid4()
+    signal = _signal(Verdict.BLOCK, "trajectory.sensitive_to_external", "send_email")
+    await enforcer.evaluate(
+        call("send_email", {"to": "x@y.com"}),
+        SessionTaintStore(),
+        transaction_id,
+        external_signals=[signal],
+        session_id="sess-1",
+    )
+    await logger.close()
+    details = _read_details(db_path, transaction_id)
+    assert details["session_id"] == "sess-1"
+    assert details["signals"] == [
+        {"verdict": "BLOCK", "rule_id": "trajectory.sensitive_to_external"}
+    ]
+
+
+async def test_audit_details_omit_signals_and_session_by_default(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "audit.db"
+    enforcer, logger = await build_enforcer(db_path)
+    transaction_id = uuid4()
+    await enforcer.evaluate(
+        call("read_file", {"path": "/x"}), SessionTaintStore(), transaction_id
+    )
+    await logger.close()
+    details = _read_details(db_path, transaction_id)
+    assert details == {"reason": details["reason"], "rule_id": "policy.read_file"}
+    assert "signals" not in details
+    assert "session_id" not in details
+
+
+async def test_allow_signals_are_not_recorded(tmp_path: Path) -> None:
+    db_path = tmp_path / "audit.db"
+    enforcer, logger = await build_enforcer(db_path)
+    transaction_id = uuid4()
+    clear = _signal(Verdict.ALLOW, "trajectory.clear", "read_file")
+    await enforcer.evaluate(
+        call("read_file", {"path": "/x"}),
+        SessionTaintStore(),
+        transaction_id,
+        external_signals=[clear],
+        session_id="sess-2",
+    )
+    await logger.close()
+    details = _read_details(db_path, transaction_id)
+    assert "signals" not in details  # ALLOW signals do not clutter the record
+    assert details["session_id"] == "sess-2"
+
+
+async def test_screen_result_records_session_id(
+    tmp_path: Path, make_provider: Callable[..., ModelProvider]
+) -> None:
+    db_path = tmp_path / "audit.db"
+    enforcer, logger = await build_guarded_enforcer(db_path, make_provider(0.1))
+    transaction_id = uuid4()
+    await enforcer.screen_result(
+        ToolResult(tool_name="scrape_page", result="clean page"),
+        transaction_id,
+        session_id="sess-3",
+    )
+    await logger.close()
+    details = _read_details(db_path, transaction_id)
+    assert details["session_id"] == "sess-3"
