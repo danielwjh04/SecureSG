@@ -21,3 +21,15 @@ class ChainIntegrityError(AuditError):
 
 class PolicyError(SecureSGError):
     """Raised when a policy file cannot be loaded or is malformed."""
+
+
+class ModelError(SecureSGError):
+    """Base class for failures in the semantic model subsystem."""
+
+
+class ModelLoadError(ModelError):
+    """Raised when guard-model weights cannot be loaded at startup."""
+
+
+class InferenceError(ModelError):
+    """Raised when an inference fails or yields a degenerate, unusable result."""

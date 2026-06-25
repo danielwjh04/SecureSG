@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from secureSG.config.settings import (
     DEFAULT_FAIL_MODE,
@@ -15,7 +16,18 @@ from secureSG.schemas.verdict import Verdict
 
 @pytest.fixture
 def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    for key in ("DB_PATH", "GENESIS_SEED", "SQLITE_JOURNAL_MODE"):
+    for key in (
+        "DB_PATH",
+        "GENESIS_SEED",
+        "SQLITE_JOURNAL_MODE",
+        "MODEL_PATH",
+        "MODEL_CONTEXT_SIZE",
+        "MODEL_THREADS",
+        "MODEL_MAX_OUTPUT_TOKENS",
+        "MODEL_LOGPROBS_TOP_K",
+        "SEMANTIC_BLOCK_THRESHOLD",
+        "SEMANTIC_REVIEW_THRESHOLD",
+    ):
         monkeypatch.delenv(f"SECURESG_{key}", raising=False)
 
 
@@ -68,3 +80,45 @@ def test_read_file_fails_open() -> None:
 
 def test_unknown_tool_uses_default_fail_closed() -> None:
     assert fail_mode_for("totally_unknown_tool") is Verdict.BLOCK
+
+
+def test_model_path_defaults_to_none(clean_env: None) -> None:
+    assert Settings(_env_file=None).model_path is None
+
+
+def test_semantic_thresholds_have_safe_default_ordering(clean_env: None) -> None:
+    settings = Settings(_env_file=None)
+    assert (
+        0.0
+        < settings.semantic_review_threshold
+        < settings.semantic_block_threshold
+        <= 1.0
+    )
+
+
+def test_env_overrides_model_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SECURESG_MODEL_PATH", "weights/guard.gguf")
+    assert Settings(_env_file=None).model_path == Path("weights/guard.gguf")
+
+
+def test_rejects_review_threshold_not_below_block(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SECURESG_SEMANTIC_REVIEW_THRESHOLD", "0.9")
+    monkeypatch.setenv("SECURESG_SEMANTIC_BLOCK_THRESHOLD", "0.8")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
+
+
+def test_rejects_block_threshold_above_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SECURESG_SEMANTIC_BLOCK_THRESHOLD", "1.5")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
+
+
+def test_rejects_non_positive_review_threshold(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SECURESG_SEMANTIC_REVIEW_THRESHOLD", "0.0")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)

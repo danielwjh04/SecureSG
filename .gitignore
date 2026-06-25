@@ -24,6 +24,7 @@ htmlcov/
 # Model weights (never committed)
 *.gguf
 models/*.gguf
+/model_weights/
 
 # Local-only working notes, scratch, and office documents (never committed)
 /.local/

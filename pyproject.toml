@@ -16,6 +16,9 @@ source = ["secureSG"]
 
 [tool.coverage.report]
 show_missing = true
+exclude_also = [
+    "@(abc\\.)?abstractmethod",
+]
 
 [tool.ruff]
 target-version = "py312"
@@ -32,3 +35,8 @@ select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "S"]
 python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+# Native wheels without bundled type stubs; imported lazily in gated paths.
+module = ["llama_cpp", "huggingface_hub"]
+ignore_missing_imports = true

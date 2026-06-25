@@ -68,3 +68,28 @@ def test_non_mapping_taint_sources_raises_policy_error(tmp_path: Path) -> None:
     (tmp_path / "bad.yaml").write_text("taint_sources:\n  - read_secret\n")
     with pytest.raises(PolicyError):
         load_policy(tmp_path)
+
+
+def test_loads_injection_signatures_as_frozenset() -> None:
+    policy = real_policy()
+    assert isinstance(policy.injection_signatures, frozenset)
+    assert "ignore previous instructions" in policy.injection_signatures
+
+
+def test_loads_content_scan_sources() -> None:
+    policy = real_policy()
+    assert policy.is_content_scan_source("scrape_page")
+    assert not policy.is_content_scan_source("read_file")
+
+
+def test_empty_dir_has_no_signatures_or_scan_sources(tmp_path: Path) -> None:
+    policy = load_policy(tmp_path)
+    assert policy.injection_signatures == frozenset()
+    assert not policy.is_content_scan_source("scrape_page")
+
+
+def test_merges_injection_signatures_across_files(tmp_path: Path) -> None:
+    (tmp_path / "a.yaml").write_text('injection_signatures:\n  - "aaa"\n')
+    (tmp_path / "b.yaml").write_text('injection_signatures:\n  - "bbb"\n')
+    policy = load_policy(tmp_path)
+    assert {"aaa", "bbb"} <= policy.injection_signatures
