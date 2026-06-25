@@ -1,0 +1,17 @@
+# SecureSG dependencies — SP1 (Foundation + Audit Spine) scope.
+# Later build cycles append their own dependencies with a documented reason.
+
+# Runtime
+pydantic>=2.6
+pydantic-settings>=2.2
+aiosqlite>=0.20
+
+# Test tooling
+pytest>=8.0
+pytest-asyncio>=0.23
+pytest-cov>=4.1
+hypothesis>=6.100
+
+# Lint + type-check (strict typing is a project requirement)
+ruff>=0.6
+mypy>=1.11

@@ -1,0 +1,34 @@
+[project]
+name = "securesg"
+version = "0.1.0"
+description = "SecureSG — runtime control layer and governance engine for LLM agents."
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "--cov=secureSG --cov-report=term-missing"
+
+[tool.coverage.run]
+branch = true
+source = ["secureSG"]
+
+[tool.coverage.report]
+show_missing = true
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+# Asserts and test-controlled SQL strings are expected in the test suite.
+"tests/**" = ["S101", "S608"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]

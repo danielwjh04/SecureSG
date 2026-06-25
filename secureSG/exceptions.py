@@ -1,0 +1,19 @@
+"""Typed exception hierarchy for SecureSG.
+
+Every error raised inside SecureSG derives from :class:`SecureSGError` so callers
+can catch the whole family with a single ``except``. Subsystems extend their own
+branch (the audit branch is defined here; the guard/warden branches are added by
+the cycles that raise them).
+"""
+
+
+class SecureSGError(Exception):
+    """Base class for every SecureSG error."""
+
+
+class AuditError(SecureSGError):
+    """Base class for failures in the audit subsystem."""
+
+
+class ChainIntegrityError(AuditError):
+    """Raised when the audit hash chain fails an integrity check."""

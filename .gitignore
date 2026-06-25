@@ -1,0 +1,26 @@
+# Virtual environments
+.venv/
+venv/
+
+# Python caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Secrets and local config
+.env
+
+# SQLite audit databases (never committed)
+*.db
+*.db-wal
+*.db-shm
+
+# Test / coverage artifacts
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Model weights (never committed)
+*.gguf
+models/*.gguf
