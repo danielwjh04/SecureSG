@@ -53,6 +53,11 @@ def test_extract_result_on_malformed_returns_none() -> None:
     assert extract_result({"jsonrpc": "2.0", "id": 1}, "scrape_page") is None
 
 
+def test_extract_result_on_non_json_payload_returns_none() -> None:
+    # A result that is not a valid JsonValue must fail closed, not raise.
+    assert extract_result({"result": object()}, "scrape_page") is None
+
+
 def test_transaction_id_is_stable_across_key_order() -> None:
     a = derive_transaction_id("s1", 1, {"a": 1, "b": 2})
     b = derive_transaction_id("s1", 1, {"b": 2, "a": 1})

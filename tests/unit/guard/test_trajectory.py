@@ -62,3 +62,11 @@ def test_eviction_drops_the_sensitive_entry() -> None:
     traj.record("read_file", Verdict.ALLOW)
     traj.record("list_dir", Verdict.ALLOW)  # evicts read_secret, decrements counter
     assert traj.assess("send_email").verdict is Verdict.ALLOW
+
+
+def test_eviction_of_non_sensitive_entry_keeps_counter_exact() -> None:
+    traj = SessionTrajectory(_policy(), max_depth=2)
+    traj.record("read_file", Verdict.ALLOW)  # non-sensitive, oldest
+    traj.record("read_secret", Verdict.ALLOW)  # sensitive, counted
+    traj.record("list_dir", Verdict.ALLOW)  # evicts read_file (non-sensitive)
+    assert traj.assess("send_email").verdict is Verdict.BLOCK  # read_secret still in
