@@ -21,6 +21,8 @@ torch>=2.2                  # sentence-transformers backend
 # async client used to forward approved calls to the MCP backend (and to drive
 # the ASGI app in tests). Not gated — required to run and test the proxy.
 httpx>=0.27                 # async MCP backend client + ASGI test transport
+fastapi>=0.110             # JSON-RPC proxy app (session control + RPC data plane)
+uvicorn[standard]>=0.30    # ASGI server that runs the proxy (main.py)
 
 # Test tooling
 pytest>=8.0
