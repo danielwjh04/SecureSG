@@ -51,6 +51,21 @@ def escalate(baseline: Verdict, candidate: Verdict) -> Verdict:
     return candidate if _SEVERITY[candidate] > _SEVERITY[baseline] else baseline
 
 
+def escalate_verdict(
+    current: PolicyVerdict, candidate: PolicyVerdict
+) -> PolicyVerdict:
+    """Return the more severe ``PolicyVerdict``; ties keep ``current``.
+
+    Carries the full verdict (reason and rule_id), so a deterministic BLOCK
+    retains its precise explanation over a coincident equal-severity signal.
+
+    Time complexity: O(1). Space complexity: O(1).
+    """
+    if _SEVERITY[candidate.verdict] > _SEVERITY[current.verdict]:
+        return candidate
+    return current
+
+
 def serialize_call(call: ToolCallSchema) -> str:
     """Render a tool call as deterministic text for semantic adjudication. O(n)."""
     arguments = json.dumps(call.arguments, sort_keys=True, separators=(",", ":"))

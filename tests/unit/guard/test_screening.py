@@ -8,6 +8,7 @@ from secureSG.guard.policy import load_policy
 from secureSG.guard.screening import (
     Screener,
     escalate,
+    escalate_verdict,
     map_probability_to_verdict,
     serialize_call,
 )
@@ -61,6 +62,32 @@ def test_escalate_only_raises_severity() -> None:
         escalate(Verdict.ALLOW, Verdict.HUMAN_APPROVAL_REQUIRED)
         is Verdict.HUMAN_APPROVAL_REQUIRED
     )
+
+
+def _verdict(verdict: Verdict, rule_id: str) -> PolicyVerdict:
+    return PolicyVerdict(
+        verdict=verdict, reason="test", rule_id=rule_id, tool_name="t"
+    )
+
+
+def test_escalate_verdict_returns_strictly_more_severe() -> None:
+    current = _verdict(Verdict.ALLOW, "policy.read_file")
+    candidate = _verdict(Verdict.BLOCK, "trajectory.sensitive_to_external")
+    assert escalate_verdict(current, candidate) is candidate
+
+
+def test_escalate_verdict_keeps_current_when_candidate_weaker() -> None:
+    current = _verdict(Verdict.BLOCK, "denylist")
+    candidate = _verdict(Verdict.ALLOW, "drift.intent")
+    assert escalate_verdict(current, candidate) is current
+
+
+def test_escalate_verdict_ties_keep_current_rule_id() -> None:
+    current = _verdict(Verdict.BLOCK, "denylist")
+    candidate = _verdict(Verdict.BLOCK, "trajectory.sensitive_to_external")
+    result = escalate_verdict(current, candidate)
+    assert result is current
+    assert result.rule_id == "denylist"
 
 
 def test_serialize_call_is_key_order_independent_and_names_tool() -> None:
