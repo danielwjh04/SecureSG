@@ -1,0 +1,11 @@
+# Tools whose invocation is always blocked, regardless of arguments.
+denylist:
+  - execute_shell
+
+# External-communication sinks: a HIGH-taint argument here is an automatic BLOCK.
+external_comms_tools:
+  - send_email
+
+# Tools whose output is sensitive; their results taint the session at this tier.
+taint_sources:
+  read_secret: HIGH

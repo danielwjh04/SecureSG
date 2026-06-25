@@ -1,0 +1,8 @@
+# Affirmative per-tool verdicts — the allowlist of decisions.
+# Tools not listed here fall through to the fail mode defined in settings.py.
+tool_rules:
+  read_file: ALLOW
+  list_dir: ALLOW
+  read_secret: ALLOW
+  send_email: ALLOW
+  scrape_page: ALLOW

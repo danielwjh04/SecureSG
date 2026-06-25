@@ -17,3 +17,7 @@ class AuditError(SecureSGError):
 
 class ChainIntegrityError(AuditError):
     """Raised when the audit hash chain fails an integrity check."""
+
+
+class PolicyError(SecureSGError):
+    """Raised when a policy file cannot be loaded or is malformed."""
