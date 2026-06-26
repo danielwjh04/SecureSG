@@ -12,10 +12,14 @@ import math
 from abc import ABC, abstractmethod
 from typing import Any, Protocol, cast
 
-from secureSG.config.settings import Settings
-from secureSG.exceptions import ModelLoadError
+import httpx
+
+from secureSG.config.settings import EmbeddingBackend, Settings
+from secureSG.exceptions import InferenceError, ModelLoadError
 
 type Vector = list[float]
+
+_EMBED_PATH = "/api/embed"
 
 
 def cosine_similarity(a: Vector, b: Vector) -> float:
@@ -89,12 +93,94 @@ class SentenceTransformerProvider(EmbeddingProvider):
         return rows
 
 
-def load_embedding_provider(settings: Settings) -> SentenceTransformerProvider:
-    """Load the embedding model once and wrap it. Fail-loud if unavailable.
+class OllamaEmbeddingProvider(EmbeddingProvider):
+    """EmbeddingProvider backed by a local Ollama server's /api/embed (no torch).
+
+    A fresh ``httpx.AsyncClient`` is used per call: requests are stateless and
+    idempotent and Ollama serializes its own queue, so no connection or lock is
+    owned. Any failure fails closed via ``InferenceError`` — the drift detector's
+    caller catches it and blocks (CLAUDE.md section 6), never embedding to a zero
+    vector that would silently read as perfect intent alignment.
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        model: str,
+        *,
+        timeout: float,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
+        self._url = f"{base_url.rstrip('/')}{_EMBED_PATH}"
+        self._model = model
+        self._timeout = timeout
+        self._transport = transport
+
+    async def embed(self, texts: list[str]) -> list[Vector]:
+        """Embed each text via Ollama, order-preserving; fail closed on error.
+
+        Raises:
+            InferenceError: on transport failure, non-2xx status, or a body whose
+                shape does not match the request.
+
+        Time complexity: O(sum of text lengths) plus one network round trip.
+        Space complexity: O(n * d) for n texts of embedding dimension d.
+        """
+        try:
+            async with httpx.AsyncClient(
+                timeout=self._timeout, transport=self._transport
+            ) as client:
+                response = await client.post(
+                    self._url, json={"model": self._model, "input": texts}
+                )
+                response.raise_for_status()
+                body = response.json()
+        except httpx.HTTPError as exc:
+            raise InferenceError(f"Ollama embedding request failed: {exc}") from exc
+        if not isinstance(body, dict):
+            raise InferenceError("Ollama returned a non-object embedding response")
+        return _extract_embeddings(body, len(texts))
+
+
+def _extract_embeddings(body: dict[str, Any], expected: int) -> list[Vector]:
+    """Validate Ollama's ``embeddings`` matrix and coerce it to ``list[Vector]``.
 
     Raises:
-        ModelLoadError: if sentence-transformers is not installed.
+        InferenceError: if the matrix is missing, the wrong length, or holds a
+            malformed or non-numeric row (untrusted external input).
+
+    Time complexity: O(n * d). Space complexity: O(n * d).
     """
+    rows = body.get("embeddings")
+    if not isinstance(rows, list) or len(rows) != expected:
+        raise InferenceError("Ollama embedding response had an unexpected shape")
+    result: list[Vector] = []
+    for row in rows:
+        if not isinstance(row, list) or not row:
+            raise InferenceError("Ollama returned a malformed embedding row")
+        vector: Vector = []
+        for value in row:
+            if not isinstance(value, (int, float)):
+                raise InferenceError("Ollama embedding contained a non-numeric value")
+            vector.append(float(value))
+        result.append(vector)
+    return result
+
+
+def load_embedding_provider(settings: Settings) -> EmbeddingProvider:
+    """Load the configured embedding provider: sentence-transformers, or Ollama.
+
+    Raises:
+        ModelLoadError: if the sentence-transformers wheel is not installed.
+
+    Time complexity: O(model load). Space complexity: O(model size).
+    """
+    if settings.embedding_provider is EmbeddingBackend.OLLAMA:
+        return OllamaEmbeddingProvider(
+            settings.ollama_base_url,
+            settings.ollama_embedding_model,
+            timeout=settings.ollama_request_timeout,
+        )
     return SentenceTransformerProvider(_construct_sentence_transformer(settings))
 
 

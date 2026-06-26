@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from secureSG.config.settings import (
     DEFAULT_FAIL_MODE,
     HASH_ALGORITHM,
+    EmbeddingBackend,
     GuardProvider,
     Settings,
     fail_mode_for,
@@ -35,6 +36,8 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "OLLAMA_REQUEST_TIMEOUT",
         "PROPOSED_POLICY_DIR",
         "EMBEDDING_MODEL_NAME",
+        "EMBEDDING_PROVIDER",
+        "OLLAMA_EMBEDDING_MODEL",
         "DRIFT_REVIEW_THRESHOLD",
         "DRIFT_BLOCK_THRESHOLD",
         "TOOL_RISK_THRESHOLD",
@@ -216,6 +219,29 @@ def test_risk_anchors_path_points_into_warden(clean_env: None) -> None:
     path = Settings(_env_file=None).risk_anchors_path
     assert path.name == "risk_anchors.yaml"
     assert path.parent.name == "warden"
+
+
+def test_embedding_provider_defaults_to_sentence_transformers(
+    clean_env: None,
+) -> None:
+    settings = Settings(_env_file=None)
+    assert settings.embedding_provider is EmbeddingBackend.SENTENCE_TRANSFORMERS
+    assert settings.ollama_embedding_model != ""
+
+
+def test_env_selects_ollama_embedding_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SECURESG_EMBEDDING_PROVIDER", "ollama")
+    assert Settings(_env_file=None).embedding_provider is EmbeddingBackend.OLLAMA
+
+
+def test_rejects_unknown_embedding_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SECURESG_EMBEDDING_PROVIDER", "openai")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
 
 
 def test_rejects_drift_block_not_below_review(

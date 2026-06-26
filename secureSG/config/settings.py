@@ -30,6 +30,13 @@ class GuardProvider(StrEnum):
     OLLAMA = "ollama"  # local Ollama server over HTTP; zero Python ML wheels
 
 
+class EmbeddingBackend(StrEnum):
+    """Which backend serves Warden embeddings (allowlisted, no magic strings)."""
+
+    SENTENCE_TRANSFORMERS = "sentence-transformers"  # in-process MiniLM (needs torch)
+    OLLAMA = "ollama"  # local Ollama server over HTTP; zero Python ML wheels
+
+
 class Settings(BaseSettings):
     """SecureSG runtime configuration, populated from ``SECURESG_*`` env vars."""
 
@@ -69,8 +76,12 @@ class Settings(BaseSettings):
     ollama_model: str = "hf.co/unsloth/Qwen3.5-9B-GGUF:Q4_K_M"
     ollama_request_timeout: float = 60.0
 
-    # Warden governance (SP4).
+    # Warden governance (SP4). The embedding backend mirrors the guard: the
+    # default in-process MiniLM (needs torch), or Ollama over HTTP. With "ollama"
+    # the base URL and request timeout above are reused.
+    embedding_provider: EmbeddingBackend = EmbeddingBackend.SENTENCE_TRANSFORMERS
     embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
+    ollama_embedding_model: str = "nomic-embed-text"
     drift_review_threshold: float = 0.45
     drift_block_threshold: float = 0.20
     tool_risk_threshold: float = 0.45
