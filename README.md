@@ -69,23 +69,37 @@ Other checks: `ruff check .`, `mypy secureSG tests scripts`, and `pytest` (the f
 
 SecureSG runs on its deterministic rules out of the box — everything above works with no model installed. The optional model layer adds a second opinion: a small language model that scores borderline content for risk, plus embeddings that flag when an agent drifts from its stated task. It can only ever make a verdict *stricter*, never weaker. Pick one of two backends — both sit behind the same swappable interface.
 
-**Option A — Ollama (recommended, no Python ML wheels).** Keep your machine free of torch and llama-cpp: run a local [Ollama](https://ollama.com) server and point both the guard and the embeddings at it. Nothing but `httpx` is added, and no content SecureSG screens ever leaves the machine.
+> Note: the visual demo (`secureSG.demo.server`) ships with a built-in benign judge, so it needs no model at all. To exercise a *real* model, use the smoke check in step 4 below, or run `secureSG.main` against your own MCP server.
 
-```
-ollama pull hf.co/unsloth/Qwen3.5-9B-GGUF:Q4_K_M
-ollama pull nomic-embed-text
-export SECURESG_GUARD_PROVIDER=ollama
-export SECURESG_EMBEDDING_PROVIDER=ollama
-```
+### Option A — Ollama (recommended, no Python ML wheels)
 
-The judge decides from the model's SAFE/UNSAFE token logprobs — the same calibrated probability as the in-process path, just read over HTTP from your local Ollama. Retune the semantic and drift thresholds for your chosen models.
+The full path from a laptop with **nothing installed yet**. It keeps your machine free of torch and llama-cpp — SecureSG only ever adds `httpx` — and no content it screens leaves the machine.
 
-**Option B — in-process (llama-cpp + sentence-transformers).** Install the optional wheels, download the weights, and point SecureSG at the file:
+1. **Install Ollama** from [ollama.com](https://ollama.com). The installer starts a local server on `localhost:11434`; confirm it with `ollama --version`.
+2. **Pull the two models** — the judge and the embedder. The judge is ~6 GB at `Q4_K_M` and wants roughly that much GPU memory; on a smaller GPU, swap in a lighter tag (e.g. a 4B). If a pull 404s, the `:Q4_K_M` tag has to match a GGUF in that repo — check the repo's files and use the matching quant.
+   ```
+   ollama pull hf.co/unsloth/Qwen3.5-9B-GGUF:Q4_K_M
+   ollama pull nomic-embed-text
+   ```
+3. **Point SecureSG at Ollama** — in the `.env` you copied under *Running locally*, uncomment these two lines:
+   ```
+   SECURESG_GUARD_PROVIDER=ollama
+   SECURESG_EMBEDDING_PROVIDER=ollama
+   ```
+4. **Check it end to end** — this loads the providers and scores a couple of samples through SecureSG's own logprob path (no MCP server needed):
+   ```
+   python -m scripts.ollama_smoke
+   ```
+   Expect a high `p_unsafe` for the injection sample and a low one for the benign sample. Use those numbers — and the intent-drift cosines it prints — to set `SECURESG_SEMANTIC_BLOCK_THRESHOLD` / `_REVIEW_THRESHOLD` and the `SECURESG_DRIFT_*` thresholds for your models.
+
+The judge decides from the model's SAFE/UNSAFE token logprobs — the same calibrated probability as the in-process path, just read over HTTP. With this in place, `python -m secureSG.main` (with `SECURESG_MCP_BACKEND_URL` set) runs the real Qwen judge instead of the deterministic-only fallback.
+
+### Option B — in-process (llama-cpp + sentence-transformers)
+
+Prefer to load the model inside the Python process? Install the optional wheels, download the weights, and point SecureSG at the file:
 
 ```
 pip install -r requirements-ml.txt
 python -m scripts.fetch_model
 export SECURESG_MODEL_PATH=model_weights/Qwen_Qwen3-0.6B-Q4_K_M.gguf
 ```
-
-With either option set, start the proxy as shown under **Running locally** above and it loads the real judge instead of running deterministic-only.
