@@ -8,9 +8,11 @@ trajectory rule, and the audit chain are always active.
 """
 
 import logging
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from secureSG.audit.chain import derive_genesis_hash
 from secureSG.audit.logger import AuditLogger
@@ -31,6 +33,18 @@ from secureSG.models.loader import load_guard_provider
 from secureSG.warden.embeddings import EmbeddingCache, load_embedding_provider
 
 _LOGGER = logging.getLogger("secureSG.main")
+
+_SPA_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+
+
+def _mount_spa(app: FastAPI, dist: Path = _SPA_DIST) -> None:
+    """Serve the built dashboard SPA at / when its dist directory exists.
+
+    Mounted last so the API routes registered earlier always win; ``html=True``
+    serves ``index.html`` for ``/`` and the hashed assets under ``/assets``.
+    """
+    if dist.is_dir():
+        app.mount("/", StaticFiles(directory=dist, html=True), name="spa")
 
 
 def _build_backend(settings: Settings) -> McpBackend:
@@ -134,6 +148,7 @@ def build_app(settings: Settings) -> FastAPI:
     )
     if dashboard is not None:
         _mount_dashboard(app, settings, dashboard)
+    _mount_spa(app)
     return app
 
 

@@ -5,6 +5,8 @@ from pathlib import Path
 
 import pytest
 import uvicorn
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 import secureSG.main as main_mod
 from secureSG.config.settings import Settings
@@ -88,6 +90,26 @@ def test_build_app_omits_dashboard_when_disabled(
     )
     app = main_mod.build_app(settings)
     assert "/dashboard/summary" not in app.openapi()["paths"]
+
+
+def test_mount_spa_serves_index_when_dist_exists(tmp_path: Path) -> None:
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<!doctype html><title>spa root</title>")
+    app = FastAPI()
+    main_mod._mount_spa(app, dist)
+    with TestClient(app) as client:
+        response = client.get("/")
+    assert response.status_code == 200
+    assert "spa root" in response.text
+
+
+def test_mount_spa_skips_when_dist_absent(tmp_path: Path) -> None:
+    app = FastAPI()
+    main_mod._mount_spa(app, tmp_path / "absent")
+    with TestClient(app) as client:
+        response = client.get("/")
+    assert response.status_code == 404
 
 
 def test_main_runs_uvicorn(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
