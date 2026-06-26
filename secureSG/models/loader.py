@@ -9,12 +9,40 @@ without a Screener), not a fallback hidden here.
 
 from typing import cast
 
-from secureSG.config.settings import Settings
+from secureSG.config.settings import GuardProvider, Settings
 from secureSG.exceptions import ModelLoadError
 from secureSG.models.guardformer import QwenGuardProvider, _CompletionModel
+from secureSG.models.ollama_provider import OllamaGuardProvider
+from secureSG.models.provider import ModelProvider
 
 
-def load_guard_provider(settings: Settings) -> QwenGuardProvider:
+def load_guard_provider(settings: Settings) -> ModelProvider:
+    """Load the configured guard provider: in-process llama-cpp, or Ollama HTTP.
+
+    Raises:
+        ModelLoadError: if the llama-cpp path has no weights configured or the
+            file is missing.
+
+    Time complexity: O(weights load). Space complexity: O(model size).
+    """
+    if settings.guard_provider is GuardProvider.OLLAMA:
+        return _load_ollama_provider(settings)
+    return _load_llamacpp_provider(settings)
+
+
+def _load_ollama_provider(settings: Settings) -> OllamaGuardProvider:
+    """Construct the Ollama HTTP guard provider (no weights, no ML wheels). O(1)."""
+    return OllamaGuardProvider(
+        settings.ollama_base_url,
+        settings.ollama_model,
+        timeout=settings.ollama_request_timeout,
+        max_output_tokens=settings.model_max_output_tokens,
+        logprobs_top_k=settings.model_logprobs_top_k,
+        author_max_tokens=settings.model_author_max_tokens,
+    )
+
+
+def _load_llamacpp_provider(settings: Settings) -> QwenGuardProvider:
     """Load the Qwen3 GGUF once and wrap it as a ``ModelProvider``.
 
     Raises:

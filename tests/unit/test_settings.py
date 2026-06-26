@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from secureSG.config.settings import (
     DEFAULT_FAIL_MODE,
     HASH_ALGORITHM,
+    GuardProvider,
     Settings,
     fail_mode_for,
 )
@@ -28,6 +29,10 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "SEMANTIC_BLOCK_THRESHOLD",
         "SEMANTIC_REVIEW_THRESHOLD",
         "MODEL_AUTHOR_MAX_TOKENS",
+        "GUARD_PROVIDER",
+        "OLLAMA_BASE_URL",
+        "OLLAMA_MODEL",
+        "OLLAMA_REQUEST_TIMEOUT",
         "PROPOSED_POLICY_DIR",
         "EMBEDDING_MODEL_NAME",
         "DRIFT_REVIEW_THRESHOLD",
@@ -144,6 +149,47 @@ def test_rejects_non_positive_review_threshold(
 
 def test_model_author_max_tokens_has_positive_default(clean_env: None) -> None:
     assert Settings(_env_file=None).model_author_max_tokens > 0
+
+
+def test_guard_provider_defaults_to_llamacpp(clean_env: None) -> None:
+    assert Settings(_env_file=None).guard_provider is GuardProvider.LLAMACPP
+
+
+def test_ollama_defaults_are_safe(clean_env: None) -> None:
+    settings = Settings(_env_file=None)
+    assert settings.ollama_base_url.startswith("http://")
+    assert settings.ollama_model != ""
+    assert settings.ollama_request_timeout > 0.0
+
+
+def test_env_selects_ollama_guard_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SECURESG_GUARD_PROVIDER", "ollama")
+    assert Settings(_env_file=None).guard_provider is GuardProvider.OLLAMA
+
+
+def test_rejects_unknown_guard_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SECURESG_GUARD_PROVIDER", "openai")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
+
+
+def test_rejects_non_positive_ollama_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SECURESG_OLLAMA_REQUEST_TIMEOUT", "0")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
+
+
+def test_accepts_ollama_base_url_with_https(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SECURESG_OLLAMA_BASE_URL", "https://ollama.internal:443")
+    assert Settings(_env_file=None).ollama_base_url == "https://ollama.internal:443"
+
+
+def test_rejects_ollama_base_url_with_unsupported_scheme(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SECURESG_OLLAMA_BASE_URL", "ftp://localhost:11434")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
 
 
 def test_proposed_policy_dir_sits_under_policies(clean_env: None) -> None:

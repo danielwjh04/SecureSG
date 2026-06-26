@@ -6,6 +6,7 @@ the audit hash algorithm — are module-level constants, deliberately *not*
 exposed as env-overridable fields.
 """
 
+from enum import StrEnum
 from pathlib import Path
 from typing import Final, Self
 from urllib.parse import urlparse
@@ -19,7 +20,14 @@ HASH_ALGORITHM: Final[str] = "sha256"
 """Audit hash algorithm. SHA-256 only — never weaken this (CLAUDE.md section 6)."""
 
 _ALLOWED_BACKEND_SCHEMES: Final[frozenset[str]] = frozenset({"http", "https"})
-"""URL schemes permitted for the MCP backend; O(1) membership, fail-closed."""
+"""URL schemes permitted for the MCP and Ollama backends; O(1), fail-closed."""
+
+
+class GuardProvider(StrEnum):
+    """Which judge-model backend serves the guard (allowlisted, no magic strings)."""
+
+    LLAMACPP = "llamacpp"  # in-process Qwen3 GGUF via llama-cpp-python
+    OLLAMA = "ollama"  # local Ollama server over HTTP; zero Python ML wheels
 
 
 class Settings(BaseSettings):
@@ -52,6 +60,14 @@ class Settings(BaseSettings):
     model_author_max_tokens: int = 512
     semantic_block_threshold: float = 0.80
     semantic_review_threshold: float = 0.50
+
+    # Guard judge backend. "llamacpp" loads the in-process GGUF; "ollama" reads
+    # SAFE/UNSAFE token logprobs from a local Ollama server over HTTP (no torch /
+    # llama-cpp wheels). The thresholds and logprob top-k above are reused.
+    guard_provider: GuardProvider = GuardProvider.LLAMACPP
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "hf.co/unsloth/Qwen3.5-9B-GGUF:Q4_K_M"
+    ollama_request_timeout: float = 60.0
 
     # Warden governance (SP4).
     embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
@@ -142,6 +158,28 @@ class Settings(BaseSettings):
                     "mcp_backend_url scheme must be one of "
                     f"{sorted(_ALLOWED_BACKEND_SCHEMES)}; got '{scheme}'"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_ollama(self) -> Self:
+        """Fail loudly on a non-positive Ollama timeout or non-http(s) base URL.
+
+        Validated unconditionally so a bad value is caught at startup even when
+        ``guard_provider`` is still ``llamacpp`` (fail-closed config).
+
+        Time complexity: O(1). Space complexity: O(1).
+        """
+        if self.ollama_request_timeout <= 0.0:
+            raise ValueError(
+                "ollama_request_timeout must be > 0; got "
+                f"{self.ollama_request_timeout}"
+            )
+        scheme = urlparse(self.ollama_base_url).scheme
+        if scheme not in _ALLOWED_BACKEND_SCHEMES:
+            raise ValueError(
+                "ollama_base_url scheme must be one of "
+                f"{sorted(_ALLOWED_BACKEND_SCHEMES)}; got '{scheme}'"
+            )
         return self
 
     @model_validator(mode="after")
