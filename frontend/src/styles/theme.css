@@ -1,0 +1,60 @@
+:root {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --bg: #0a0e14;
+  --panel: #11161f;
+  --panel-raised: #161c27;
+  --border: #232b38;
+  --border-strong: #313c4e;
+
+  /* Text */
+  --text: #d7dde6;
+  --text-dim: #8a94a6;
+  --text-faint: #5d6675;
+
+  /* Restrained signal accent (teal, not purple) */
+  --accent: #2dd4bf;
+  --accent-hover: #4fe6d3;
+
+  /* Verdict status */
+  --allow: #3fb950;
+  --approval: #d29922;
+  --block: #f85149;
+  --allow-bg: rgba(63, 185, 80, 0.12);
+  --approval-bg: rgba(210, 153, 34, 0.12);
+  --block-bg: rgba(248, 81, 73, 0.12);
+
+  /* Type */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'Fira Code', Menlo, monospace;
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --radius: 8px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
