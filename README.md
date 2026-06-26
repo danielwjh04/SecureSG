@@ -12,6 +12,18 @@ A safety checkpoint for AI agents — the kind that can read your files, send em
 - **Governance built in.** SecureSG scans the tools an agent can reach and flags the risky ones, notices when the agent drifts from the task it was given, and can draft new policy rules in plain language for a person to review. The system proposes; a human approves.
 - **Works with or without an AI model.** The rules, secret-tracking, and audit log all run on their own. An optional local language model adds a second opinion on borderline content — and it can only ever make a decision stricter, never weaker.
 
+## How it works
+
+Your agent's tool calls don't go straight to the tools — they pass through SecureSG, a transparent proxy that runs each call through layered checks and forwards only the ones that survive. Any single layer can stop a call:
+
+- **Schema validation** — a malformed call is rejected, never guessed at.
+- **Deterministic policy** — a fast rule lookup decides whether this tool, with these arguments, is allowed.
+- **Taint tracking** — data from a sensitive source (a secret, a scraped page) is tagged and followed; if it heads for an external tool, the call is stopped — even a reworded copy.
+- **Trajectory & intent drift** — calls that wander from the task the agent was actually given get flagged.
+- **The model (optional)** — for borderline content, a small LLM adds a second opinion that can only ever make the verdict *stricter*, never weaker.
+
+Every decision — allow, block, or escalate to a human — is appended to a SHA-256 hash-chained audit log *before* the call is forwarded. Two rules hold everywhere: **fail closed** (anything that can't be judged safely is blocked) and **the model can only tighten** (it never overturns a deterministic block). That's the idea in one line: you don't have to *trust* the guard, because every decision sits on a cryptographic chain you can re-verify — and the demo proves it by editing a past log entry and watching the verifier name the exact link that broke.
+
 ## Tech stack
 
 - Python 3.12 with FastAPI and Uvicorn — the guard is a transparent HTTP proxy
