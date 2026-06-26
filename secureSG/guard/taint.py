@@ -92,6 +92,20 @@ class SessionTaintStore:
             return None
         return max(label.tier for label in labels)
 
+    def redact(self, text: str, *, mask: str = "[REDACTED]") -> str:
+        """Replace every registered tainted value occurring in ``text`` with ``mask``.
+
+        Longer values are masked first, so a value that is a substring of another
+        registered value is never left partially exposed. Used to sanitize content
+        before it is shown on the dashboard.
+
+        Time complexity: O(values * len(text)). Space complexity: O(len(text)).
+        """
+        redacted = text
+        for value in sorted(self._index_of, key=len, reverse=True):
+            redacted = redacted.replace(value, mask)
+        return redacted
+
     def scan_arguments(
         self, arguments: dict[str, JsonValue]
     ) -> dict[str, TaintTier]:

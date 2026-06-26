@@ -91,3 +91,23 @@ def test_reregister_with_lower_tier_keeps_higher() -> None:
     store.register("dup", TaintLabel("read_secret", TaintTier.HIGH))
     store.register("dup", TaintLabel("read_file", TaintTier.LOW))
     assert store.highest_tier("dup") is TaintTier.HIGH
+
+
+def test_redact_masks_registered_value() -> None:
+    store = SessionTaintStore()
+    store.register("sk-LIVE-9999", TaintLabel("read_secret", TaintTier.HIGH))
+    assert store.redact("the key is sk-LIVE-9999 ok") == "the key is [REDACTED] ok"
+
+
+def test_redact_leaves_clean_text_unchanged() -> None:
+    store = SessionTaintStore()
+    store.register("sk-LIVE-9999", TaintLabel("read_secret", TaintTier.HIGH))
+    assert store.redact("nothing sensitive here") == "nothing sensitive here"
+
+
+def test_redact_masks_longer_value_first() -> None:
+    store = SessionTaintStore()
+    store.register("abc", TaintLabel("read_secret", TaintTier.HIGH))
+    store.register("abcdef", TaintLabel("read_secret", TaintTier.HIGH))
+    # the longer secret is masked whole, never leaving a trailing fragment
+    assert store.redact("x abcdef y") == "x [REDACTED] y"
