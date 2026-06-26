@@ -21,7 +21,13 @@ from secureSG.audit.chain import derive_genesis_hash
 from secureSG.audit.logger import AuditLogger
 from secureSG.audit.verifier import ChainStatus, ChainVerifier
 from secureSG.config.settings import Settings
-from secureSG.demo.scenario import DEMO_INTENT, DEMO_RESPONSES, DEMO_STEPS, DemoStep
+from secureSG.demo.scenario import (
+    DEMO_GENESIS_SEED,
+    DEMO_INTENT,
+    DEMO_RESPONSES,
+    DEMO_STEPS,
+    DemoStep,
+)
 from secureSG.guard.backend import MockMcpBackend
 from secureSG.guard.enforcer import Enforcer
 from secureSG.guard.policy import load_policy
@@ -29,8 +35,6 @@ from secureSG.guard.proxy import create_app
 from secureSG.guard.screening import Screener
 from secureSG.models.provider import ModelProvider
 from secureSG.schemas.assessment import AssessmentTask, SemanticAssessment
-
-_GENESIS_SEED = "securesg-demo"
 
 
 class _BenignJudge(ModelProvider):
@@ -117,7 +121,9 @@ async def run_demo(
 
     Time complexity: O(steps). Space complexity: O(steps).
     """
-    settings = Settings(_env_file=None, db_path=db_path, genesis_seed=_GENESIS_SEED)
+    settings = Settings(
+        _env_file=None, db_path=db_path, genesis_seed=DEMO_GENESIS_SEED
+    )
     genesis = derive_genesis_hash(settings.genesis_seed)
     audit_logger = AuditLogger(
         db_path=db_path,

@@ -11,6 +11,10 @@ from secureSG.schemas.tool_call import JsonValue
 
 DEMO_INTENT = "Summarize the latest blog post for the user."
 
+# The genesis seed that pins the demo's audit-chain identity. Exposed so the
+# end-to-end fixture can re-derive the same genesis hash and verify the chain.
+DEMO_GENESIS_SEED = "securesg-demo"
+
 # A fake secret used only by the demo's mock read_secret tool.
 DEMO_SECRET = "sk-LIVE-demo-secret-42"  # noqa: S105
 
