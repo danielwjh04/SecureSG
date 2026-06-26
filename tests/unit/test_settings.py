@@ -39,6 +39,12 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "MCP_BACKEND_URL",
         "MCP_BACKEND_TIMEOUT",
         "MAX_TRAJECTORY_DEPTH",
+        "DASHBOARD_ENABLED",
+        "DASHBOARD_WS_QUEUE_SIZE",
+        "DASHBOARD_MAX_ALERTS",
+        "DASHBOARD_MAX_REGISTRY",
+        "DASHBOARD_SUMMARY_WINDOW_DAYS",
+        "DASHBOARD_CONTENT_PREVIEW_CHARS",
     ):
         monkeypatch.delenv(f"SECURESG_{key}", raising=False)
 
@@ -236,5 +242,50 @@ def test_rejects_mcp_backend_url_with_unsupported_scheme(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("SECURESG_MCP_BACKEND_URL", "ftp://example.com")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
+
+
+def test_dashboard_defaults_are_positive(clean_env: None) -> None:
+    settings = Settings(_env_file=None)
+    assert settings.dashboard_enabled is True
+    assert settings.dashboard_ws_queue_size > 0
+    assert settings.dashboard_max_alerts > 0
+    assert settings.dashboard_max_registry > 0
+    assert settings.dashboard_summary_window_days > 0
+    assert settings.dashboard_content_preview_chars > 0
+
+
+def test_env_disables_dashboard(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SECURESG_DASHBOARD_ENABLED", "false")
+    assert Settings(_env_file=None).dashboard_enabled is False
+
+
+def test_rejects_non_positive_ws_queue_size(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SECURESG_DASHBOARD_WS_QUEUE_SIZE", "0")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
+
+
+def test_rejects_non_positive_max_alerts(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SECURESG_DASHBOARD_MAX_ALERTS", "0")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
+
+
+def test_rejects_non_positive_summary_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SECURESG_DASHBOARD_SUMMARY_WINDOW_DAYS", "0")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
+
+
+def test_rejects_non_positive_content_preview(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SECURESG_DASHBOARD_CONTENT_PREVIEW_CHARS", "-1")
     with pytest.raises(ValidationError):
         Settings(_env_file=None)

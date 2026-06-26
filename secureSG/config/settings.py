@@ -69,6 +69,14 @@ class Settings(BaseSettings):
     mcp_backend_timeout: float = 30.0
     max_trajectory_depth: int = 50
 
+    # Dashboard + live feed (SP6).
+    dashboard_enabled: bool = True
+    dashboard_ws_queue_size: int = 100  # per-subscriber bounded queue
+    dashboard_max_alerts: int = 200  # alert ring capacity
+    dashboard_max_registry: int = 200  # safe-content ring capacity
+    dashboard_summary_window_days: int = 30
+    dashboard_content_preview_chars: int = 2000  # cap content shipped to dashboard
+
     @model_validator(mode="after")
     def _validate_thresholds(self) -> Self:
         """Fail loudly unless ``0 < review < block <= 1`` (fail-closed config).
@@ -134,6 +142,24 @@ class Settings(BaseSettings):
                     "mcp_backend_url scheme must be one of "
                     f"{sorted(_ALLOWED_BACKEND_SCHEMES)}; got '{scheme}'"
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_dashboard(self) -> Self:
+        """Fail loudly unless every dashboard sizing field is positive.
+
+        Time complexity: O(1). Space complexity: O(1).
+        """
+        sizes = {
+            "dashboard_ws_queue_size": self.dashboard_ws_queue_size,
+            "dashboard_max_alerts": self.dashboard_max_alerts,
+            "dashboard_max_registry": self.dashboard_max_registry,
+            "dashboard_summary_window_days": self.dashboard_summary_window_days,
+            "dashboard_content_preview_chars": self.dashboard_content_preview_chars,
+        }
+        for name, value in sizes.items():
+            if value < 1:
+                raise ValueError(f"{name} must be >= 1; got {value}")
         return self
 
 
