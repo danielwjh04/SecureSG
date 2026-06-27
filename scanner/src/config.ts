@@ -27,8 +27,21 @@ export const SCAN_STEP_LABELS = [
   'Sealing proof chain',
 ] as const
 
-/** Milliseconds between progress-step advances (decoupled from scan latency). */
-export const SCAN_STEP_PACING_MS = 600
+/**
+ * Milliseconds between progress-step advances (decoupled from scan latency). A
+ * live scan (GitHub resolve + redirect traces + Exa + OpenAI) runs ~10-15s, so
+ * the stepper is paced to walk the pipeline over several seconds and then hold
+ * on the judge stage (see the scan machine) rather than racing to the end in
+ * under a second and sitting frozen on the final stage.
+ */
+export const SCAN_STEP_PACING_MS = 1500
+
+/**
+ * Client-side ceiling for an uploaded SKILL.md, in bytes. Mirrors the worker's
+ * default skill-size cap so an oversized file is rejected before it is loaded
+ * into the editor; the worker enforces the authoritative limit.
+ */
+export const UPLOAD_MAX_BYTES = 100_000
 
 /**
  * Debounce window before the proof inspector re-hashes the chain after an edit.

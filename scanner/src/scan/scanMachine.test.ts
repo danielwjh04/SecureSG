@@ -41,10 +41,13 @@ describe('advance', () => {
     expect(next).toEqual(scanning(1))
   })
 
-  it('clamps at the last label index', () => {
-    const last = SCAN_STEP_LABELS.length - 1
-    const next = scanReducer(scanning(last), { type: 'advance' })
-    expect(next).toEqual(scanning(last))
+  it('holds on the penultimate (judge) stage, never the final stage', () => {
+    const hold = SCAN_STEP_LABELS.length - 2
+    // Advancing AT the hold stage stays put...
+    expect(scanReducer(scanning(hold), { type: 'advance' })).toEqual(scanning(hold))
+    // ...and advancing one stage earlier reaches exactly the hold stage, never
+    // the final "Sealing proof chain" stage (which would look frozen).
+    expect(scanReducer(scanning(hold - 1), { type: 'advance' })).toEqual(scanning(hold))
   })
 
   it('is a no-op outside scanning', () => {

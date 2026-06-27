@@ -124,6 +124,20 @@
   line-height: 1.5;
 }
 
+.scan-input__hint--error {
+  color: var(--block);
+  font-weight: 600;
+}
+
+.scan-input--dragging {
+  border-color: var(--border-strong);
+  background: var(--surface-soft);
+}
+
+.scan-input__file {
+  display: none;
+}
+
 /* Scan progress stepper ---------------------------------------------------- */
 .scan-progress {
   display: flex;
@@ -173,6 +187,34 @@
 .scan-progress__step--done .scan-progress__dot {
   background: #000000;
   border-color: #000000;
+}
+
+/* Keep the active stage visibly alive while it holds (the live model call can
+   take several seconds): a light band sweeps across its label so it never reads
+   as frozen. */
+.scan-progress__step--active .statusbar__text {
+  background: linear-gradient(
+    100deg,
+    #000000 0%,
+    #000000 40%,
+    var(--text-faint) 50%,
+    #000000 60%,
+    #000000 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 1.6s linear infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
 }
 
 /* Verdict banner ----------------------------------------------------------- */
