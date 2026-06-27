@@ -2,6 +2,8 @@
 
 **Verifiable security for AI agents.** SecureSG guards the two boundaries where an autonomous agent gets compromised — the **skills it ingests** (supply chain) and the **tools it calls** (runtime) — and proves every decision with a cryptographic record you can re-check yourself. The whole idea in one line: *don't trust the guard, verify it.*
 
+> **▶ Try it live: https://securesg-scanner.zuriel-shanley.workers.dev** — paste a skill, watch it get scanned (redirect cascade → Exa reputation → OpenAI injection judge), then tamper the cryptographic proof in your own browser and watch the chain break.
+
 ---
 
 ## The problem
@@ -49,9 +51,11 @@ The scanner is built *around* two capabilities, not bolted onto them:
 
 > Privacy note: Exa only ever sees a **URL or domain**, never your secrets, and only on the untrusted-content path. The cryptographic verification runs entirely in your browser.
 
-### Status
+### Status — live
 
-The scanner is under active build toward its public deployment on **Cloudflare** (Workers + static assets, free tier — one TypeScript service serves the site and the `/api/scan` + `/api/verify` endpoints). The runtime Guard demo below **runs today**.
+**▶ https://securesg-scanner.zuriel-shanley.workers.dev**
+
+Deployed on **Cloudflare** (Workers + static assets, free tier — one TypeScript service serves the site and the `/api/scan` + `/api/verify` endpoints). Paste a skill, get a verdict plus a self-contained proof you can tamper-test in your browser. The code lives in [`scanner/`](scanner/); the runtime Guard demo below also runs locally.
 
 ---
 
