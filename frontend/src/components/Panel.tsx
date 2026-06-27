@@ -7,17 +7,17 @@ interface PanelProps<T> {
   resource: ApiResource<T>
   emptyText: string
   isEmpty: (data: T) => boolean
+  flush?: boolean
   children: (data: T) => ReactNode
 }
 
-// Shared panel chrome: shows a first-load spinner / error / empty state, but
-// keeps rendering existing data during a background refetch (no flicker).
 export function Panel<T>({
   title,
   count,
   resource,
   emptyText,
   isEmpty,
+  flush,
   children,
 }: PanelProps<T>): ReactNode {
   const { data, error, loading } = resource
@@ -33,13 +33,14 @@ export function Panel<T>({
   } else {
     body = children(data)
   }
+  const bodyClass = flush ? 'panel__body panel__body--flush' : 'panel__body'
   return (
     <section className="panel">
       <div className="panel__head">
         <h2>{title}</h2>
         {count !== undefined && <span className="panel__count">{count}</span>}
       </div>
-      <div className="panel__body">{body}</div>
+      <div className={bodyClass}>{body}</div>
     </section>
   )
 }

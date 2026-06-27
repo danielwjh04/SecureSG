@@ -13,13 +13,26 @@ export function AlertFeed({ refreshTick }: { refreshTick: number }) {
       resource={alerts}
       emptyText="No alerts yet — run the demo to trigger an injection."
       isEmpty={(data) => data.length === 0}
+      flush
     >
       {(data) => (
-        <>
-          {data.map((alert) => (
-            <AlertCard key={alert.id} alert={alert} />
-          ))}
-        </>
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Source Entity</th>
+                <th>Date Processed</th>
+                <th>Content Preview</th>
+                <th>Provenance</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((alert) => (
+                <AlertCard key={alert.id} alert={alert} />
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </Panel>
   )

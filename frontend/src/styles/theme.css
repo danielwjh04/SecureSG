@@ -1,33 +1,37 @@
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 
   /* Surfaces */
-  --bg: #0a0e14;
-  --panel: #11161f;
-  --panel-raised: #161c27;
-  --border: #232b38;
-  --border-strong: #313c4e;
+  --bg: #fbfbfd;
+  --surface: #ffffff;
+  --surface-soft: #f9fafb;
+  --surface-muted: #f3f4f6;
+  --surface-glass: rgba(255, 255, 255, 0.78);
+  --border: rgba(0, 0, 0, 0.06);
+  --border-strong: rgba(0, 0, 0, 0.12);
+  --shadow-soft: 0 4px 6px -1px rgba(0, 0, 0, 0.05),
+    0 2px 4px -1px rgba(0, 0, 0, 0.03);
 
   /* Text */
-  --text: #d7dde6;
-  --text-dim: #8a94a6;
-  --text-faint: #5d6675;
+  --text: #111827;
+  --text-dim: #6b7280;
+  --text-faint: #9ca3af;
 
-  /* Restrained signal accent (teal, not purple) */
-  --accent: #2dd4bf;
-  --accent-hover: #4fe6d3;
-
-  /* Verdict status */
-  --allow: #3fb950;
-  --approval: #d29922;
-  --block: #f85149;
-  --allow-bg: rgba(63, 185, 80, 0.12);
-  --approval-bg: rgba(210, 153, 34, 0.12);
-  --block-bg: rgba(248, 81, 73, 0.12);
+  /* Actions and status */
+  --accent: #000000;
+  --accent-hover: #27272a;
+  --allow: #111827;
+  --approval: #4f46e5;
+  --block: #b91c1c;
+  --allow-bg: #f4f4f5;
+  --approval-bg: #eef2ff;
+  --block-bg: #fee2e2;
 
   /* Type */
-  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'Fira Code', Menlo, monospace;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', 'Cascadia Code',
+    monospace;
 
   /* Spacing */
   --space-1: 4px;
@@ -37,6 +41,8 @@
   --space-5: 24px;
   --space-6: 32px;
   --radius: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
 }
 
 * {
@@ -46,7 +52,7 @@
 html,
 body,
 #root {
-  height: 100%;
+  min-height: 100%;
 }
 
 body {
@@ -54,7 +60,31 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.5;
+  letter-spacing: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 20px;
+  line-height: 1;
+  display: inline-block;
+  text-transform: none;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-feature-settings: 'liga';
+  -webkit-font-feature-settings: 'liga';
   -webkit-font-smoothing: antialiased;
 }

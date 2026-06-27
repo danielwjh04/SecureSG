@@ -21,9 +21,26 @@ export function AppHeader({ connected }: { connected: boolean }) {
   return (
     <header className="header">
       <div className="header__brand">
+        <span className="header__mark material-symbols-outlined" aria-hidden="true">
+          security
+        </span>
         <h1>SecureSG</h1>
-        <span className="tag">Security Operations</span>
+        <span className="tag">Pro</span>
       </div>
+      <nav className="header__nav" aria-label="Primary">
+        <a href="#dashboard" className="header__link">
+          Dashboard
+        </a>
+        <a href="#alerts" className="header__link">
+          Audit Logs
+        </a>
+        <a href="#safe-content" className="header__link header__link--active">
+          Safe Content
+        </a>
+        <a href="#policy" className="header__link">
+          Policy Warden
+        </a>
+      </nav>
       <div className="header__right">
         {error !== null && <span className="header__error">{error}</span>}
         <span className={`conn ${connected ? 'conn--on' : ''}`}>
