@@ -15,7 +15,7 @@
 
 **Verifiable security for AI agents.** SecureSG guards the two places an autonomous agent gets compromised: the skills it ingests (supply chain) and the tools it calls (runtime). Every decision comes with a cryptographic record you can re-check yourself. The idea in one line: don't trust the guard, verify it.
 
-> **Try it live: https://securesg-scanner.zuriel-shanley.workers.dev** Paste a skill, watch it get scanned (redirect cascade, then Exa reputation, then OpenAI injection judge), then tamper the cryptographic proof in your own browser and watch the chain break.
+> **Try it live [here](https://securesg-scanner.zuriel-shanley.workers.dev)** Paste a skill, watch it get scanned (redirect cascade, then Exa reputation, then OpenAI injection judge), then tamper the cryptographic proof in your own browser and watch the chain break.
 
 ---
 
