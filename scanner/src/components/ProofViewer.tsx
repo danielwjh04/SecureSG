@@ -172,8 +172,8 @@ export function ProofViewer({ proof }: ProofViewerProps): ReactNode {
   const headline = useMemo(
     () =>
       tampered
-        ? 'Tamper detected — the chain re-verified as BROKEN.'
-        : 'Re-hashed in your browser — no server round-trip.',
+        ? 'Tamper detected. The chain re-verified as BROKEN.'
+        : 'Re-hashed in your browser, no server round-trip.',
     [tampered],
   )
 

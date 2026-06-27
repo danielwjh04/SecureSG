@@ -26,6 +26,8 @@ export interface Env {
   ASSETS: Fetcher
   EXA_API_KEY?: string
   OPENAI_API_KEY?: string
+  /** Optional GitHub token (any scope) to lift the API rate limit to 5000/hr. */
+  GITHUB_TOKEN?: string
   [k: string]: unknown
 }
 

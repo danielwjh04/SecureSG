@@ -31,7 +31,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new ApiError(0, 'scanner backend unreachable')
   }
   if (!response.ok) {
-    throw new ApiError(response.status, `request to ${path} failed (${response.status})`)
+    // Surface the worker's typed error message (e.g. "no SKILL.md found in …")
+    // rather than a bare status, so the user sees exactly what to do next.
+    let detail = `request to ${path} failed (${response.status})`
+    try {
+      const body = (await response.json()) as { message?: unknown }
+      if (typeof body.message === 'string' && body.message.length > 0) {
+        detail = body.message
+      }
+    } catch {
+      /* non-JSON error body: keep the generic detail */
+    }
+    throw new ApiError(response.status, detail)
   }
   return (await response.json()) as T
 }

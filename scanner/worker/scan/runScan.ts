@@ -62,6 +62,8 @@ export interface ScanDeps {
   fetchImpl?: typeof fetch
   /** ISO timestamp for the response — set OUTSIDE the hashed proof. */
   scannedAt: string
+  /** Optional GitHub token to authenticate source-resolution API calls. */
+  githubToken?: string
 }
 
 /** The escalation applied when a sponsor stage fails fail-closed. */
@@ -116,6 +118,7 @@ async function resolveSkillText(
   request: ScanRequest,
   config: ScannerConfig,
   fetchImpl: typeof fetch,
+  githubToken: string | undefined,
 ): Promise<{ text: string; source: ScanResult['source'] }> {
   const content = request.content
   if (content !== undefined && content.trim().length > 0) {
@@ -149,6 +152,7 @@ async function resolveSkillText(
       githubTarget,
       fetchImpl,
       config.redirectTimeoutMs,
+      githubToken,
     )
     fetchUrl = new URL(rawUrl)
     assertSafeUrl(fetchUrl, { allowedSchemes: schemes })
@@ -301,6 +305,7 @@ export async function runScan(
     request,
     config,
     fetchImpl,
+    deps.githubToken,
   )
 
   // 2. Deterministic extraction.

@@ -30,7 +30,7 @@ export function Hero({ state, onScan }: HeroProps) {
   return (
     <section
       id="scan"
-      className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 py-8"
+      className="relative z-10 min-h-[90svh] flex flex-col items-center justify-center px-6 pt-4 pb-16"
     >
       <div className="text-center max-w-3xl mx-auto flex flex-col items-center justify-center w-full gap-7">
         <motion.p
@@ -48,7 +48,7 @@ export function Hero({ state, onScan }: HeroProps) {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
           style={{ fontFamily: "'Instrument Serif', serif" }}
-          className="text-4xl md:text-[64px] font-medium tracking-[-0.01em] leading-[1.08] bg-gradient-to-b from-white via-white/95 to-white/60 bg-clip-text text-transparent"
+          className="text-5xl md:text-[68px] font-medium tracking-[-0.01em] leading-[1.05] text-white drop-shadow-[0_2px_20px_rgba(0,0,0,0.5)]"
         >
           Don't trust the skill.
           <br className="hidden md:block" /> Verify it.
@@ -58,12 +58,11 @@ export function Hero({ state, onScan }: HeroProps) {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.3 }}
-          className="text-white/55 text-sm md:text-[15px] leading-relaxed max-w-xl -mt-1"
+          className="text-white/75 text-[15px] md:text-base leading-relaxed max-w-xl -mt-1"
         >
           Paste a SKILL.md, drop a file, or point us at a GitHub repo. We trace
-          every redirect, check each destination's live reputation with Exa,
-          judge the text for prompt injection with OpenAI, and seal the verdict
-          into a proof you can re-verify yourself.
+          redirects, score reputation with Exa, judge for injection with OpenAI,
+          and seal the verdict into a proof you can re-verify yourself.
         </motion.p>
 
         <motion.div

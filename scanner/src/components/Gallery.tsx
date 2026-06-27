@@ -71,7 +71,7 @@ export function Gallery({ onPick }: GalleryProps): ReactNode {
       </div>
       {entries.length === 0 ? (
         <div className="panel__state">
-          {loading ? 'Loading examples…' : 'Gallery coming soon — no example scans yet.'}
+          {loading ? 'Loading examples…' : 'Gallery coming soon. No example scans yet.'}
         </div>
       ) : (
         <div className="gallery__grid">

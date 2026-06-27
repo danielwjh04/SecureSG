@@ -163,6 +163,8 @@ export async function handleScan(
       exa,
       judge,
       scannedAt: new Date().toISOString(),
+      githubToken:
+        typeof env.GITHUB_TOKEN === 'string' ? env.GITHUB_TOKEN : undefined,
     })
 
     return Response.json(result, { status: STATUS_OK })

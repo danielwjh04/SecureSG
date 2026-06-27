@@ -1,13 +1,27 @@
 /**
  * Glassmorphism navbar for the dark hero. Animates in from the top, carries the
- * SecureSG mark, and surfaces a live status pill plus a link to the source.
+ * Bastion mark, surfaces a live status pill and a link to the source, and routes
+ * between the scanner and the Enterprise page with hash links. The mark and the
+ * Scanner link call `onHome` so they always return to a fresh scanner landing.
  */
 
 import { motion } from 'motion/react'
 import { ShieldCheck } from 'lucide-react'
 import { REPO_URL } from '../config'
+import { useHashRoute } from '../hooks/useHashRoute'
 
-export function Navbar() {
+interface NavbarProps {
+  /** Return to the scanner landing, clearing any in-progress or finished scan. */
+  onHome?: () => void
+}
+
+export function Navbar({ onHome }: NavbarProps) {
+  const route = useHashRoute()
+  const linkClass = (active: boolean): string =>
+    active
+      ? 'text-white transition-colors duration-300'
+      : 'text-white/70 hover:text-white transition-colors duration-300'
+
   return (
     <motion.nav
       initial={{ y: -20, opacity: 0 }}
@@ -17,30 +31,27 @@ export function Navbar() {
     >
       <div className="liquid-glass rounded-full px-6 py-3 flex items-center justify-between max-w-5xl mx-auto">
         <div className="flex items-center gap-8">
-          <a href="#top" className="flex items-center gap-2">
+          <a href="#" onClick={onHome} className="flex items-center gap-2">
             <ShieldCheck className="w-6 h-6 text-white" />
             <span className="text-white font-semibold text-lg tracking-tight">
-              SecureSG
+              Bastion
             </span>
           </a>
-          <div className="hidden md:flex items-center gap-8 text-white/80 text-sm font-medium">
-            <a
-              href="#scan"
-              className="hover:text-white transition-colors duration-300"
-            >
+          <div className="hidden md:flex items-center gap-7 text-sm font-medium">
+            <a href="#" onClick={onHome} className={linkClass(route === 'scanner')}>
               Scanner
             </a>
-            <a
-              href="#how"
-              className="hover:text-white transition-colors duration-300"
-            >
+            <a href="#how" className={linkClass(false)}>
               How it works
+            </a>
+            <a href="#enterprise" className={linkClass(route === 'enterprise')}>
+              Enterprise
             </a>
             <a
               href={REPO_URL}
               target="_blank"
               rel="noreferrer"
-              className="hover:text-white transition-colors duration-300"
+              className={linkClass(false)}
             >
               GitHub
             </a>

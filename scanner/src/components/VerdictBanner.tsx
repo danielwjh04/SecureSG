@@ -25,7 +25,7 @@ function bannerClass(verdict: Verdict): string {
  */
 function detailLine(verdict: Verdict, findingsCount: number): string {
   if (verdict === 'ALLOW' && findingsCount === 0) {
-    return 'No risks detected — content cleared by every screening pass.'
+    return 'No risks detected. Content cleared by every screening pass.'
   }
   const noun = findingsCount === 1 ? 'finding' : 'findings'
   return `${findingsCount} ${noun}`

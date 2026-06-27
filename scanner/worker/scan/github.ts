@@ -158,6 +158,7 @@ export async function resolveGithubSkillUrl(
   target: GithubTarget,
   fetchImpl: typeof fetch,
   timeoutMs: number,
+  token?: string,
 ): Promise<string> {
   if (target.kind === 'blob') {
     return buildRawUrl(target.owner, target.repo, target.ref, target.path)
@@ -170,6 +171,7 @@ export async function resolveGithubSkillUrl(
           target.repo,
           fetchImpl,
           timeoutMs,
+          token,
         )
       : target.ref
   const subdir = target.kind === 'tree' ? target.subdir : ''
@@ -180,6 +182,7 @@ export async function resolveGithubSkillUrl(
     ref,
     fetchImpl,
     timeoutMs,
+    token,
   )
   const chosen = chooseSkillPath(skillPaths, subdir)
   if (chosen === null) {
@@ -214,11 +217,12 @@ async function fetchDefaultBranch(
   repo: string,
   fetchImpl: typeof fetch,
   timeoutMs: number,
+  token: string | undefined,
 ): Promise<string> {
   const url =
     `https://${GITHUB_API_HOST}/repos/` +
     `${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`
-  const body = await githubApiJson(url, fetchImpl, timeoutMs)
+  const body = await githubApiJson(url, fetchImpl, timeoutMs, token)
   const branch = (body as { default_branch?: unknown }).default_branch
   if (typeof branch !== 'string' || branch.length === 0) {
     throw new SourceResolutionError(
@@ -248,12 +252,13 @@ async function fetchSkillManifestPaths(
   ref: string,
   fetchImpl: typeof fetch,
   timeoutMs: number,
+  token: string | undefined,
 ): Promise<string[]> {
   const url =
     `https://${GITHUB_API_HOST}/repos/` +
     `${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/trees/` +
     `${encodeURIComponent(ref)}?recursive=1`
-  const body = await githubApiJson(url, fetchImpl, timeoutMs)
+  const body = await githubApiJson(url, fetchImpl, timeoutMs, token)
   const tree = (body as { tree?: unknown }).tree
   if (!Array.isArray(tree)) {
     throw new SourceResolutionError(
@@ -292,14 +297,23 @@ async function githubApiJson(
   url: string,
   fetchImpl: typeof fetch,
   timeoutMs: number,
+  token: string | undefined,
 ): Promise<unknown> {
+  const headers: Record<string, string> = {
+    'User-Agent': GITHUB_API_USER_AGENT,
+    Accept: GITHUB_API_ACCEPT,
+  }
+  // An optional token raises the GitHub API rate limit from 60/hr (shared per
+  // egress IP, which Cloudflare Workers pool) to 5000/hr. Public repos need no
+  // scopes on the token; it is only used to authenticate the read.
+  if (token !== undefined && token.length > 0) {
+    headers.Authorization = `Bearer ${token}`
+  }
+
   let response: Response
   try {
     response = await fetchImpl(url, {
-      headers: {
-        'User-Agent': GITHUB_API_USER_AGENT,
-        Accept: GITHUB_API_ACCEPT,
-      },
+      headers,
       signal: AbortSignal.timeout(timeoutMs),
     })
   } catch (error: unknown) {
@@ -310,6 +324,14 @@ async function githubApiJson(
     )
   }
   if (!response.ok) {
+    // 403/429 from the GitHub API is almost always the unauthenticated rate
+    // limit. Surface an actionable message rather than a bare status.
+    if (response.status === 403 || response.status === 429) {
+      throw new SourceResolutionError(
+        'GitHub rate limit reached for this scanner. Try again shortly, or ' +
+          'paste the skill text or a raw SKILL.md URL instead.',
+      )
+    }
     throw new SourceResolutionError(
       `GitHub API returned HTTP ${response.status} for ${url}`,
     )
