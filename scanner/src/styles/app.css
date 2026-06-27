@@ -26,16 +26,29 @@
 }
 
 /* Clip horizontal overflow at the document root (not on an intermediate
-   ancestor) so the sticky navbar still sticks to the viewport. Smooth-scroll
-   anchor navigation between sections; :target offsets the landing under the
-   sticky navbar so the heading is not hidden behind it. */
+   ancestor) so the sticky navbar still sticks to the viewport. Anchor jumps are
+   instant (not smooth): a smooth scroll to #how races the JS scroll and stalls
+   partway, leaving the hero video showing above the section. :target offsets the
+   landing under the sticky navbar so the heading is not hidden behind it. */
 html {
   overflow-x: hidden;
-  scroll-behavior: smooth;
 }
 
 :target {
   scroll-margin-top: 6rem;
+}
+
+/* The hero background video is decorative, muted, and non-interactive. When the
+   browser blocks autoplay (e.g. Safari Low Power Mode) it would paint a large
+   "tap to play" overlay over the hero. Suppress every native control so the
+   already-loaded first frame stays as a still backdrop rather than a
+   broken-looking play button. */
+.background-video::-webkit-media-controls,
+.background-video::-webkit-media-controls-start-playback-button,
+.background-video::-webkit-media-controls-overlay-play-button {
+  display: none !important;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 body {

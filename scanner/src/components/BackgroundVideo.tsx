@@ -62,7 +62,7 @@ export function BackgroundVideo() {
         loop
         playsInline
         preload="auto"
-        className="w-full h-full object-cover opacity-100"
+        className="background-video w-full h-full object-cover opacity-100"
       />
       {/* Legibility wash + security HUD grid + vertical vignette. */}
       <div className="absolute inset-0 bg-black/55" />

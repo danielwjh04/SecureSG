@@ -1,7 +1,11 @@
 import type { ReactNode } from 'react'
 import { useCallback } from 'react'
 import type { GalleryData, GalleryEntry, ScanResult } from '../api/types'
-import { GALLERY_DATA_PATH } from '../config'
+import {
+  GALLERY_DATA_PATH,
+  GALLERY_FETCH_ATTEMPTS,
+  GALLERY_FETCH_TIMEOUT_MS,
+} from '../config'
 import { useApiResource } from '../hooks/useApiResource'
 
 interface GalleryProps {
@@ -18,24 +22,34 @@ const EMPTY_GALLERY: GalleryData = { generatedAt: '', entries: [] }
  * body) is an expected, non-error state: it resolves to {@link EMPTY_GALLERY}
  * and the UI shows a "coming soon" empty state rather than an error panel.
  *
- * Time complexity: O(n) in the response body size. Space complexity: O(n).
+ * Each attempt is bounded by {@link GALLERY_FETCH_TIMEOUT_MS}: a bare `fetch`
+ * has no timeout, so a stalled request (e.g. the connection pool busy after a
+ * heavy result view) would strand the gallery on its loading line forever. A
+ * timed-out or failed attempt is retried up to {@link GALLERY_FETCH_ATTEMPTS}
+ * times so a transient stall recovers; a definitive 404 is not retried.
+ *
+ * Time complexity: O(a · n) for a = attempts, n = response body size.
+ * Space complexity: O(n).
  */
 async function fetchGallery(): Promise<GalleryData> {
-  let response: Response
-  try {
-    response = await fetch(GALLERY_DATA_PATH)
-  } catch {
-    return EMPTY_GALLERY
+  for (let attempt = 1; attempt <= GALLERY_FETCH_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), GALLERY_FETCH_TIMEOUT_MS)
+    try {
+      const response = await fetch(GALLERY_DATA_PATH, { signal: controller.signal })
+      // A 404 (gallery not shipped yet) is definitive, not transient: degrade.
+      if (!response.ok) return EMPTY_GALLERY
+      const data = (await response.json()) as GalleryData
+      return Array.isArray(data.entries) ? data : EMPTY_GALLERY
+    } catch {
+      // Network failure or a per-attempt timeout (the stalled-fetch case):
+      // retry, and only after the final attempt degrade to the empty state.
+      if (attempt === GALLERY_FETCH_ATTEMPTS) return EMPTY_GALLERY
+    } finally {
+      clearTimeout(timeout)
+    }
   }
-  if (!response.ok) {
-    return EMPTY_GALLERY
-  }
-  try {
-    const data = (await response.json()) as GalleryData
-    return Array.isArray(data.entries) ? data : EMPTY_GALLERY
-  } catch {
-    return EMPTY_GALLERY
-  }
+  return EMPTY_GALLERY
 }
 
 /** The verdict-neutral pill copy for an entry's tag. */

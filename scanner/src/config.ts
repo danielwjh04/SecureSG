@@ -15,6 +15,16 @@ export const API = {
 export const GALLERY_DATA_PATH = '/gallery.json' as const
 
 /**
+ * Per-attempt timeout (ms) and attempt count for loading the gallery dataset.
+ * `fetch` has no inherent timeout, so a stalled request (e.g. a connection-pool
+ * stall after a heavy result view) would otherwise leave the gallery stuck on
+ * its loading line forever. A bounded retry recovers from a transient stall;
+ * exhausting the attempts degrades to the empty "coming soon" state.
+ */
+export const GALLERY_FETCH_TIMEOUT_MS = 6000
+export const GALLERY_FETCH_ATTEMPTS = 3
+
+/**
  * Fullscreen hero background video. An HLS stream (Mux); non-Safari browsers
  * need hls.js to play it (see {@link BackgroundVideo}).
  */
