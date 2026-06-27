@@ -2,8 +2,6 @@
 
   <img src="assets/bastion.svg" alt="Bastion" width="600" />
 
-  # SecureSG
-
   [![demo](https://img.shields.io/badge/demo-live-22C55E?style=flat-square)](https://securesg-scanner.zuriel-shanley.workers.dev)
   [![built with](https://img.shields.io/badge/built%20with-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
   [![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
