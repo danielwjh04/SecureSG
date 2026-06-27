@@ -17,15 +17,6 @@
 
 import { CanonicalizationError } from '../worker/errors'
 
-/** Any value the canonicalizer is allowed to serialize. */
-type JsonValue =
-  | string
-  | number
-  | boolean
-  | null
-  | readonly JsonValue[]
-  | { readonly [key: string]: JsonValue }
-
 /**
  * Serialize a JSON value to its canonical string form: object keys sorted
  * lexicographically (by UTF-16 code unit, matching `Array.prototype.sort`'s
@@ -99,5 +90,3 @@ function serialize(value: unknown): string {
   })
   return `{${members.join(',')}}`
 }
-
-export type { JsonValue }

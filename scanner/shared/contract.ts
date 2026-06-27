@@ -111,11 +111,6 @@ export interface ScanResult {
   source: { kind: 'paste' | 'url'; ref: string }
 }
 
-/** The request body for `POST /api/verify`. */
-export interface VerifyRequest {
-  proof: Proof
-}
-
 /** The result of re-verifying a proof chain. */
 export interface VerifyResult {
   status: 'CHAIN_OK' | 'CHAIN_BROKEN'
