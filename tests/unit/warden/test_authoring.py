@@ -31,7 +31,7 @@ class _AuthorStub(ModelProvider):
     async def assess(self, content: str, task: AssessmentTask) -> SemanticAssessment:
         raise NotImplementedError
 
-    async def generate(self, prompt: str, *, grammar: str | None = None) -> str:
+    async def generate(self, prompt: str) -> str:
         return self._output
 
 

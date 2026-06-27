@@ -12,14 +12,12 @@ import math
 from abc import ABC, abstractmethod
 from typing import Any, Protocol, cast
 
-import httpx
+from openai import OpenAIError
 
 from secureSG.config.settings import EmbeddingBackend, Settings
 from secureSG.exceptions import InferenceError, ModelLoadError
 
 type Vector = list[float]
-
-_EMBED_PATH = "/api/embed"
 
 
 def cosine_similarity(a: Vector, b: Vector) -> float:
@@ -93,95 +91,121 @@ class SentenceTransformerProvider(EmbeddingProvider):
         return rows
 
 
-class OllamaEmbeddingProvider(EmbeddingProvider):
-    """EmbeddingProvider backed by a local Ollama server's /api/embed (no torch).
+class _Embeddings(Protocol):
+    async def create(self, *, model: str, input: list[str]) -> Any: ...
 
-    A fresh ``httpx.AsyncClient`` is used per call: requests are stateless and
-    idempotent and Ollama serializes its own queue, so no connection or lock is
-    owned. Any failure fails closed via ``InferenceError`` — the drift detector's
-    caller catches it and blocks (CLAUDE.md section 6), never embedding to a zero
-    vector that would silently read as perfect intent alignment.
+
+class OpenAIEmbeddingClient(Protocol):
+    """The minimal slice of ``AsyncOpenAI`` the embedding provider depends on."""
+
+    @property
+    def embeddings(self) -> _Embeddings: ...
+
+
+class OpenAIEmbeddingProvider(EmbeddingProvider):
+    """EmbeddingProvider backed by the OpenAI embeddings API (no torch).
+
+    Any failure fails closed via :class:`~secureSG.exceptions.InferenceError` —
+    the drift detector's caller catches it and blocks (CLAUDE.md section 6),
+    never embedding to a zero vector that would read as perfect intent alignment.
     """
 
-    def __init__(
-        self,
-        base_url: str,
-        model: str,
-        *,
-        timeout: float,
-        transport: httpx.AsyncBaseTransport | None = None,
-    ) -> None:
-        self._url = f"{base_url.rstrip('/')}{_EMBED_PATH}"
+    def __init__(self, client: OpenAIEmbeddingClient, model: str) -> None:
+        self._client = client
         self._model = model
-        self._timeout = timeout
-        self._transport = transport
 
     async def embed(self, texts: list[str]) -> list[Vector]:
-        """Embed each text via Ollama, order-preserving; fail closed on error.
+        """Embed each text via OpenAI, order-preserving; fail closed on error.
 
         Raises:
-            InferenceError: on transport failure, non-2xx status, or a body whose
-                shape does not match the request.
+            InferenceError: on a client error or a response whose shape or length
+                does not match the request.
 
         Time complexity: O(sum of text lengths) plus one network round trip.
         Space complexity: O(n * d) for n texts of embedding dimension d.
         """
         try:
-            async with httpx.AsyncClient(
-                timeout=self._timeout, transport=self._transport
-            ) as client:
-                response = await client.post(
-                    self._url, json={"model": self._model, "input": texts}
-                )
-                response.raise_for_status()
-                body = response.json()
-        except httpx.HTTPError as exc:
-            raise InferenceError(f"Ollama embedding request failed: {exc}") from exc
-        if not isinstance(body, dict):
-            raise InferenceError("Ollama returned a non-object embedding response")
-        return _extract_embeddings(body, len(texts))
+            response = await self._client.embeddings.create(
+                model=self._model, input=texts
+            )
+        except OpenAIError as exc:
+            raise InferenceError(f"OpenAI embedding request failed: {exc}") from exc
+        return _extract_openai_embeddings(response, len(texts))
 
 
-def _extract_embeddings(body: dict[str, Any], expected: int) -> list[Vector]:
-    """Validate Ollama's ``embeddings`` matrix and coerce it to ``list[Vector]``.
+def _extract_openai_embeddings(response: Any, expected: int) -> list[Vector]:
+    """Validate the OpenAI ``data`` rows and coerce them to request order.
+
+    Rows are reordered by their ``index`` (untrusted external input): a missing,
+    duplicate, or out-of-range index, the wrong count, or a malformed/non-numeric
+    vector fails closed (CLAUDE.md section 6).
 
     Raises:
-        InferenceError: if the matrix is missing, the wrong length, or holds a
-            malformed or non-numeric row (untrusted external input).
+        InferenceError: if the response shape, length, or any row is invalid.
 
     Time complexity: O(n * d). Space complexity: O(n * d).
     """
-    rows = body.get("embeddings")
-    if not isinstance(rows, list) or len(rows) != expected:
-        raise InferenceError("Ollama embedding response had an unexpected shape")
-    result: list[Vector] = []
+    try:
+        rows = list(response.data)
+    except (AttributeError, TypeError) as exc:
+        raise InferenceError(
+            f"OpenAI embedding response had an unexpected shape: {exc}"
+        ) from exc
+    if len(rows) != expected:
+        raise InferenceError("OpenAI embedding response had an unexpected length")
+    by_index: dict[int, Vector] = {}
     for row in rows:
-        if not isinstance(row, list) or not row:
-            raise InferenceError("Ollama returned a malformed embedding row")
-        vector: Vector = []
-        for value in row:
-            if not isinstance(value, (int, float)):
-                raise InferenceError("Ollama embedding contained a non-numeric value")
-            vector.append(float(value))
-        result.append(vector)
+        index = getattr(row, "index", None)
+        if not isinstance(index, int) or not 0 <= index < expected or index in by_index:
+            raise InferenceError("OpenAI embedding row had an invalid index")
+        by_index[index] = _coerce_vector(getattr(row, "embedding", None))
+    return [by_index[i] for i in range(expected)]
+
+
+def _coerce_vector(vector: Any) -> Vector:
+    """Coerce one embedding row to a non-empty numeric vector (fail-closed)."""
+    if not isinstance(vector, list) or not vector:
+        raise InferenceError("OpenAI returned a malformed embedding row")
+    result: Vector = []
+    for value in vector:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise InferenceError("OpenAI embedding contained a non-numeric value")
+        result.append(float(value))
     return result
 
 
 def load_embedding_provider(settings: Settings) -> EmbeddingProvider:
-    """Load the configured embedding provider: sentence-transformers, or Ollama.
+    """Load the configured embedding provider: OpenAI, or sentence-transformers.
 
     Raises:
-        ModelLoadError: if the sentence-transformers wheel is not installed.
+        ModelLoadError: if OpenAI is selected without an API key, or the
+            sentence-transformers wheel is not installed.
 
     Time complexity: O(model load). Space complexity: O(model size).
     """
-    if settings.embedding_provider is EmbeddingBackend.OLLAMA:
-        return OllamaEmbeddingProvider(
-            settings.ollama_base_url,
-            settings.ollama_embedding_model,
-            timeout=settings.ollama_request_timeout,
+    if settings.embedding_provider is EmbeddingBackend.OPENAI:
+        if settings.openai_api_key is None:
+            raise ModelLoadError(
+                "OPENAI_API_KEY is not set; no embedding model to load"
+            )
+        return OpenAIEmbeddingProvider(
+            _build_openai_client(settings), settings.openai_embedding_model
         )
     return SentenceTransformerProvider(_construct_sentence_transformer(settings))
+
+
+def _build_openai_client(settings: Settings) -> OpenAIEmbeddingClient:
+    """Construct the async OpenAI client (no network until first call). O(1)."""
+    from openai import AsyncOpenAI
+
+    return cast(
+        OpenAIEmbeddingClient,
+        AsyncOpenAI(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url,
+            timeout=settings.openai_request_timeout,
+        ),
+    )
 
 
 def _construct_sentence_transformer(

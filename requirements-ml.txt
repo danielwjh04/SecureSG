@@ -1,20 +1,17 @@
-# SecureSG — optional ML wheels (opt-in, real-model validation only).
+# SecureSG — optional ML wheels (opt-in, offline embedding backend only).
 #
-# These power the real semantic layer: the Qwen3 judge (GuardFormer) and the
-# MiniLM intent-drift embeddings. They are heavy native wheels (a C++ build for
-# llama-cpp, a large torch download) and are imported lazily behind swappable
-# provider seams, so neither the package nor the non-gated test suite needs them
-# — SecureSG runs deterministic-only without them. Install on top of the base
-# requirements only when validating against real models:
+# The guard judge and the default embedding backend run on OpenAI (in the base
+# requirements). These wheels power one optional alternative: in-process MiniLM
+# intent-drift embeddings, for running the Warden embedding layer offline with no
+# OpenAI calls. They are heavy native wheels (a large torch download), imported
+# lazily behind the swappable embedding seam, so neither the package nor the
+# non-gated test suite needs them. Install on top of the base requirements only
+# when using the offline embedding backend:
 #
 #     pip install -r requirements.txt -r requirements-ml.txt
 #
-# then fetch the weights (python -m scripts.fetch_model) and set SECURESG_MODEL_PATH.
+# then set SECURESG_EMBEDDING_PROVIDER=sentence-transformers.
 
-# GuardFormer judge — SP3 (semantic screening layer).
-llama-cpp-python>=0.2.90   # local Qwen3-0.6B Q4_K_M GGUF inference (CPU)
-huggingface-hub>=0.24      # one-time weights download (scripts/fetch_model.py)
-
-# Warden embeddings — SP4 (intent-to-action drift detection).
+# Warden embeddings — SP4 (intent-to-action drift detection), offline backend.
 sentence-transformers>=3.0  # all-MiniLM-L6-v2 sentence embeddings (CPU)
 torch>=2.2                  # sentence-transformers backend

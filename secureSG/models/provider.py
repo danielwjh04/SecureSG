@@ -1,9 +1,9 @@
 """The swappable judge-model seam.
 
 ``ModelProvider`` is the only surface that changes when the judge model is
-swapped (local Qwen3 -> hosted guard model later). Implementations own their own
-prompt formatting; thresholds and verdict mapping stay out of here — they live in
-the Screener and settings (CLAUDE.md section 6).
+swapped (the OpenAI guard model today; a different hosted model later).
+Implementations own their own prompt formatting; thresholds and verdict mapping
+stay out of here — they live in the Screener and settings (CLAUDE.md section 6).
 """
 
 from abc import ABC, abstractmethod
@@ -20,6 +20,6 @@ class ModelProvider(ABC):
         ...
 
     @abstractmethod
-    async def generate(self, prompt: str, *, grammar: str | None = None) -> str:
-        """Generate text for ``prompt``, optionally constrained by a GBNF grammar."""
+    async def generate(self, prompt: str) -> str:
+        """Generate text for ``prompt`` (a JSON policy proposal for authoring)."""
         ...

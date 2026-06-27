@@ -1,33 +1,61 @@
 """Tests for embeddings: cosine, cache, provider plumbing, and the loader."""
 
-import json
-from collections.abc import Callable
+from typing import Any
 
-import httpx
 import pytest
+from openai import OpenAIError
 
 from secureSG.config.settings import Settings
-from secureSG.exceptions import InferenceError
+from secureSG.exceptions import InferenceError, ModelLoadError
 from secureSG.warden import embeddings
 from secureSG.warden.embeddings import (
     EmbeddingCache,
     EmbeddingProvider,
-    OllamaEmbeddingProvider,
+    OpenAIEmbeddingProvider,
     SentenceTransformerProvider,
     Vector,
     cosine_similarity,
 )
 
-_Handler = Callable[[httpx.Request], httpx.Response]
+
+class _Row:
+    def __init__(self, index: object, embedding: object) -> None:
+        self.index = index
+        self.embedding = embedding
 
 
-def _ollama_provider(handler: _Handler) -> OllamaEmbeddingProvider:
-    return OllamaEmbeddingProvider(
-        "http://localhost:11434",
-        "embed-model",
-        timeout=5.0,
-        transport=httpx.MockTransport(handler),
-    )
+class _Response:
+    def __init__(self, data: object) -> None:
+        self.data = data
+
+
+class _Embeddings:
+    """Records call kwargs and returns a scripted embeddings response."""
+
+    def __init__(
+        self, response: object = None, error: Exception | None = None
+    ) -> None:
+        self._response = response
+        self._error = error
+        self.calls: list[dict[str, Any]] = []
+
+    async def create(self, *, model: str, input: list[str]) -> object:
+        self.calls.append({"model": model, "input": list(input)})
+        if self._error is not None:
+            raise self._error
+        return self._response
+
+
+class _Client:
+    def __init__(self, embeddings_api: _Embeddings) -> None:
+        self.embeddings = embeddings_api
+
+
+def _openai_provider(
+    response: object = None, error: Exception | None = None
+) -> tuple[OpenAIEmbeddingProvider, _Embeddings]:
+    api = _Embeddings(response=response, error=error)
+    return OpenAIEmbeddingProvider(_Client(api), "embed-model"), api
 
 
 def test_cosine_identical_is_one() -> None:
@@ -109,7 +137,76 @@ async def test_sentence_transformer_provider_encodes_via_model() -> None:
     assert vectors == [[2.0, 1.0], [3.0, 1.0]]
 
 
-def test_load_embedding_provider_wraps_construction(
+async def test_openai_provider_embeds_and_orders_by_index() -> None:
+    response = _Response([_Row(1, [3.0, 4.0]), _Row(0, [1.0, 2.0])])
+    provider, api = _openai_provider(response=response)
+    vectors = await provider.embed(["alpha", "beta"])
+    assert vectors == [[1.0, 2.0], [3.0, 4.0]]
+    assert api.calls[0] == {"model": "embed-model", "input": ["alpha", "beta"]}
+
+
+async def test_openai_provider_fails_closed_on_client_error() -> None:
+    provider, _ = _openai_provider(error=OpenAIError("boom"))
+    with pytest.raises(InferenceError):
+        await provider.embed(["alpha"])
+
+
+async def test_openai_provider_raises_on_count_mismatch() -> None:
+    provider, _ = _openai_provider(response=_Response([_Row(0, [1.0])]))
+    with pytest.raises(InferenceError):
+        await provider.embed(["alpha", "beta"])
+
+
+async def test_openai_provider_raises_on_invalid_index() -> None:
+    provider, _ = _openai_provider(response=_Response([_Row(5, [1.0])]))
+    with pytest.raises(InferenceError):
+        await provider.embed(["alpha"])
+
+
+async def test_openai_provider_raises_on_duplicate_index() -> None:
+    response = _Response([_Row(0, [1.0]), _Row(0, [2.0])])
+    provider, _ = _openai_provider(response=response)
+    with pytest.raises(InferenceError):
+        await provider.embed(["alpha", "beta"])
+
+
+async def test_openai_provider_raises_on_empty_row() -> None:
+    provider, _ = _openai_provider(response=_Response([_Row(0, [])]))
+    with pytest.raises(InferenceError):
+        await provider.embed(["alpha"])
+
+
+async def test_openai_provider_raises_on_non_numeric_value() -> None:
+    provider, _ = _openai_provider(response=_Response([_Row(0, [1.0, "x"])]))
+    with pytest.raises(InferenceError):
+        await provider.embed(["alpha"])
+
+
+async def test_openai_provider_raises_on_non_iterable_data() -> None:
+    provider, _ = _openai_provider(response=_Response(123))
+    with pytest.raises(InferenceError):
+        await provider.embed(["alpha"])
+
+
+def test_load_embedding_provider_selects_openai(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    settings = Settings(_env_file=None)  # default embedding_provider is OPENAI
+    provider = embeddings.load_embedding_provider(settings)
+    assert isinstance(provider, OpenAIEmbeddingProvider)
+
+
+def test_load_embedding_provider_openai_requires_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    settings = Settings(_env_file=None)
+    with pytest.raises(ModelLoadError):
+        embeddings.load_embedding_provider(settings)
+
+
+def test_load_embedding_provider_wraps_sentence_transformer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _FakeEncoder:
@@ -121,81 +218,6 @@ def test_load_embedding_provider_wraps_construction(
         "_construct_sentence_transformer",
         lambda settings: _FakeEncoder(),
     )
-    provider = embeddings.load_embedding_provider(Settings(_env_file=None))
-    assert isinstance(provider, SentenceTransformerProvider)
-
-
-async def test_ollama_embedding_provider_embeds_via_http() -> None:
-    captured: dict[str, object] = {}
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        captured["url"] = str(request.url)
-        captured["body"] = json.loads(request.content)
-        return httpx.Response(200, json={"embeddings": [[1.0, 2.0], [3.0, 4.0]]})
-
-    vectors = await _ollama_provider(handler).embed(["alpha", "beta"])
-    assert vectors == [[1.0, 2.0], [3.0, 4.0]]
-    assert captured["url"] == "http://localhost:11434/api/embed"
-    assert captured["body"] == {"model": "embed-model", "input": ["alpha", "beta"]}
-
-
-async def test_ollama_embedding_provider_raises_on_transport_failure() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("connection refused")
-
-    with pytest.raises(InferenceError):
-        await _ollama_provider(handler).embed(["alpha"])
-
-
-async def test_ollama_embedding_provider_raises_on_error_status() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(404, json={"error": "model not found"})
-
-    with pytest.raises(InferenceError):
-        await _ollama_provider(handler).embed(["alpha"])
-
-
-async def test_ollama_embedding_provider_raises_on_non_object_body() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json=[[1.0, 2.0]])
-
-    with pytest.raises(InferenceError):
-        await _ollama_provider(handler).embed(["alpha"])
-
-
-async def test_ollama_embedding_provider_raises_on_count_mismatch() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"embeddings": [[1.0, 2.0]]})
-
-    with pytest.raises(InferenceError):
-        await _ollama_provider(handler).embed(["alpha", "beta"])
-
-
-async def test_ollama_embedding_provider_raises_on_malformed_row() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"embeddings": ["not-a-vector"]})
-
-    with pytest.raises(InferenceError):
-        await _ollama_provider(handler).embed(["alpha"])
-
-
-async def test_ollama_embedding_provider_raises_on_empty_row() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"embeddings": [[]]})
-
-    with pytest.raises(InferenceError):
-        await _ollama_provider(handler).embed(["alpha"])
-
-
-async def test_ollama_embedding_provider_raises_on_non_numeric_value() -> None:
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"embeddings": [[1.0, "oops"]]})
-
-    with pytest.raises(InferenceError):
-        await _ollama_provider(handler).embed(["alpha"])
-
-
-def test_load_embedding_provider_selects_ollama() -> None:
-    settings = Settings(_env_file=None, embedding_provider="ollama")
+    settings = Settings(_env_file=None, embedding_provider="sentence-transformers")
     provider = embeddings.load_embedding_provider(settings)
-    assert isinstance(provider, OllamaEmbeddingProvider)
+    assert isinstance(provider, SentenceTransformerProvider)

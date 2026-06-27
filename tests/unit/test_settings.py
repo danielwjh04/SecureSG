@@ -9,7 +9,6 @@ from secureSG.config.settings import (
     DEFAULT_FAIL_MODE,
     HASH_ALGORITHM,
     EmbeddingBackend,
-    GuardProvider,
     Settings,
     fail_mode_for,
 )
@@ -22,22 +21,17 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "DB_PATH",
         "GENESIS_SEED",
         "SQLITE_JOURNAL_MODE",
-        "MODEL_PATH",
-        "MODEL_CONTEXT_SIZE",
-        "MODEL_THREADS",
-        "MODEL_MAX_OUTPUT_TOKENS",
-        "MODEL_LOGPROBS_TOP_K",
+        "OPENAI_BASE_URL",
+        "OPENAI_GUARD_MODEL",
+        "OPENAI_EMBEDDING_MODEL",
+        "OPENAI_REQUEST_TIMEOUT",
+        "OPENAI_ASSESS_MAX_TOKENS",
+        "OPENAI_AUTHOR_MAX_TOKENS",
         "SEMANTIC_BLOCK_THRESHOLD",
         "SEMANTIC_REVIEW_THRESHOLD",
-        "MODEL_AUTHOR_MAX_TOKENS",
-        "GUARD_PROVIDER",
-        "OLLAMA_BASE_URL",
-        "OLLAMA_MODEL",
-        "OLLAMA_REQUEST_TIMEOUT",
         "PROPOSED_POLICY_DIR",
         "EMBEDDING_MODEL_NAME",
         "EMBEDDING_PROVIDER",
-        "OLLAMA_EMBEDDING_MODEL",
         "DRIFT_REVIEW_THRESHOLD",
         "DRIFT_BLOCK_THRESHOLD",
         "TOOL_RISK_THRESHOLD",
@@ -55,6 +49,7 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "DASHBOARD_CONTENT_PREVIEW_CHARS",
     ):
         monkeypatch.delenv(f"SECURESG_{key}", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)  # read unprefixed
 
 
 def test_defaults_load(clean_env: None) -> None:
@@ -108,8 +103,31 @@ def test_unknown_tool_uses_default_fail_closed() -> None:
     assert fail_mode_for("totally_unknown_tool") is Verdict.BLOCK
 
 
-def test_model_path_defaults_to_none(clean_env: None) -> None:
-    assert Settings(_env_file=None).model_path is None
+def test_openai_api_key_defaults_to_none(clean_env: None) -> None:
+    assert Settings(_env_file=None).openai_api_key is None
+
+
+def test_openai_api_key_reads_unprefixed_env(
+    clean_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-live")
+    assert Settings(_env_file=None).openai_api_key == "sk-live"
+
+
+def test_openai_model_defaults_are_non_empty(clean_env: None) -> None:
+    settings = Settings(_env_file=None)
+    assert settings.openai_guard_model != ""
+    assert settings.openai_embedding_model != ""
+
+
+def test_openai_base_url_defaults_to_none(clean_env: None) -> None:
+    assert Settings(_env_file=None).openai_base_url is None
+
+
+def test_openai_token_limits_have_positive_defaults(clean_env: None) -> None:
+    settings = Settings(_env_file=None)
+    assert settings.openai_assess_max_tokens > 0
+    assert settings.openai_author_max_tokens > 0
 
 
 def test_semantic_thresholds_have_safe_default_ordering(clean_env: None) -> None:
@@ -120,11 +138,6 @@ def test_semantic_thresholds_have_safe_default_ordering(clean_env: None) -> None
         < settings.semantic_block_threshold
         <= 1.0
     )
-
-
-def test_env_overrides_model_path(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("SECURESG_MODEL_PATH", "weights/guard.gguf")
-    assert Settings(_env_file=None).model_path == Path("weights/guard.gguf")
 
 
 def test_rejects_review_threshold_not_below_block(
@@ -150,47 +163,25 @@ def test_rejects_non_positive_review_threshold(
         Settings(_env_file=None)
 
 
-def test_model_author_max_tokens_has_positive_default(clean_env: None) -> None:
-    assert Settings(_env_file=None).model_author_max_tokens > 0
-
-
-def test_guard_provider_defaults_to_llamacpp(clean_env: None) -> None:
-    assert Settings(_env_file=None).guard_provider is GuardProvider.LLAMACPP
-
-
-def test_ollama_defaults_are_safe(clean_env: None) -> None:
-    settings = Settings(_env_file=None)
-    assert settings.ollama_base_url.startswith("http://")
-    assert settings.ollama_model != ""
-    assert settings.ollama_request_timeout > 0.0
-
-
-def test_env_selects_ollama_guard_provider(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("SECURESG_GUARD_PROVIDER", "ollama")
-    assert Settings(_env_file=None).guard_provider is GuardProvider.OLLAMA
-
-
-def test_rejects_unknown_guard_provider(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("SECURESG_GUARD_PROVIDER", "openai")
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None)
-
-
-def test_rejects_non_positive_ollama_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("SECURESG_OLLAMA_REQUEST_TIMEOUT", "0")
-    with pytest.raises(ValidationError):
-        Settings(_env_file=None)
-
-
-def test_accepts_ollama_base_url_with_https(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("SECURESG_OLLAMA_BASE_URL", "https://ollama.internal:443")
-    assert Settings(_env_file=None).ollama_base_url == "https://ollama.internal:443"
-
-
-def test_rejects_ollama_base_url_with_unsupported_scheme(
+def test_rejects_non_positive_openai_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("SECURESG_OLLAMA_BASE_URL", "ftp://localhost:11434")
+    monkeypatch.setenv("SECURESG_OPENAI_REQUEST_TIMEOUT", "0")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
+
+
+def test_accepts_openai_base_url_with_https(
+    clean_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("SECURESG_OPENAI_BASE_URL", "https://gateway.internal/v1")
+    assert Settings(_env_file=None).openai_base_url == "https://gateway.internal/v1"
+
+
+def test_rejects_openai_base_url_with_unsupported_scheme(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SECURESG_OPENAI_BASE_URL", "ftp://gateway.internal")
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
 
@@ -221,25 +212,24 @@ def test_risk_anchors_path_points_into_warden(clean_env: None) -> None:
     assert path.parent.name == "warden"
 
 
-def test_embedding_provider_defaults_to_sentence_transformers(
-    clean_env: None,
-) -> None:
-    settings = Settings(_env_file=None)
-    assert settings.embedding_provider is EmbeddingBackend.SENTENCE_TRANSFORMERS
-    assert settings.ollama_embedding_model != ""
+def test_embedding_provider_defaults_to_openai(clean_env: None) -> None:
+    assert Settings(_env_file=None).embedding_provider is EmbeddingBackend.OPENAI
 
 
-def test_env_selects_ollama_embedding_provider(
+def test_env_selects_sentence_transformer_embedding_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("SECURESG_EMBEDDING_PROVIDER", "ollama")
-    assert Settings(_env_file=None).embedding_provider is EmbeddingBackend.OLLAMA
+    monkeypatch.setenv("SECURESG_EMBEDDING_PROVIDER", "sentence-transformers")
+    assert (
+        Settings(_env_file=None).embedding_provider
+        is EmbeddingBackend.SENTENCE_TRANSFORMERS
+    )
 
 
 def test_rejects_unknown_embedding_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("SECURESG_EMBEDDING_PROVIDER", "openai")
+    monkeypatch.setenv("SECURESG_EMBEDDING_PROVIDER", "bogus-backend")
     with pytest.raises(ValidationError):
         Settings(_env_file=None)
 

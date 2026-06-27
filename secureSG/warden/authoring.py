@@ -1,11 +1,11 @@
 """LLM policy authoring: natural-language intent -> validated, grounded proposal.
 
-The pipeline is defense-in-depth: a grammar grounds generation in the tool
-inventory, then the parsed output passes a structural gate (``PolicySchema``) and
-a grounding gate (every referenced tool must exist) before a :class:`PolicyProposal`
-is returned. Any failure raises :class:`AuthoringError`; a partial or unvalidated
-policy is never produced. The proposal is a delta fragment that merges into the
-active policy on activation — it is never auto-applied.
+The pipeline is defense-in-depth: the model returns a JSON object, then the parsed
+output passes a structural gate (``PolicySchema``) and a grounding gate (every
+referenced tool must exist) before a :class:`PolicyProposal` is returned. Any
+failure raises :class:`AuthoringError`; a partial or unvalidated policy is never
+produced. The proposal is a delta fragment that merges into the active policy on
+activation — it is never auto-applied.
 """
 
 import json
@@ -18,7 +18,6 @@ from secureSG.guard.policy import CompiledPolicy, PolicySchema
 from secureSG.guard.taint import TaintTier
 from secureSG.models.provider import ModelProvider
 from secureSG.schemas.verdict import Verdict
-from secureSG.warden.grammar import build_policy_grammar
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,9 +152,8 @@ async def author_policy(
 
     Time complexity: O(inference) + O(proposal size). Space complexity: O(same).
     """
-    grammar = build_policy_grammar(tools)
     prompt = _build_author_prompt(intent, tools)
-    raw = await provider.generate(prompt, grammar=grammar)
+    raw = await provider.generate(prompt)
     proposed = _parse_and_validate(raw, frozenset(tools))
     diff = _compute_diff(current_policy, proposed)
     return PolicyProposal(policy=proposed, diff=diff, intent=intent)

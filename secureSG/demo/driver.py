@@ -38,16 +38,16 @@ from secureSG.schemas.assessment import AssessmentTask, SemanticAssessment
 
 
 class _BenignJudge(ModelProvider):
-    """The demo's deterministic semantic stand-in (the real Qwen judge is
-    validated after SP7). It reports every input benign, so the demo's BLOCKs
-    are driven purely by deterministic signatures, taint, and the trajectory
-    rule — never by ML.
+    """The demo's deterministic semantic stand-in (the real OpenAI judge runs in
+    production). It reports every input benign, so the demo's BLOCKs are driven
+    purely by deterministic signatures, taint, and the trajectory rule — never by
+    a model call.
     """
 
     async def assess(self, content: str, task: AssessmentTask) -> SemanticAssessment:
         return SemanticAssessment(task=task, p_unsafe=0.0)
 
-    async def generate(self, prompt: str, *, grammar: str | None = None) -> str:
+    async def generate(self, prompt: str) -> str:
         return ""
 
 

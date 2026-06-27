@@ -20,7 +20,7 @@ class _StubProvider(ModelProvider):
     async def assess(self, content: str, task: AssessmentTask) -> SemanticAssessment:
         return SemanticAssessment(task=task, p_unsafe=0.0)
 
-    async def generate(self, prompt: str, *, grammar: str | None = None) -> str:
+    async def generate(self, prompt: str) -> str:
         return ""
 
 

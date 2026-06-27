@@ -6,11 +6,13 @@ pydantic>=2.6
 pydantic-settings>=2.2
 aiosqlite>=0.20
 pyyaml>=6.0
+openai>=1.40                # async OpenAI client: the guard judge + Warden embeddings
 
-# Runtime — optional ML wheels (the real Qwen judge + MiniLM embeddings) live in
+# Runtime — optional ML wheels (in-process MiniLM embeddings, an offline
+# alternative to the default OpenAI embedding backend) live in
 # requirements-ml.txt. They are lazy-imported and gated: this package and the
 # full non-gated test suite import and run without them, so the default install
-# and CI stay lean. Install them only for real-model validation (see README).
+# and CI stay lean. Install them only for the offline embedding backend.
 
 # Runtime — SP5 (Proxy). The transparent proxy is an HTTP service; httpx is the
 # async client used to forward approved calls to the MCP backend (and to drive

@@ -1,10 +1,10 @@
 """Entrypoint: build the proxy from settings and serve it, degrading gracefully.
 
-The heavy ML providers (the guard model, the embedding model) are loaded if
-their weights and wheels are present; otherwise the proxy runs in
-deterministic-only mode — no semantic screening, no intent drift — rather than
-refusing to start. The deterministic policy, field-level taint tracking, the
-trajectory rule, and the audit chain are always active.
+The OpenAI providers (the guard judge, the embedding model) are loaded when
+OPENAI_API_KEY is set; otherwise the proxy runs in deterministic-only mode — no
+semantic screening, no intent drift — rather than refusing to start. The
+deterministic policy, field-level taint tracking, the trajectory rule, and the
+audit chain are always active.
 """
 
 import logging
@@ -120,8 +120,8 @@ def build_app(settings: Settings) -> FastAPI:
     Mounts the dashboard (REST + WebSocket) and wires its live-event emitter
     when ``dashboard_enabled``; otherwise the proxy runs headless.
 
-    Time complexity: O(policy size) plus a one-time model load.
-    Space complexity: O(model size).
+    Time complexity: O(policy size) plus one-time client construction.
+    Space complexity: O(policy size).
     """
     backend = _build_backend(settings)
     policy = load_policy(settings.policy_dir)

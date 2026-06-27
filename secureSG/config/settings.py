@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Final, Self
 from urllib.parse import urlparse
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from secureSG.schemas.verdict import Verdict
@@ -20,21 +20,14 @@ HASH_ALGORITHM: Final[str] = "sha256"
 """Audit hash algorithm. SHA-256 only — never weaken this (CLAUDE.md section 6)."""
 
 _ALLOWED_BACKEND_SCHEMES: Final[frozenset[str]] = frozenset({"http", "https"})
-"""URL schemes permitted for the MCP and Ollama backends; O(1), fail-closed."""
-
-
-class GuardProvider(StrEnum):
-    """Which judge-model backend serves the guard (allowlisted, no magic strings)."""
-
-    LLAMACPP = "llamacpp"  # in-process Qwen3 GGUF via llama-cpp-python
-    OLLAMA = "ollama"  # local Ollama server over HTTP; zero Python ML wheels
+"""URL schemes permitted for the MCP and OpenAI backends; O(1), fail-closed."""
 
 
 class EmbeddingBackend(StrEnum):
     """Which backend serves Warden embeddings (allowlisted, no magic strings)."""
 
+    OPENAI = "openai"  # OpenAI embeddings over HTTPS; no torch (the default)
     SENTENCE_TRANSFORMERS = "sentence-transformers"  # in-process MiniLM (needs torch)
-    OLLAMA = "ollama"  # local Ollama server over HTTP; zero Python ML wheels
 
 
 class Settings(BaseSettings):
@@ -44,7 +37,6 @@ class Settings(BaseSettings):
         env_prefix="SECURESG_",
         env_file=".env",
         extra="ignore",
-        protected_namespaces=(),  # fields are named model_* by intent, not ML models
     )
 
     db_path: Path = Path("securesg_audit.db")
@@ -55,33 +47,26 @@ class Settings(BaseSettings):
         Path(__file__).resolve().parent.parent / "policies" / "proposed"
     )
 
-    # GuardFormer semantic layer (SP3). model_path is unset until weights exist.
-    model_path: Path | None = None
-    model_repo_id: str = "bartowski/Qwen_Qwen3-0.6B-GGUF"
-    model_filename: str = "Qwen_Qwen3-0.6B-Q4_K_M.gguf"
-    model_dir: Path = Path("model_weights")
-    model_context_size: int = 2048
-    model_threads: int = 4
-    model_max_output_tokens: int = 1
-    model_logprobs_top_k: int = 20
-    model_author_max_tokens: int = 512
+    # OpenAI semantic layer. The guard judge and (by default) Warden embeddings
+    # run on OpenAI; the key is read from the standard OPENAI_API_KEY env var
+    # (unprefixed), matching the scanner. With no key the proxy runs
+    # deterministic-only (the Enforcer is constructed without a Screener).
+    openai_api_key: str | None = Field(
+        default=None, validation_alias="OPENAI_API_KEY"
+    )
+    openai_base_url: str | None = None  # Azure/gateway override; None = official API
+    openai_guard_model: str = "gpt-5.5"
+    openai_embedding_model: str = "text-embedding-3-small"
+    openai_request_timeout: float = 60.0
+    openai_assess_max_tokens: int = 256  # a {p_unsafe, reason} JSON object is small
+    openai_author_max_tokens: int = 1024  # a generated policy proposal is larger
     semantic_block_threshold: float = 0.80
     semantic_review_threshold: float = 0.50
 
-    # Guard judge backend. "llamacpp" loads the in-process GGUF; "ollama" reads
-    # SAFE/UNSAFE token logprobs from a local Ollama server over HTTP (no torch /
-    # llama-cpp wheels). The thresholds and logprob top-k above are reused.
-    guard_provider: GuardProvider = GuardProvider.LLAMACPP
-    ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "hf.co/unsloth/Qwen3.5-9B-GGUF:Q4_K_M"
-    ollama_request_timeout: float = 60.0
-
-    # Warden governance (SP4). The embedding backend mirrors the guard: the
-    # default in-process MiniLM (needs torch), or Ollama over HTTP. With "ollama"
-    # the base URL and request timeout above are reused.
-    embedding_provider: EmbeddingBackend = EmbeddingBackend.SENTENCE_TRANSFORMERS
+    # Warden governance (SP4). The embedding backend is OpenAI by default (no
+    # torch); "sentence-transformers" runs an in-process MiniLM instead.
+    embedding_provider: EmbeddingBackend = EmbeddingBackend.OPENAI
     embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
-    ollama_embedding_model: str = "nomic-embed-text"
     drift_review_threshold: float = 0.45
     drift_block_threshold: float = 0.20
     tool_risk_threshold: float = 0.45
@@ -172,25 +157,26 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def _validate_ollama(self) -> Self:
-        """Fail loudly on a non-positive Ollama timeout or non-http(s) base URL.
+    def _validate_openai(self) -> Self:
+        """Fail loudly on a non-positive OpenAI timeout or non-http(s) base URL.
 
         Validated unconditionally so a bad value is caught at startup even when
-        ``guard_provider`` is still ``llamacpp`` (fail-closed config).
+        no API key is set yet (fail-closed config).
 
         Time complexity: O(1). Space complexity: O(1).
         """
-        if self.ollama_request_timeout <= 0.0:
+        if self.openai_request_timeout <= 0.0:
             raise ValueError(
-                "ollama_request_timeout must be > 0; got "
-                f"{self.ollama_request_timeout}"
+                "openai_request_timeout must be > 0; got "
+                f"{self.openai_request_timeout}"
             )
-        scheme = urlparse(self.ollama_base_url).scheme
-        if scheme not in _ALLOWED_BACKEND_SCHEMES:
-            raise ValueError(
-                "ollama_base_url scheme must be one of "
-                f"{sorted(_ALLOWED_BACKEND_SCHEMES)}; got '{scheme}'"
-            )
+        if self.openai_base_url is not None:
+            scheme = urlparse(self.openai_base_url).scheme
+            if scheme not in _ALLOWED_BACKEND_SCHEMES:
+                raise ValueError(
+                    "openai_base_url scheme must be one of "
+                    f"{sorted(_ALLOWED_BACKEND_SCHEMES)}; got '{scheme}'"
+                )
         return self
 
     @model_validator(mode="after")
