@@ -39,7 +39,7 @@
 
 .scan-hero h2 {
   margin: 0;
-  color: #000000;
+  color: #ffffff;
   font-size: clamp(28px, 4.5vw, 42px);
   line-height: 1.08;
   letter-spacing: 0;
@@ -69,6 +69,8 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .scan-input__area {
@@ -149,6 +151,8 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .scan-progress__step {
@@ -163,7 +167,7 @@
 }
 
 .scan-progress__step--active {
-  color: #000000;
+  color: #ffffff;
 }
 
 .scan-progress__step--done {
@@ -179,14 +183,14 @@
 }
 
 .scan-progress__step--active .scan-progress__dot {
-  background: #000000;
-  border-color: #000000;
+  background: #ffffff;
+  border-color: #ffffff;
   animation: pulse 1.2s ease-in-out infinite;
 }
 
 .scan-progress__step--done .scan-progress__dot {
-  background: #000000;
-  border-color: #000000;
+  background: #ffffff;
+  border-color: #ffffff;
 }
 
 /* Keep the active stage visibly alive while it holds (the live model call can
@@ -195,11 +199,11 @@
 .scan-progress__step--active .statusbar__text {
   background: linear-gradient(
     100deg,
-    #000000 0%,
-    #000000 40%,
-    var(--text-faint) 50%,
-    #000000 60%,
-    #000000 100%
+    #ffffff 0%,
+    #ffffff 40%,
+    rgba(255, 255, 255, 0.4) 50%,
+    #ffffff 60%,
+    #ffffff 100%
   );
   background-size: 200% 100%;
   -webkit-background-clip: text;
@@ -226,21 +230,25 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .verdict-banner--allow {
   background: var(--allow-bg);
-  border-color: var(--border);
+  border-color: rgba(52, 211, 153, 0.3);
 }
 
 .verdict-banner--approval {
   background: var(--approval-bg);
-  border-color: #c7d2fe;
+  border-color: rgba(251, 191, 36, 0.3);
 }
 
 .verdict-banner--block {
   background: var(--block-bg);
-  border-color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.35);
+  box-shadow: var(--shadow-soft), 0 0 24px -4px rgba(248, 113, 113, 0.35),
+    inset 0 0 12px -6px rgba(248, 113, 113, 0.4);
 }
 
 .verdict-banner__label {
@@ -255,7 +263,7 @@
 }
 
 .verdict-banner--approval .verdict-banner__label {
-  color: #3730a3;
+  color: var(--approval);
 }
 
 .verdict-banner--block .verdict-banner__label {
@@ -295,7 +303,7 @@
 
 .chain-vis__hop--danger {
   background: var(--block-bg);
-  border-color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.3);
   color: var(--block);
 }
 
@@ -308,7 +316,7 @@
 }
 
 .chain-vis__host {
-  color: #000000;
+  color: #ffffff;
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 700;
@@ -337,9 +345,9 @@
   flex-direction: column;
   gap: 2px;
   padding: var(--space-2) var(--space-3);
-  color: #000000;
+  color: var(--allow);
   background: var(--allow-bg);
-  border: 1px solid var(--border);
+  border: 1px solid rgba(52, 211, 153, 0.3);
   border-radius: var(--radius);
   font-family: var(--font-mono);
   font-size: 12px;
@@ -366,7 +374,7 @@
   padding: 2px var(--space-2);
   color: var(--block);
   background: var(--block-bg);
-  border: 1px solid #fecaca;
+  border: 1px solid rgba(248, 113, 113, 0.3);
   border-radius: 6px;
   font-family: var(--font-mono);
   font-size: 10px;
@@ -390,7 +398,7 @@
 }
 
 .exa__host {
-  color: #000000;
+  color: #ffffff;
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 700;
@@ -409,7 +417,7 @@
 
 .exa__bar-fill {
   height: 100%;
-  background: #111827;
+  background: rgba(255, 255, 255, 0.75);
 }
 
 .exa__flagged {
@@ -418,7 +426,7 @@
   padding: 2px var(--space-2);
   color: var(--block);
   background: var(--block-bg);
-  border: 1px solid #fecaca;
+  border: 1px solid rgba(248, 113, 113, 0.3);
   border-radius: 6px;
   font-family: var(--font-mono);
   font-size: 10px;
@@ -477,7 +485,7 @@
   align-self: flex-start;
   align-items: center;
   padding: 2px var(--space-2);
-  color: #18181b;
+  color: rgba(255, 255, 255, 0.92);
   background: var(--surface-muted);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -525,7 +533,7 @@
   padding: var(--space-3) var(--space-4);
   background: var(--surface-soft);
   border: 1px solid var(--border);
-  border-left: 3px solid #000000;
+  border-left: 3px solid var(--allow);
   border-radius: var(--radius);
   transition: background 0.18s ease, border-color 0.18s ease;
 }
@@ -543,7 +551,7 @@
 }
 
 .proof__kind {
-  color: #000000;
+  color: #ffffff;
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 800;
@@ -589,7 +597,7 @@
 }
 
 .proof__mark--ok {
-  color: #000000;
+  color: var(--allow);
 }
 
 .proof__mark--broken {
@@ -618,13 +626,15 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-soft);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   cursor: pointer;
   text-align: left;
   transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
 }
 
 .gallery__card:hover {
-  background: #f9f9fb;
+  background: rgba(255, 255, 255, 0.06);
   border-color: var(--border-strong);
   transform: translateY(-2px);
 }
@@ -651,11 +661,11 @@
 .gallery__tag--attack {
   color: var(--block);
   background: var(--block-bg);
-  border-color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.3);
 }
 
 .gallery__card strong {
-  color: #000000;
+  color: #ffffff;
   font-size: 15px;
   font-weight: 700;
   line-height: 1.3;

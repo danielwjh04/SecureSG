@@ -1,4 +1,5 @@
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 import { cloudflare } from '@cloudflare/vite-plugin'
 import { defineConfig } from 'vitest/config'
 
@@ -8,7 +9,7 @@ import { defineConfig } from 'vitest/config'
 // SPA and the Worker (/api/*) are served from one origin, so there is no
 // server.proxy and no CORS to configure.
 export default defineConfig({
-  plugins: [react(), cloudflare()],
+  plugins: [react(), tailwindcss(), cloudflare()],
   test: {
     // Vitest 4 multi-project layout. Worker/shared logic runs in a plain Node
     // environment; the React SPA runs in jsdom with the testing-library setup.

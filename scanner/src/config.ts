@@ -15,6 +15,29 @@ export const API = {
 export const GALLERY_DATA_PATH = '/gallery.json' as const
 
 /**
+ * Fullscreen hero background video. An HLS stream (Mux); non-Safari browsers
+ * need hls.js to play it (see {@link BackgroundVideo}).
+ */
+export const BACKGROUND_VIDEO_SRC =
+  'https://stream.mux.com/kimF2ha9zLrX64H00UgLGPflCzNtl1T0215MlAmeOztv8.m3u8' as const
+
+/** Public source repository, linked from the navbar. */
+export const REPO_URL = 'https://github.com/danielwjh04/SecureSG' as const
+
+/**
+ * The three skill-input modes offered by the hero's segmented control. The
+ * `content`/`url` modes map to the scan request fields; `file` loads a `.md`
+ * into the `content` path.
+ */
+export const INPUT_MODES = [
+  { id: 'paste', label: 'Paste' },
+  { id: 'url', label: 'URL' },
+  { id: 'file', label: 'Upload .md' },
+] as const
+
+export type InputModeId = (typeof INPUT_MODES)[number]['id']
+
+/**
  * Ordered labels for the scan progress stepper. The order mirrors the proof
  * step kinds the Worker emits, so the animation reads as the real pipeline.
  */

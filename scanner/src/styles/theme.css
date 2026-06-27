@@ -1,31 +1,31 @@
 :root {
-  color-scheme: light;
+  color-scheme: dark;
 
   /* Surfaces */
-  --bg: #fbfbfd;
-  --surface: #ffffff;
-  --surface-soft: #f9fafb;
-  --surface-muted: #f3f4f6;
-  --surface-glass: rgba(255, 255, 255, 0.78);
-  --border: rgba(0, 0, 0, 0.06);
-  --border-strong: rgba(0, 0, 0, 0.12);
-  --shadow-soft: 0 4px 6px -1px rgba(0, 0, 0, 0.05),
-    0 2px 4px -1px rgba(0, 0, 0, 0.03);
+  --bg: #000000;
+  --surface: rgba(255, 255, 255, 0.04);
+  --surface-soft: rgba(255, 255, 255, 0.03);
+  --surface-muted: rgba(255, 255, 255, 0.06);
+  --surface-glass: rgba(255, 255, 255, 0.04);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --shadow-soft: 0 8px 24px -8px rgba(0, 0, 0, 0.6),
+    0 2px 8px -2px rgba(0, 0, 0, 0.5);
 
   /* Text */
-  --text: #111827;
-  --text-dim: #6b7280;
-  --text-faint: #9ca3af;
+  --text: rgba(255, 255, 255, 0.92);
+  --text-dim: rgba(255, 255, 255, 0.65);
+  --text-faint: rgba(255, 255, 255, 0.42);
 
   /* Actions and status */
-  --accent: #000000;
-  --accent-hover: #27272a;
-  --allow: #111827;
-  --approval: #4f46e5;
-  --block: #b91c1c;
-  --allow-bg: #f4f4f5;
-  --approval-bg: #eef2ff;
-  --block-bg: #fee2e2;
+  --accent: #ffffff;
+  --accent-hover: rgba(255, 255, 255, 0.82);
+  --allow: #34d399;
+  --approval: #fbbf24;
+  --block: #f87171;
+  --allow-bg: rgba(52, 211, 153, 0.12);
+  --approval-bg: rgba(251, 191, 36, 0.12);
+  --block-bg: rgba(248, 113, 113, 0.14);
 
   /* Type */
   --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,

@@ -17,6 +17,9 @@
   },
   "dependencies": {
     "exa-js": "^1",
+    "hls.js": "^1.6.16",
+    "lucide-react": "^1.21.0",
+    "motion": "^12.42.0",
     "openai": "^6",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
@@ -24,6 +27,7 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1",
     "@cloudflare/workers-types": "^4",
+    "@tailwindcss/vite": "^4.3.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -34,6 +38,7 @@
     "@vitest/coverage-v8": "^4.1.9",
     "jsdom": "^29.1.1",
     "oxlint": "^1.69.0",
+    "tailwindcss": "^4.3.1",
     "tsx": "^4",
     "typescript": "~6.0.2",
     "vite": "^8.1.0",
