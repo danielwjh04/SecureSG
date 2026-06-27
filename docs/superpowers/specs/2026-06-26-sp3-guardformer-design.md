@@ -1,8 +1,8 @@
-# SP3 — GuardFormer Semantic Layer — Design Spec
+# SP3 — OpenAI Semantic Layer — Design Spec
 
 **Status:** Approved (2026-06-26). Supersedes the roadmap stub for SP3 in the build plan.
 **Depends on:** SP1 (audit spine), SP2 (deterministic guard core).
-**Delivers:** the `ModelProvider` interface, a real Qwen3-0.6B Q4_K_M provider, a defense-in-depth `Screener`, two audited entry points wired into the SP2 `Enforcer`, signature-as-data policy, a weights fetch script, and full tests.
+**Delivers:** the `ModelProvider` interface, a real OpenAI guard provider, a defense-in-depth `Screener`, two audited entry points wired into the SP2 `Enforcer`, signature-as-data policy, and full tests.
 
 ---
 
@@ -10,10 +10,10 @@
 
 | Question | Decision |
 |---|---|
-| What does GuardFormer score, and where does it hook in? | **Both** — one `ModelProvider`, two entry points: untrusted-content scanning (result path) **and** uncertain-call adjudication (call path). |
-| Detection model | **Defense-in-depth** — deterministic injection-signature matcher (Aho-Corasick, reuses SP2 engine) as the reliable first layer, **plus** Qwen3-0.6B as the semantic generalization layer behind it. |
-| Weights sourcing | **Auto-download script** via `huggingface-hub` into a git-ignored weights dir; `SECURESG_MODEL_PATH` points at it. CI and all non-gated tests use a deterministic stub provider and never touch the file. |
-| Output contract (from CLAUDE.md §6) | The model emits a **probability**; ALLOW / HUMAN_APPROVAL_REQUIRED / BLOCK **thresholds live in `settings.py`**. Not a generative JSON judge. |
+| What does the semantic judge score, and where does it hook in? | **Both** — one `ModelProvider`, two entry points: untrusted-content scanning (result path) **and** uncertain-call adjudication (call path). |
+| Detection model | **Defense-in-depth** — deterministic injection-signature matcher (Aho-Corasick, reuses SP2 engine) as the reliable first layer, **plus** an OpenAI chat model (`openai_guard_model`, default `gpt-5.5`) as the semantic generalization layer behind it. |
+| Model sourcing | **Hosted OpenAI API.** The provider reads `OPENAI_API_KEY` (unprefixed, matching the scanner) and calls the configured model. With no key the proxy runs deterministic-only (the `Enforcer` is built without a `Screener`). CI and all non-gated tests use a deterministic stub provider and never hit the network. |
+| Output contract (from CLAUDE.md §6) | The model emits a **probability** of unsafe content via OpenAI strict JSON-schema structured output; ALLOW / HUMAN_APPROVAL_REQUIRED / BLOCK **thresholds live in `settings.py`**. Not a parsed free-text verdict, not logprobs. |
 
 ---
 
@@ -34,9 +34,9 @@ Consequences:
 ```
 secureSG/
   models/
-    provider.py      # ModelProvider ABC (async assess) — the swap seam
-    guardformer.py   # QwenGuardProvider: llama-cpp inference; pure prompt+probability helpers
-    loader.py        # load_guard_provider(settings) — one-time GGUF load, fail-loud
+    provider.py        # ModelProvider ABC (async assess) — the swap seam
+    openai_provider.py # OpenAIGuardProvider: OpenAI structured-output inference; pure parse helpers
+    loader.py          # load_guard_provider(settings) — one-time OpenAI client build, fail-loud
   guard/
     matching.py      # AhoCorasick (extracted from taint.py; shared multi-pattern matcher)
     screening.py     # Screener: signatures + provider; thresholds; tighten-only composition
@@ -47,8 +47,6 @@ secureSG/
     assessment.py    # AssessmentTask enum, SemanticAssessment model
   policies/
     injection_signatures.yaml   # injection_signatures: [...]  + content_scan_sources: [...]
-scripts/
-  fetch_model.py     # huggingface-hub download → git-ignored weights dir
 ```
 
 No file exceeds the §1 size limits; each unit is independently testable with a stub.
@@ -79,30 +77,30 @@ class ModelProvider(ABC):
     async def assess(self, content: str, task: AssessmentTask) -> SemanticAssessment: ...
 ```
 
-- Implementations own their own prompt formatting (model-specific), so swapping Qwen3 → a hosted guard model later re-implements exactly this contract. Thresholds and verdict mapping stay out of the provider (they live in the `Screener` + `settings.py`).
+- Implementations own their own prompt formatting (model-specific), so swapping the OpenAI model for another hosted or local guard model later re-implements exactly this contract. Thresholds and verdict mapping stay out of the provider (they live in the `Screener` + `settings.py`).
 - `tests/` ships a `StubProvider(scripted: dict[..., float])` returning deterministic `p_unsafe`. It lives in tests only — never in `secureSG/` (it is a test double, not a production stub).
 
 ---
 
-## 6. Qwen3 runtime (`models/guardformer.py`, `models/loader.py`)
+## 6. OpenAI runtime (`models/openai_provider.py`, `models/loader.py`)
 
-### Probability, not generation
-The guard prompt ends where the model must answer with a single class label. We read **logprobs** rather than parse generated text:
+### Probability, not free text
+The guard asks the model to judge the content and answer with a strict JSON schema. We read a **structured probability** rather than parse generated prose:
 
-1. `Llama.create_completion(prompt, max_tokens=settings.model_max_output_tokens, temperature=0.0, logprobs=settings.model_logprobs_top_k)`.
-2. From `choices[0]["logprobs"]["top_logprobs"][0]` (dict `{token: logprob}`), aggregate (log-sum-exp) the logprobs of tokens belonging to the UNSAFE class vs the SAFE class.
-3. 2-way softmax of the two aggregates → `p_unsafe ∈ [0,1]` — a real probability per §6.
-4. If neither class token appears in the top-K (degenerate output), raise `InferenceError` → the caller fails closed.
+1. `client.chat.completions.create(model=settings.openai_guard_model, messages=[system, user], response_format=_ASSESS_RESPONSE_FORMAT, max_tokens=settings.openai_assess_max_tokens, temperature=0.0)`. The response format is a strict (`strict: true`, `additionalProperties: false`) JSON schema requiring `{p_unsafe: number, reason: string}`.
+2. The untrusted content is sent as its own `user` message, never interpolated into the instruction, so a scraped page cannot rewrite the guard's task.
+3. Parse the JSON body, read `p_unsafe`, bound-check it into `[0,1]`, and wrap it in `SemanticAssessment` — a real probability per §6.
+4. A transport error, a non-JSON body, a missing/non-numeric probability, or one outside `[0,1]` raises `InferenceError` → the caller fails closed.
 
-`_build_guard_prompt(content, task)`, the class-token aggregation, and the 2-way softmax are **pure functions** unit-tested with synthetic `top_logprobs` — no weights needed. Only the thin `create_completion` call is gated behind real weights (`# pragma: no cover` with a documented reason).
+The task-instruction constants and the response-parsing helpers (`_extract_content`, `_extract_p_unsafe`) are **pure** and unit-tested with synthetic API bodies — no network needed. Only the thin `chat.completions.create` call is gated behind a real key (`# pragma: no cover` with a documented reason); in tests the provider is driven through a fake chat client.
 
-> Library-syntax note: the `logprobs`/`top_logprobs` shape is per the documented llama-cpp-python completion API. The exact field access is re-confirmed against installed-version docs during implementation; no method signature is invented.
+> Library-syntax note: the strict-JSON-schema `response_format` shape is per the documented OpenAI Python SDK (`openai>=1.40`). The exact field access is re-confirmed against installed-version docs during implementation; no method signature is invented.
 
 ### Loader
-`load_guard_provider(settings) -> QwenGuardProvider` constructs `Llama(model_path=..., n_ctx=model_context_size, n_threads=model_threads, logits_all=False)` **once** at startup (CLAUDE.md §6: never reload per request). Missing/unset `model_path`, a non-existent file, or a llama-cpp import failure raises `ModelLoadError` — loud, never a silent degrade.
+`load_guard_provider(settings) -> ModelProvider` constructs the async OpenAI client (`AsyncOpenAI(api_key=settings.openai_api_key, base_url=settings.openai_base_url, timeout=settings.openai_request_timeout)`) **once** at startup (CLAUDE.md §6: never reconstruct per request). A missing/unset `OPENAI_API_KEY` raises `ModelLoadError` — loud, never a silent degrade. Running deterministic-only is a separate, explicit choice (constructing the `Enforcer` without a `Screener` in `main`), not a fallback hidden in the loader.
 
 ### Concurrency
-llama.cpp is not concurrency-safe on one context. The provider serializes inference with an `asyncio.Lock` around a single `asyncio.to_thread(...)` call: no blocking in the event loop (CLAUDE.md §5), no interleaved-state corruption. For a 0.6B CPU model, serialized inference is correct and sufficient.
+The OpenAI call is natively `async` I/O, so the provider awaits `chat.completions.create` directly — no thread pool and no lock (CLAUDE.md §5: I/O-bound work stays async). Concurrent assessments are independent requests; the SDK's own connection pool handles them.
 
 ---
 
@@ -145,19 +143,19 @@ Constructor becomes `Enforcer(policy, audit_logger, screener: Screener | None = 
 
 ## 10. Settings additions (`config/settings.py`)
 
-Add to `Settings` (env `SECURESG_*`), with `model_config = SettingsConfigDict(..., protected_namespaces=())` to silence pydantic v2's `model_`-prefix warning and keep the intuitive `MODEL_PATH` mapping:
+Add to `Settings` (env `SECURESG_*`). The API key is read from the standard, unprefixed `OPENAI_API_KEY` (via `validation_alias`), matching the scanner:
 
 | Field | Default | Purpose |
 |---|---|---|
-| `model_path: Path \| None` | `None` | GGUF weights path (`SECURESG_MODEL_PATH`). |
-| `model_context_size: int` | `2048` | llama `n_ctx`. |
-| `model_threads: int` | `4` | llama `n_threads`. |
-| `model_max_output_tokens: int` | `1` | only one label token is needed. |
-| `model_logprobs_top_k: int` | `20` | top-K logprobs to read. |
+| `openai_api_key: str \| None` | `None` | OpenAI key (`OPENAI_API_KEY`); `None` ⇒ deterministic-only. |
+| `openai_base_url: str \| None` | `None` | Azure/gateway override; `None` = the official API. |
+| `openai_guard_model: str` | `"gpt-5.5"` | chat model for the guard judge. |
+| `openai_request_timeout: float` | `60.0` | per-request timeout (seconds). |
+| `openai_assess_max_tokens: int` | `256` | a `{p_unsafe, reason}` JSON object is small. |
 | `semantic_block_threshold: float` | `0.80` | `p_unsafe ≥` ⇒ BLOCK. |
 | `semantic_review_threshold: float` | `0.50` | `p_unsafe ≥` ⇒ HUMAN_APPROVAL_REQUIRED. |
 
-A model validator enforces `0.0 < review < block ≤ 1.0` (fail-loud on misconfiguration). The guard **prompt template** and class-label tokens are documented constants in `guardformer.py` (model artifacts, not tunable config).
+A model validator enforces `0.0 < review < block ≤ 1.0` (fail-loud on misconfiguration); a second validator rejects a non-positive timeout or a non-http(s) `openai_base_url`. The guard **prompt template** and the strict response schema are documented constants in `openai_provider.py` (model artifacts, not tunable config).
 
 ---
 
@@ -165,8 +163,8 @@ A model validator enforces `0.0 < review < block ≤ 1.0` (fail-loud on misconfi
 
 ```python
 class ModelError(SecureSGError): ...
-class ModelLoadError(ModelError): ...     # weights missing / import failure at startup
-class InferenceError(ModelError): ...     # degenerate/failed inference at runtime → fail closed
+class ModelLoadError(ModelError): ...     # missing OPENAI_API_KEY at startup
+class InferenceError(ModelError): ...     # failed/invalid OpenAI response at runtime → fail closed
 ```
 
 Only these three are added (each is actually raised; no speculative taxonomy).
@@ -183,11 +181,11 @@ Only these three are added (each is actually raised; no speculative taxonomy).
 
 ## 13. Testing strategy
 
-- **`StubProvider`** in `tests/` drives every unit/integration test deterministically; no weights, no native lib.
-- Unit coverage: signature matcher (known patterns, overlaps, clean); `map_probability_to_verdict` band edges; `escalate` severity-max (model cannot downgrade a fail-closed tool); `serialize_call`; guardformer pure helpers (prompt build, class aggregation, softmax, degenerate→`InferenceError`); settings threshold validator; new exceptions; policy loads `injection_signatures` + `content_scan_sources`.
+- **`StubProvider`** in `tests/` drives every unit/integration test deterministically; no network, no real API key.
+- Unit coverage: signature matcher (known patterns, overlaps, clean); `map_probability_to_verdict` band edges; `escalate` severity-max (model cannot downgrade a fail-closed tool); `serialize_call`; OpenAI provider pure helpers (response parsing, non-JSON / missing / out-of-range `p_unsafe` → `InferenceError`); settings threshold validator; new exceptions; policy loads `injection_signatures` + `content_scan_sources`.
 - Integration: `screen_result` blocks a signatured page and a high-`p_unsafe` page, audits each, and the chain still verifies `CHAIN_OK`; `evaluate` escalates a no-rule call when the stub returns high `p_unsafe`; `evaluate` cannot downgrade a denylisted/taint BLOCK; idempotent replay.
-- **One** real-model test, `@pytest.mark.model`, skipped unless weights present **and** llama-cpp importable: a known injection scores high, benign low. Keeps the 85% gate off the 400 MB file.
-- Gates: `pytest --cov=secureSG --cov-fail-under=85`, `ruff check`, `mypy --strict`. The only `# pragma: no cover` is the native `create_completion` call, with a documented reason.
+- **One** real-model test, `@pytest.mark.model`, skipped unless `OPENAI_API_KEY` is set: a known injection scores high, benign low. Keeps the 85% gate off the live API.
+- Gates: `pytest --cov=secureSG --cov-fail-under=85`, `ruff check`, `mypy --strict`. The only `# pragma: no cover` is the live `chat.completions.create` call, with a documented reason.
 
 ---
 
@@ -201,19 +199,18 @@ Only these three are added (each is actually raised; no speculative taxonomy).
 
 ## 15. Build order (TDD, dependency-ordered)
 
-1. **Deps** — `requirements.txt += llama-cpp-python, huggingface-hub` (documented reason in the commit).
+1. **Deps** — `requirements.txt += openai>=1.40` (documented reason in the commit).
 2. **Exceptions** — add `ModelError`/`ModelLoadError`/`InferenceError` (RED→GREEN).
 3. **Settings** — model + semantic fields, `protected_namespaces=()`, threshold validator (RED→GREEN).
 4. **schemas/assessment.py** — `AssessmentTask`, `SemanticAssessment` (RED→GREEN).
 5. **guard/matching.py** — extract `AhoCorasick` from `taint.py`; repoint `taint.py`; re-run SP2 taint tests (stay GREEN).
 6. **models/provider.py** — `ModelProvider` ABC (exercised via `StubProvider`).
-7. **models/guardformer.py** — pure helpers first (TDD with synthetic logprobs), then the gated `create_completion` glue.
+7. **models/openai_provider.py** — pure helpers first (TDD with synthetic API bodies), then the gated `chat.completions.create` glue.
 8. **models/loader.py** — `load_guard_provider`, fail-loud (missing path → `ModelLoadError`; real load gated).
 9. **Policy IR** — `injection_signatures` + `content_scan_sources` in schema/compiled/merge; `policies/injection_signatures.yaml` (RED→GREEN).
 10. **guard/screening.py** — `Screener` + pure helpers (RED→GREEN with `StubProvider`).
 11. **Enforcer** — `screener=None` ctor, call-adjudication in `evaluate`, `screen_result` (RED→GREEN; SP2 tests stay GREEN).
-12. **scripts/fetch_model.py** — huggingface-hub download (thin; arg-construction smoke test).
-13. **Verify** — full suite, coverage ≥ 85%, ruff, `mypy --strict`. Commit SP3 in logical commits.
+12. **Verify** — full suite, coverage ≥ 85%, ruff, `mypy --strict`. Commit SP3 in logical commits.
 
 ---
 
@@ -223,4 +220,4 @@ Only these three are added (each is actually raised; no speculative taxonomy).
 - `screen_result` blocks both a signatured and a high-`p_unsafe` page and the audit chain verifies.
 - `evaluate` escalates an uncertain call on high `p_unsafe` and **cannot** weaken any deterministic BLOCK.
 - Coverage ≥ 85%, ruff clean, `mypy --strict` clean.
-- `scripts/fetch_model.py` downloads the GGUF; the gated real-model test passes locally with weights present.
+- The gated real-model test passes locally with `OPENAI_API_KEY` set.
