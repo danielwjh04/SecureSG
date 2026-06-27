@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 300" width="1100" height="300" role="img" aria-label="Bastion - Secure what agents learn. Control what agents do.">
+  <defs>
+    <linearGradient id="grain" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#6E7BF2" stop-opacity="0"/>
+      <stop offset="1" stop-color="#6E7BF2" stop-opacity="0.28"/>
+    </linearGradient>
+  </defs>
+  <rect width="1100" height="300" fill="#F6F5F2"/>
+  <rect x="900" y="0" width="200" height="300" fill="url(#grain)"/>
+  <text x="550" y="168" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="132" font-weight="600" letter-spacing="3">
+    <tspan fill="#111111">B</tspan><tspan fill="#6E7BF2">A</tspan><tspan fill="#111111">ST</tspan><tspan fill="#6E7BF2">I</tspan><tspan fill="#111111">ON</tspan>
+  </text>
+  <text x="550" y="232" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif" font-size="37" fill="#4A4A4A">Secure what agents learn. Control what agents do.</text>
+</svg>

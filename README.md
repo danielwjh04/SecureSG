@@ -1,4 +1,19 @@
-# SecureSG
+<div align="center">
+
+  <img src="assets/bastion.svg" alt="Bastion" width="600" />
+
+  # SecureSG
+
+  [![demo](https://img.shields.io/badge/demo-live-22C55E?style=flat-square)](https://securesg-scanner.zuriel-shanley.workers.dev)
+  [![built with](https://img.shields.io/badge/built%20with-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+  [![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+  [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
+  [![OpenAI](https://img.shields.io/badge/OpenAI-API-412991?style=flat-square&logo=openai&logoColor=white)](https://platform.openai.com/)
+  [![Exa](https://img.shields.io/badge/Exa-Search-1E1E1E?style=flat-square)](https://exa.ai)
+
+</div>
+
+---
 
 **Verifiable security for AI agents.** SecureSG guards the two places an autonomous agent gets compromised: the skills it ingests (supply chain) and the tools it calls (runtime). Every decision comes with a cryptographic record you can re-check yourself. The idea in one line: don't trust the guard, verify it.
 
@@ -6,7 +21,7 @@
 
 ---
 
-## The problem
+## ⚠️ The problem
 
 AI assistants are capable but gullible. They read files, send emails, and run commands on your behalf, and they trust too easily. Two things go wrong:
 
@@ -17,7 +32,7 @@ SecureSG covers both, and makes each decision provable instead of asking you to 
 
 ---
 
-## Two surfaces, one proof
+## 🔗 Two surfaces, one proof
 
 | | Bastion (Skill Safety Scanner) | Runtime Guard |
 |---|---|---|
@@ -29,7 +44,7 @@ Both run the same thesis: a tamper-evident cryptographic chain that lets anyone 
 
 ---
 
-## Bastion, the Skill Safety Scanner
+## 🛡️ Bastion, the Skill Safety Scanner
 
 Bastion is the public Skill Safety Scanner. Paste a `SKILL.md` (or a link to one, including a GitHub repo) and it tells you whether it is safe to give to an agent, and proves its answer.
 
@@ -59,7 +74,7 @@ Deployed on Cloudflare (Workers plus static assets, free tier). One TypeScript s
 
 ---
 
-## Runtime Guard (defense in depth)
+## 🧱 Runtime Guard (defense in depth)
 
 Once an agent is running, the same verifiable-enforcement principle guards every action it takes. Tool calls do not go straight to the tools. They pass through SecureSG, a transparent proxy that runs each call through layered checks and forwards only the ones that survive:
 
@@ -72,7 +87,7 @@ Every decision (allow, block, or escalate to a human) is appended to a SHA-256 h
 
 ---
 
-## Models
+## 🧠 Models
 
 You can run SecureSG with a realtime hosted model or fully offline.
 
@@ -83,7 +98,7 @@ Either way the judge can only ever make a verdict stricter, never weaker.
 
 ---
 
-## Verifiable enforcement: the shared thesis
+## 🔐 Verifiable enforcement: the shared thesis
 
 Two rules hold across both surfaces:
 
@@ -94,7 +109,7 @@ Both produce the same artifact: a cryptographic chain you can re-verify. You do 
 
 ---
 
-## Tech stack
+## 🧰 Tech stack
 
 **Skill Safety Scanner:** TypeScript on Cloudflare Workers (Static Assets model), the Exa and OpenAI SDKs, Web Crypto (`crypto.subtle`) for the SHA-256 proof re-verified client-side, and a React 19 + Vite + TypeScript front end.
 
@@ -102,7 +117,7 @@ Both produce the same artifact: a cryptographic chain you can re-verify. You do 
 
 ---
 
-## Run the Guard demo
+## 🚀 Run the Guard demo
 
 You need Python 3.12 or newer. Node 20 or newer is only needed to build the dashboard.
 
@@ -146,3 +161,8 @@ SECURESG_MCP_BACKEND_URL=http://your-mcp-server/rpc python -m secureSG.main
 ```
 
 Other checks: `ruff check .`, `mypy secureSG tests scripts`, and `pytest` (the full gate, which holds 100% coverage).
+
+<div align="center">
+  <br />
+  <i>don't trust the guard, verify it.</i>
+</div>
