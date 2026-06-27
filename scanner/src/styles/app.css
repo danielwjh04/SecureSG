@@ -40,13 +40,18 @@ html {
 
 /* The hero background video is decorative, muted, and non-interactive. When the
    browser blocks autoplay (e.g. Safari Low Power Mode) it would paint a large
-   "tap to play" overlay over the hero. Suppress every native control so the
-   already-loaded first frame stays as a still backdrop rather than a
-   broken-looking play button. */
+   "tap to play" overlay over the hero until the first gesture starts playback
+   (see BackgroundVideo). Suppress every native control layer so the loaded first
+   frame stays as a still backdrop rather than a broken-looking play button. */
 .background-video::-webkit-media-controls,
+.background-video::-webkit-media-controls-enclosure,
+.background-video::-webkit-media-controls-overlay-enclosure,
+.background-video::-webkit-media-controls-panel,
 .background-video::-webkit-media-controls-start-playback-button,
 .background-video::-webkit-media-controls-overlay-play-button {
   display: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
   -webkit-appearance: none;
   appearance: none;
 }

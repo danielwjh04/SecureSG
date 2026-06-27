@@ -31,25 +31,47 @@ export function BackgroundVideo() {
     video.playsInline = true
     const play = (): void => {
       void video.play().catch(() => {
-        /* autoplay can still be refused; the poster frame remains, no overlay */
+        /* autoplay refused (e.g. Low Power Mode); a user gesture retries below */
       })
     }
 
-    // Native HLS (Safari / iOS): point the element straight at the stream.
+    // Some states block autoplay outright even for muted video — notably Safari
+    // Low Power Mode, where no muted autoplay is permitted. A user gesture lifts
+    // the block, so the first interaction anywhere on the page starts playback;
+    // once it is actually playing we stop listening. The video wrapper is
+    // pointer-events-none, so the gesture is captured on the window wherever it
+    // lands, and play() is retried on each gesture until one succeeds.
+    const interactionEvents = ['pointerdown', 'touchstart', 'keydown'] as const
+    const stopInteractionRetry = (): void => {
+      for (const event of interactionEvents) {
+        window.removeEventListener(event, play)
+      }
+    }
+    for (const event of interactionEvents) {
+      window.addEventListener(event, play, { passive: true })
+    }
+    video.addEventListener('playing', stopInteractionRetry, { once: true })
+
+    // Attach the stream and kick off the initial autoplay attempt: native HLS on
+    // Safari / iOS, hls.js everywhere else.
+    let detachStream: () => void = () => {}
     if (video.canPlayType('application/vnd.apple.mpegurl') !== '') {
       video.src = BACKGROUND_VIDEO_SRC
       video.addEventListener('loadedmetadata', play, { once: true })
       play()
-      return () => video.removeEventListener('loadedmetadata', play)
-    }
-
-    // Everywhere else: attach via hls.js and play once the manifest is parsed.
-    if (Hls.isSupported()) {
+      detachStream = () => video.removeEventListener('loadedmetadata', play)
+    } else if (Hls.isSupported()) {
       const hls = new Hls()
       hls.loadSource(BACKGROUND_VIDEO_SRC)
       hls.attachMedia(video)
       hls.on(Hls.Events.MANIFEST_PARSED, play)
-      return () => hls.destroy()
+      detachStream = () => hls.destroy()
+    }
+
+    return () => {
+      stopInteractionRetry()
+      video.removeEventListener('playing', stopInteractionRetry)
+      detachStream()
     }
   }, [])
 
