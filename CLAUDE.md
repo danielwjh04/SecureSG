@@ -20,6 +20,39 @@ This is the official github repo: https://github.com/danielwjh04/SecureSG.git
 
 ---
 
+## Hackathon Context & Build Targets
+
+SecureSG is a **build2026 / PetaniAI** hackathon submission. Weigh every feature decision against the rubric below — ship demonstrable value, not infrastructure for its own sake. The engineering rules in the rest of this file still hold; this section sets *what to build toward*.
+
+### Challenge fit
+- **Primary — #3 Security, Resilience & Defense:** SecureSG hardens organizations and individuals against the new attack surface of autonomous AI agents (prompt injection, secret exfiltration, unsafe tool use).
+- **Secondary — #4 AI-Native Organizations:** it is the safety layer that lets a business adopt agent-driven operations without losing control.
+
+### Judging criteria → how to win each
+| Criterion | Weight | What to optimize |
+|---|---|---|
+| Proof of Work — Functionality | 25% | A real, live build. The agent-hook demo must block a *real* agent on stage with the dashboard reacting live. No mocked demos. |
+| Problem fit & Market Value | 25% | Real user = any dev or org running coding/agent tools. Lead with the concrete threat and who pays to stop it. |
+| Design, Craft & Taste | 20% | The dashboard is the product's face. Intuitive, purposeful, tasteful — every panel earns its place. |
+| Innovation & Sponsor Tech | 30% | **Highest weight.** A sponsor tool (OpenAI/Codex, Exa, Cursor, Zo) must be *central and inventive*, not bolted on. The core idea must read as genuinely fresh. |
+
+### Strategic priority — the 30% lever
+The single biggest scoring lever is **sponsor-tech centrality (30%)**. SecureSG currently centers on Claude Code + Ollama — **neither is a listed sponsor.** Closing this gap is the top non-engineering priority. Make one sponsor tool load-bearing in the demo, e.g.:
+- **OpenAI / Codex** — guard a Codex agent via its PreToolUse hooks (same mechanism as the existing Claude Code integration). Most natural fit; closes the sponsor gap directly.
+- **Exa** — power *dynamic* URL/content reputation in the Warden, replacing the static blocklist with live search-based risk discovery.
+- **Cursor / Zo** — protect the agent operating inside those environments.
+
+Do not bolt a sponsor on as an afterthought. Pick one and make the demo *depend* on it.
+
+### Submission checklist (all required)
+1. Pitch deck link
+2. Public repo link (https://github.com/danielwjh04/SecureSG.git)
+3. Demo video link
+4. Live website URL
+5. Social post (X / Instagram / LinkedIn) tagging **#supcareer #build2026 #hackathon #PetaniAI**
+
+---
+
 ## 0. Think Before Coding
 
 Do not assume. Do not hide confusion. Surface tradeoffs.
