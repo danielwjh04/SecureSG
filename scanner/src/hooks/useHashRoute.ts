@@ -8,10 +8,25 @@
 import { useEffect, useState } from 'react'
 
 export type Route = 'scanner' | 'enterprise'
+export type RouteTarget = 'top' | 'how'
+
+export interface HashRoute {
+  route: Route
+  target: RouteTarget
+}
+
+const ENTERPRISE_HASH = '#enterprise'
+const HOW_HASH = '#how'
 
 /** Map the current location hash to a known route. */
-function routeFromHash(): Route {
-  return window.location.hash === '#enterprise' ? 'enterprise' : 'scanner'
+function routeFromHash(): HashRoute {
+  if (window.location.hash === ENTERPRISE_HASH) {
+    return { route: 'enterprise', target: 'top' }
+  }
+  if (window.location.hash === HOW_HASH) {
+    return { route: 'scanner', target: 'how' }
+  }
+  return { route: 'scanner', target: 'top' }
 }
 
 /**
@@ -20,12 +35,17 @@ function routeFromHash(): Route {
  *
  * Time complexity: O(1) per change. Space complexity: O(1).
  */
-export function useHashRoute(): Route {
-  const [route, setRoute] = useState<Route>(routeFromHash)
+export function useHashRoute(): HashRoute {
+  const [route, setRoute] = useState<HashRoute>(routeFromHash)
   useEffect(() => {
     const onChange = (): void => setRoute(routeFromHash())
+    const previousScrollRestoration = window.history.scrollRestoration
+    window.history.scrollRestoration = 'manual'
     window.addEventListener('hashchange', onChange)
-    return () => window.removeEventListener('hashchange', onChange)
+    return () => {
+      window.history.scrollRestoration = previousScrollRestoration
+      window.removeEventListener('hashchange', onChange)
+    }
   }, [])
   return route
 }

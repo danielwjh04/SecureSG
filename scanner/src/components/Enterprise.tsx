@@ -3,9 +3,9 @@
  * their agent pipeline so every skill or tool a coding agent is about to learn
  * or call is scanned and must return ALLOW (fail-closed) before it runs.
  *
- * It renders inside a scrollable dark page whose parent supplies the black
- * background, the fixed background video, and the navbar — so this component
- * sets no page background and owns only a centered max-width column.
+ * It renders inside the shared scanner shell. The parent supplies the fixed
+ * background video and navbar; this component owns the Enterprise top hero over
+ * that video and a solid lower content band below it.
  *
  * The KPI row uses REAL data: it fetches the committed public gallery and
  * derives honest counts (skills scanned, threats caught, proof links sealed)
@@ -207,6 +207,44 @@ const RISE = {
   transition: { duration: 0.6, ease: [0.16, 1, 0.3, 1] as const },
 }
 
+const HERO_BADGES = [
+  { Icon: ScanLine, label: 'PreToolUse gate' },
+  { Icon: Radar, label: 'Live reputation · Exa' },
+  { Icon: ShieldCheck, label: 'Fail-closed allowlist' },
+  { Icon: FileCheck, label: 'SHA-256 proof' },
+] as const
+
+/**
+ * Reveal a headline word by word so the Enterprise landing matches the scanner
+ * hero's paced entrance without introducing a separate animation dependency.
+ *
+ * Time complexity: O(w) over headline words. Space complexity: O(w).
+ */
+function WordRevealTitle({ text }: { text: string }) {
+  return (
+    <h1
+      style={{ fontFamily: "'Instrument Serif', serif" }}
+      className="max-w-4xl text-5xl md:text-[68px] font-medium tracking-normal leading-[1.05] text-white drop-shadow-[0_2px_20px_rgba(0,0,0,0.5)]"
+    >
+      {text.split(' ').map((word, index) => (
+        <motion.span
+          key={`${word}-${index}`}
+          initial={{ opacity: 0, y: 18, filter: 'blur(8px)' }}
+          animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+          transition={{
+            duration: 0.7,
+            delay: 0.12 + index * 0.08,
+            ease: [0.16, 1, 0.3, 1],
+          }}
+          className="inline-block pr-[0.22em]"
+        >
+          {word}
+        </motion.span>
+      ))}
+    </h1>
+  )
+}
+
 export function Enterprise() {
   const [stats, setStats] = useState<GalleryStats | null>(null)
   const [activeTab, setActiveTab] = useState<string>('curl')
@@ -263,26 +301,55 @@ export function Enterprise() {
   )
 
   return (
-    <div className="relative z-10 max-w-5xl mx-auto px-6 py-12 flex flex-col gap-20">
+    <>
       {/* 1 · Intro --------------------------------------------------------- */}
-      <motion.section {...RISE} className="flex flex-col items-center text-center gap-6">
-        <p className="flex items-center gap-2 text-white/70 text-[10px] md:text-[11px] font-medium tracking-[0.22em] uppercase font-mono">
-          <span className="w-1.5 h-1.5 rounded-full bg-allow live-dot" />
-          Bastion for teams
-        </p>
-        <h1
-          style={{ fontFamily: "'Instrument Serif', serif" }}
-          className="text-4xl md:text-[56px] font-medium tracking-[-0.01em] leading-[1.08] bg-gradient-to-b from-white via-white to-white/85 bg-clip-text text-transparent"
-        >
-          Verify before your agents act.
-        </h1>
-        <p className="text-white/70 text-sm md:text-[15px] leading-relaxed max-w-2xl">
-          Wire Bastion into your agent pipeline so every skill or tool a coding
-          agent is about to learn or call is scanned first. Each request must
-          come back <span className="text-allow font-medium">ALLOW</span>. It is
-          fail-closed, so anything we cannot judge is blocked before it runs.
-        </p>
-      </motion.section>
+      <section
+        id="enterprise-top"
+        className="relative z-10 min-h-[90svh] flex flex-col items-center justify-center px-6 pt-4 pb-16"
+      >
+        <div className="text-center max-w-4xl mx-auto flex flex-col items-center justify-center w-full gap-7">
+          <motion.p
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="flex items-center gap-2 text-white/70 text-[10px] md:text-[11px] font-medium tracking-[0.22em] uppercase font-mono"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-allow live-dot" />
+            Bastion for teams
+          </motion.p>
+          <WordRevealTitle text="Verify before your agents act." />
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.55 }}
+            className="text-white/75 text-[15px] md:text-base leading-relaxed max-w-2xl"
+          >
+            Wire Bastion into your agent pipeline so every skill or tool a coding
+            agent is about to learn or call is scanned first. Each request must
+            come back <span className="text-allow font-medium">ALLOW</span>. It is
+            fail-closed, so anything we cannot judge is blocked before it runs.
+          </motion.p>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.85 }}
+            className="flex flex-wrap items-center justify-center gap-2"
+          >
+            {HERO_BADGES.map(({ Icon, label }) => (
+              <span
+                key={label}
+                className="glass-pill flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium text-white/60"
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {label}
+              </span>
+            ))}
+          </motion.div>
+        </div>
+      </section>
+
+      <div className="relative z-10 bg-black">
+        <div className="max-w-5xl mx-auto px-6 py-20 flex flex-col gap-20">
 
       {/* 2 · KPI dashboard ------------------------------------------------- */}
       <motion.section {...RISE} className="flex flex-col gap-4">
@@ -452,7 +519,9 @@ export function Enterprise() {
           Read the source
         </a>
       </motion.section>
-    </div>
+        </div>
+      </div>
+    </>
   )
 }
 

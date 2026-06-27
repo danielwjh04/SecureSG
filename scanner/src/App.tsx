@@ -10,7 +10,7 @@
  * landing.
  */
 
-import type { ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { motion } from 'motion/react'
 import { ArrowLeft, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { BackgroundVideo } from './components/BackgroundVideo'
@@ -120,20 +120,38 @@ function ErrorSurface({
 }
 
 function App(): ReactNode {
-  const route = useHashRoute()
+  const { route, target } = useHashRoute()
   const controller = useScan()
   const { state } = controller
+  const previousRouteRef = useRef(route)
+
+  useEffect(() => {
+    const sameRoute = previousRouteRef.current === route
+    previousRouteRef.current = route
+    const frame = window.requestAnimationFrame(() => {
+      if (target === 'how') {
+        // Jump straight to the section. A smooth scroll here can stall before it
+        // arrives — interrupted by a route remount, or simply giving up on the
+        // landing — and strand the page with the hero video still showing above
+        // the section. Landing instantly puts it flush under the navbar (the
+        // `:target` scroll-margin clears the navbar) with no gap.
+        document
+          .getElementById('how')
+          ?.scrollIntoView({ block: 'start', behavior: 'instant' })
+        return
+      }
+      window.scrollTo({ top: 0, left: 0, behavior: sameRoute ? 'auto' : 'instant' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [route, target])
 
   // Enterprise surface.
   if (route === 'enterprise') {
     return (
       <main id="top" className={SHELL}>
         <BackgroundVideo />
-        <div className="fixed inset-0 bg-black/85" aria-hidden="true" />
         <Navbar onHome={controller.reset} />
-        <div className="relative z-10 flex-1">
-          <Enterprise />
-        </div>
+        <Enterprise />
         <Footer />
       </main>
     )
