@@ -19,7 +19,7 @@ SecureSG covers both, and makes each decision provable instead of asking you to 
 
 ## Two surfaces, one proof
 
-| | Skill Safety Scanner | Runtime Guard |
+| | Bastion (Skill Safety Scanner) | Runtime Guard |
 |---|---|---|
 | Boundary | Supply chain, before an agent learns a skill | Runtime, every tool call an agent makes |
 | Form | Public website (paste a skill, get a verdict) | Transparent proxy between agent and tools |
@@ -29,9 +29,9 @@ Both run the same thesis: a tamper-evident cryptographic chain that lets anyone 
 
 ---
 
-## Skill Safety Scanner
+## Bastion, the Skill Safety Scanner
 
-Paste a `SKILL.md` (or a link to one, including a GitHub repo) and the scanner tells you whether it is safe to give to an agent, and proves its answer.
+Bastion is the public Skill Safety Scanner. Paste a `SKILL.md` (or a link to one, including a GitHub repo) and it tells you whether it is safe to give to an agent, and proves its answer.
 
 What it does, step by step:
 1. **Parses** the skill and pulls out every link.
@@ -77,7 +77,7 @@ Every decision (allow, block, or escalate to a human) is appended to a SHA-256 h
 You can run SecureSG with a realtime hosted model or fully offline.
 
 - **Realtime, hosted (default for the Scanner):** the Skill Safety Scanner judges every skill with OpenAI's live API. No GPU and no local setup, just an `OPENAI_API_KEY`. The model id is config, so you can point it at a newer OpenAI model without touching code.
-- **Offline, local (optional for the Guard):** the Runtime Guard runs on deterministic rules out of the box, and can add a local model second opinion through llama-cpp or Ollama when you want everything to stay on your machine.
+- **Offline-capable (the Guard):** the Runtime Guard runs on deterministic rules, taint tracking, and the audit chain with no model at all, so it works fully offline. Set an `OPENAI_API_KEY` and it adds an OpenAI semantic second opinion, and its intent-drift checks can run an in-process embedding model when you want that part to stay on your machine.
 
 Either way the judge can only ever make a verdict stricter, never weaker.
 
