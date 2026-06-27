@@ -39,8 +39,9 @@ import type {
 import { ProofBuilder } from '../../shared/proof'
 import { deriveGenesisHash } from '../../shared/hash'
 import type { ScannerConfig } from '../config'
-import { ParseError } from '../errors'
+import { ParseError, SourceResolutionError } from '../errors'
 import { parseSkill } from './parser'
+import { parseGithubWebUrl, resolveGithubSkillUrl } from './github'
 import { traceRedirects } from './redirect'
 import { assertSafeUrl } from './ssrf'
 import { evaluateRules } from '../verdict/rules'
@@ -95,12 +96,21 @@ async function sha256Hex(text: string): Promise<string> {
  * `sourceUrl` cannot be used to pivot at the internal network the same way a
  * redirect hop cannot.
  *
- * Time complexity: O(n) in the fetched body length. Space complexity: O(n).
+ * A GitHub *web* URL (repo root, tree, or blob) is first resolved to the raw
+ * `SKILL.md` it points at — fetching the web page itself would scan GitHub's
+ * ~350 KB HTML chrome, not the manifest. Non-GitHub URLs are fetched unchanged.
+ * The resolved URL is re-checked by the SSRF guard before it is fetched.
+ *
+ * Time complexity: O(n) in the fetched body length (plus a bounded, constant
+ *   number of GitHub discovery calls). Space complexity: O(n).
  *
  * @returns The skill text and the source descriptor for the result.
  * @throws {ParseError} If neither `content` nor `sourceUrl` is provided, or the
  *   source URL is malformed.
- * @throws {RedirectResolutionError} If the source URL trips the SSRF guard.
+ * @throws {RedirectResolutionError} If the source (or resolved) URL trips the
+ *   SSRF guard.
+ * @throws {SourceResolutionError} If a GitHub URL resolves to no `SKILL.md`, or
+ *   the fetched source returns a non-OK HTTP status.
  */
 async function resolveSkillText(
   request: ScanRequest,
@@ -129,11 +139,31 @@ async function resolveSkillText(
   const schemes = new Set(config.allowedSchemes)
   assertSafeUrl(parsed, { allowedSchemes: schemes })
 
-  const response = await fetchImpl(parsed.href, {
+  // A GitHub web URL (repo / tree / blob) is resolved to the raw SKILL.md the
+  // agent would actually learn; a non-GitHub URL (null target) is fetched as-is.
+  // The resolved raw URL passes back through the SSRF guard before any fetch.
+  const githubTarget = parseGithubWebUrl(parsed)
+  let fetchUrl = parsed
+  if (githubTarget !== null) {
+    const rawUrl = await resolveGithubSkillUrl(
+      githubTarget,
+      fetchImpl,
+      config.redirectTimeoutMs,
+    )
+    fetchUrl = new URL(rawUrl)
+    assertSafeUrl(fetchUrl, { allowedSchemes: schemes })
+  }
+
+  const response = await fetchImpl(fetchUrl.href, {
     signal: AbortSignal.timeout(config.redirectTimeoutMs),
   })
+  if (!response.ok) {
+    throw new SourceResolutionError(
+      `source URL returned HTTP ${response.status}: ${fetchUrl.href}`,
+    )
+  }
   const text = await response.text()
-  return { text, source: { kind: 'url', ref: parsed.href } }
+  return { text, source: { kind: 'url', ref: fetchUrl.href } }
 }
 
 /**

@@ -270,3 +270,58 @@ describe('runScan — idempotency: same input + same scannedAt → same head has
     })
   })
 })
+
+describe('runScan — a GitHub repo sourceUrl resolves to the raw SKILL.md', () => {
+  // The exact scenario a user hits pasting `github.com/owner/repo`: the worker
+  // must discover the repo's SKILL.md (here at a nested path) and scan THAT, not
+  // the ~350 KB HTML repo page. The skill body links to one safe URL, so the
+  // key-free deterministic core returns ALLOW with the raw URL as the source.
+  const API = 'https://api.github.com/repos/netresearch/context7-skill'
+  const TREE = `${API}/git/trees/main?recursive=1`
+  const RAW =
+    'https://raw.githubusercontent.com/netresearch/context7-skill/main/' +
+    'skills/context7/SKILL.md'
+  const DOCS = 'https://docs.example/context7'
+  const SKILL_BODY = `# Context7\n\nSee [docs](${DOCS}) for usage.\n`
+
+  function githubFetch(): typeof fetch {
+    const impl = async (input: RequestInfo | URL): Promise<Response> => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url === API) {
+        return new Response(JSON.stringify({ default_branch: 'main' }), {
+          status: 200,
+        })
+      }
+      if (url === TREE) {
+        return new Response(
+          JSON.stringify({
+            tree: [{ path: 'skills/context7/SKILL.md', type: 'blob' }],
+          }),
+          { status: 200 },
+        )
+      }
+      if (url === RAW) {
+        return new Response(SKILL_BODY, { status: 200 })
+      }
+      if (url === DOCS) {
+        return new Response(null, { status: 200 })
+      }
+      throw new Error(`unexpected fetch for ${url}`)
+    }
+    return impl as unknown as typeof fetch
+  }
+
+  it('scans the resolved SKILL.md and reports the raw URL as the source', async () => {
+    const result = await runScan(
+      { sourceUrl: 'https://github.com/netresearch/context7-skill' },
+      baseDeps(githubFetch()),
+    )
+
+    expect(result.source).toEqual({ kind: 'url', ref: RAW })
+    expect(result.verdict).toBe('ALLOW')
+    expect(result.chains).toHaveLength(1)
+    expect(result.chains[0]?.origin).toBe(DOCS)
+    const verification = await verifyChain(result.proof)
+    expect(verification.ok).toBe(true)
+  })
+})

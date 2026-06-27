@@ -34,6 +34,15 @@ export class ProofError extends ScannerError {}
 /** SKILL.md / source content could not be parsed. */
 export class ParseError extends ScannerError {}
 
+/**
+ * A source URL could not be resolved to a fetchable skill manifest — e.g. a
+ * GitHub repository that contains no `SKILL.md`, or the GitHub API was
+ * unreachable while locating one. Distinct from `ParseError` (the content was
+ * fetched but is unscannable) so an operator can tell "could not find a skill to
+ * fetch" from "fetched a document with nothing to scan".
+ */
+export class SourceResolutionError extends ScannerError {}
+
 /** A redirect cascade could not be resolved (network, timeout, SSRF guard). */
 export class RedirectResolutionError extends ScannerError {}
 

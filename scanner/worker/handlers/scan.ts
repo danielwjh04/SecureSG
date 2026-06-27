@@ -23,6 +23,7 @@ import {
   RedirectResolutionError,
   ReputationError,
   ScannerError,
+  SourceResolutionError,
 } from '../errors'
 import { runScan } from '../scan/runScan'
 import { ExaReputationClient } from '../scan/exa'
@@ -101,7 +102,8 @@ async function parseScanBody(request: Request): Promise<ScanRequest> {
 
 /**
  * Map a thrown error to its HTTP status. The error class is the contract:
- *   - ParseError                     → 422 (the client sent unscannable input)
+ *   - ParseError / SourceResolutionError → 422 (the client sent input we cannot
+ *                                          turn into a scannable skill)
  *   - ConfigError                    → 500 (server misconfiguration)
  *   - ReputationError / RedirectResolutionError → 502 (an upstream dependency)
  *   - any other ScannerError         → 400 (a domain-level client fault)
@@ -110,7 +112,7 @@ async function parseScanBody(request: Request): Promise<ScanRequest> {
  * Time complexity: O(1). Space complexity: O(1).
  */
 function statusForError(error: unknown): number {
-  if (error instanceof ParseError) {
+  if (error instanceof ParseError || error instanceof SourceResolutionError) {
     return STATUS_UNPROCESSABLE
   }
   if (error instanceof ConfigError) {
