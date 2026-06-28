@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { AdminDeps, AdminMembersPage, AdminOverview } from './admin'
+import type { AdminDeps, AdminMembersPage, AdminOverview, AdminThreatsPage } from './admin'
 import { memoryDatabase } from '../db/memory.test'
 import { createFreeUser, setUserTier, sha256Hex } from '../db/accounts'
 import { setUserRole } from '../db/admin'
@@ -14,6 +14,7 @@ import {
   handleAdminMemberRole,
   handleAdminMembers,
   handleAdminOverview,
+  handleAdminThreats,
 } from './admin'
 
 const ADMIN_EMAIL = 'owner@example.com'
@@ -41,6 +42,10 @@ function bearer(apiKey: string): Record<string, string> {
 
 function membersReq(headers: Record<string, string> = {}, query = ''): Request {
   return new Request(`https://secureai.test/api/admin/members${query}`, { headers })
+}
+
+function threatsReq(headers: Record<string, string> = {}, query = ''): Request {
+  return new Request(`https://secureai.test/api/admin/threats${query}`, { headers })
 }
 
 function roleReq(headers: Record<string, string>, body: unknown): Request {
@@ -213,6 +218,140 @@ describe('handleAdminMembers', () => {
     const body = (await res.json()) as AdminMembersPage
     expect(body.members).toHaveLength(1)
     expect(body.total).toBe(3)
+  })
+
+  it('filters by q (case-insensitive email substring), with total reflecting the filter', async () => {
+    const { db } = memoryDatabase()
+    const ownerKey = await adminBearer(db) // owner@example.com
+    await createFreeUser(db, 'alice@acme.com')
+    await createFreeUser(db, 'bob@other.com')
+    const res = await handleAdminMembers(membersReq(bearer(ownerKey), '?q=ACME'), deps(db))
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as AdminMembersPage
+    expect(body.members.map((m) => m.email)).toEqual(['alice@acme.com'])
+    expect(body.total).toBe(1)
+  })
+
+  it('treats an absent q as the full directory (current behavior)', async () => {
+    const { db } = memoryDatabase()
+    const ownerKey = await adminBearer(db)
+    await createFreeUser(db, 'alice@acme.com')
+    const res = await handleAdminMembers(membersReq(bearer(ownerKey)), deps(db))
+    const body = (await res.json()) as AdminMembersPage
+    expect(body.total).toBe(2)
+  })
+})
+
+describe('handleAdminThreats', () => {
+  /** Insert one scan-history row keyed by `userId`. */
+  async function seedScan(
+    db: NonNullable<AdminDeps['db']>,
+    args: { id: string; userId: string; verdict: string; sourceRef?: string; scannedAt: string },
+  ): Promise<void> {
+    await insertScan(db, {
+      id: args.id,
+      userId: args.userId,
+      verdict: args.verdict,
+      sourceKind: 'url',
+      sourceRef: args.sourceRef ?? 'https://x.test',
+      flagged: 2,
+      headHash: `head-${args.id}`,
+      scannedAt: args.scannedAt,
+    })
+  }
+
+  it('returns only BLOCK rows newest-first with the owner email for an owner', async () => {
+    const { db } = memoryDatabase()
+    const ownerKey = await adminBearer(db)
+    const { user: u } = await createFreeUser(db, 'victim@acme.com')
+    await seedScan(db, { id: 's1', userId: u.id, verdict: 'ALLOW', scannedAt: '2026-06-10T01:00:00.000Z' })
+    await seedScan(db, { id: 's2', userId: u.id, verdict: 'BLOCK', scannedAt: '2026-06-10T02:00:00.000Z' })
+    await seedScan(db, { id: 's3', userId: u.id, verdict: 'BLOCK', scannedAt: '2026-06-10T03:00:00.000Z' })
+
+    const res = await handleAdminThreats(threatsReq(bearer(ownerKey)), deps(db))
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as AdminThreatsPage
+    expect(body.threats.map((t) => t.id)).toEqual(['s3', 's2'])
+    expect(body.threats.every((t) => t.verdict === 'BLOCK')).toBe(true)
+    expect(body.threats[0]?.email).toBe('victim@acme.com')
+    expect(body.threats[0]?.source).toEqual({ kind: 'url', ref: 'https://x.test' })
+    expect(body.total).toBe(2)
+  })
+
+  it('lets a granted admin view the report too (200)', async () => {
+    const { db } = memoryDatabase()
+    await adminBearer(db)
+    const { user, apiKey } = await createFreeUser(db, 'admin-threats@example.com')
+    await setUserRole(db, user.id, 'admin')
+    const res = await handleAdminThreats(threatsReq(bearer(apiKey)), deps(db))
+    expect(res.status).toBe(200)
+  })
+
+  it('filters by q on source ref OR owner email', async () => {
+    const { db } = memoryDatabase()
+    const ownerKey = await adminBearer(db)
+    const { user: alice } = await createFreeUser(db, 'alice@acme.com')
+    const { user: bob } = await createFreeUser(db, 'bob@other.com')
+    await seedScan(db, { id: 'a1', userId: alice.id, verdict: 'BLOCK', sourceRef: 'https://evil.test', scannedAt: '2026-06-10T01:00:00.000Z' })
+    await seedScan(db, { id: 'b1', userId: bob.id, verdict: 'BLOCK', sourceRef: 'https://safe.test', scannedAt: '2026-06-10T02:00:00.000Z' })
+
+    const bySource = await handleAdminThreats(threatsReq(bearer(ownerKey), '?q=evil'), deps(db))
+    expect(((await bySource.json()) as AdminThreatsPage).threats.map((t) => t.id)).toEqual(['a1'])
+
+    const byEmail = await handleAdminThreats(threatsReq(bearer(ownerKey), '?q=bob@'), deps(db))
+    const byEmailBody = (await byEmail.json()) as AdminThreatsPage
+    expect(byEmailBody.threats.map((t) => t.id)).toEqual(['b1'])
+    expect(byEmailBody.total).toBe(1)
+  })
+
+  it('honors limit + offset over the newest-first order', async () => {
+    const { db } = memoryDatabase()
+    const ownerKey = await adminBearer(db)
+    const { user: u } = await createFreeUser(db, 'busy@acme.com')
+    await seedScan(db, { id: 'x1', userId: u.id, verdict: 'BLOCK', scannedAt: '2026-06-10T01:00:00.000Z' })
+    await seedScan(db, { id: 'x2', userId: u.id, verdict: 'BLOCK', scannedAt: '2026-06-10T02:00:00.000Z' })
+    await seedScan(db, { id: 'x3', userId: u.id, verdict: 'BLOCK', scannedAt: '2026-06-10T03:00:00.000Z' })
+
+    const res = await handleAdminThreats(threatsReq(bearer(ownerKey), '?limit=1&offset=1'), deps(db))
+    const body = (await res.json()) as AdminThreatsPage
+    expect(body.threats.map((t) => t.id)).toEqual(['x2'])
+    expect(body.total).toBe(3)
+  })
+
+  it('returns an empty report when there are no blocked scans', async () => {
+    const { db } = memoryDatabase()
+    const ownerKey = await adminBearer(db)
+    const { user: u } = await createFreeUser(db, 'clean@acme.com')
+    await seedScan(db, { id: 'ok1', userId: u.id, verdict: 'ALLOW', scannedAt: '2026-06-10T01:00:00.000Z' })
+    const res = await handleAdminThreats(threatsReq(bearer(ownerKey)), deps(db))
+    const body = (await res.json()) as AdminThreatsPage
+    expect(body).toEqual({ threats: [], total: 0 })
+  })
+
+  it('forbids a plain member (403)', async () => {
+    const { db } = memoryDatabase()
+    await adminBearer(db)
+    const { apiKey } = await createFreeUser(db, 'plain-threats@example.com')
+    const res = await handleAdminThreats(threatsReq(bearer(apiKey)), deps(db))
+    expect(res.status).toBe(403)
+  })
+
+  it('returns 401 for an anonymous caller', async () => {
+    const { db } = memoryDatabase()
+    const res = await handleAdminThreats(threatsReq(), deps(db))
+    expect(res.status).toBe(401)
+  })
+
+  it('returns 503 when the account store is absent', async () => {
+    const res = await handleAdminThreats(threatsReq(), deps(null))
+    expect(res.status).toBe(503)
+  })
+
+  it('rejects a malformed limit with 422', async () => {
+    const { db } = memoryDatabase()
+    const ownerKey = await adminBearer(db)
+    const res = await handleAdminThreats(threatsReq(bearer(ownerKey), '?limit=abc'), deps(db))
+    expect(res.status).toBe(422)
   })
 })
 

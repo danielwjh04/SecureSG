@@ -1,7 +1,13 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AdminDashboard } from './AdminDashboard'
-import type { AdminMember, AdminMembersPage, AdminOverview } from '../api/types'
+import type {
+  AdminMember,
+  AdminMembersPage,
+  AdminOverview,
+  AdminThreat,
+  AdminThreatsPage,
+} from '../api/types'
 import * as client from '../api/client'
 
 function overview(partial: Partial<AdminOverview> = {}): AdminOverview {
@@ -43,10 +49,34 @@ function membersPage(members: AdminMember[]): AdminMembersPage {
   return { members, total: members.length }
 }
 
+function threat(partial: Partial<AdminThreat> = {}): AdminThreat {
+  return {
+    id: 't-1',
+    email: 'victim@securesg.test',
+    verdict: 'BLOCK',
+    source: { kind: 'url', ref: 'https://evil.example/payload' },
+    flagged: 3,
+    headHash: 'h-1',
+    scannedAt: '2026-06-28T07:00:00.000Z',
+    ...partial,
+  }
+}
+
+function threatsPage(threats: AdminThreat[], total?: number): AdminThreatsPage {
+  return { threats, total: total ?? threats.length }
+}
+
 /** Mock the overview so every test exercises the members section in isolation. */
 function stubOverview(): void {
   vi.spyOn(client, 'fetchAdminOverview').mockResolvedValue(overview())
 }
+
+// The Threats section fetches on mount in every render. Default it to empty so
+// tests focused on the overview/members never hit a real network call; tests
+// that exercise the report override this with their own mock.
+beforeEach(() => {
+  vi.spyOn(client, 'fetchThreats').mockResolvedValue(threatsPage([]))
+})
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -252,5 +282,155 @@ describe('AdminDashboard · remove member', () => {
     expect(removeSpy).not.toHaveBeenCalled()
     // Only the initial load — no refetch, since nothing changed.
     expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('AdminDashboard · member search', () => {
+  it('renders the search input and loads the first page with an empty query', async () => {
+    stubOverview()
+    const fetchSpy = vi
+      .spyOn(client, 'fetchMembers')
+      .mockResolvedValue(membersPage([member({ id: 'u1', email: 'a@securesg.test' })]))
+
+    render(<AdminDashboard />)
+
+    expect(screen.getByPlaceholderText('Search members by email')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('a@securesg.test')).toBeInTheDocument())
+    // The initial load runs with no query (the first unfiltered page).
+    expect(fetchSpy).toHaveBeenCalledWith('')
+  })
+
+  it('refetches with the typed query after the debounce settles', async () => {
+    stubOverview()
+    const fetchSpy = vi
+      .spyOn(client, 'fetchMembers')
+      .mockImplementation(async (q?: string) =>
+        q === 'alice'
+          ? membersPage([member({ id: 'u1', email: 'alice@securesg.test' })])
+          : membersPage([
+              member({ id: 'u1', email: 'alice@securesg.test' }),
+              member({ id: 'u2', email: 'bob@securesg.test' }),
+            ]),
+      )
+
+    render(<AdminDashboard />)
+    await waitFor(() => expect(screen.getByText('bob@securesg.test')).toBeInTheDocument())
+
+    fireEvent.change(screen.getByPlaceholderText('Search members by email'), {
+      target: { value: 'alice' },
+    })
+
+    // After the debounce, the client is called with the trimmed query and the
+    // filtered list (plus its count) replaces the full one.
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledWith('alice'))
+    await waitFor(() => expect(screen.queryByText('bob@securesg.test')).toBeNull())
+    expect(screen.getByText('alice@securesg.test')).toBeInTheDocument()
+  })
+
+  it('shows a no-match line when a search returns nothing', async () => {
+    stubOverview()
+    vi.spyOn(client, 'fetchMembers').mockImplementation(async (q?: string) =>
+      q === 'zzz' ? membersPage([]) : membersPage([member({ id: 'u1', email: 'a@securesg.test' })]),
+    )
+
+    render(<AdminDashboard />)
+    await waitFor(() => expect(screen.getByText('a@securesg.test')).toBeInTheDocument())
+
+    fireEvent.change(screen.getByPlaceholderText('Search members by email'), {
+      target: { value: 'zzz' },
+    })
+
+    await waitFor(() =>
+      expect(screen.getByText('No members match your search.')).toBeInTheDocument(),
+    )
+  })
+})
+
+describe('AdminDashboard · blocked threats', () => {
+  it('renders the threats table with a BLOCK pill per row', async () => {
+    stubOverview()
+    vi.spyOn(client, 'fetchMembers').mockResolvedValue(membersPage([]))
+    vi.spyOn(client, 'fetchThreats').mockResolvedValue(
+      threatsPage([
+        threat({
+          id: 't1',
+          headHash: 'h1',
+          email: 'victim@securesg.test',
+          source: { kind: 'url', ref: 'https://evil.example/payload' },
+          flagged: 4,
+        }),
+        threat({
+          id: 't2',
+          headHash: 'h2',
+          email: 'paster@securesg.test',
+          source: { kind: 'paste', ref: 'skill-abc' },
+          flagged: 1,
+        }),
+      ]),
+    )
+
+    render(<AdminDashboard />)
+
+    expect(
+      screen.getByPlaceholderText('Search blocked threats by URL or member'),
+    ).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText('victim@securesg.test')).toBeInTheDocument())
+    // The section heading (count-suffixed, distinct from the overview tile) and
+    // member emails render.
+    expect(screen.getByText('Threats blocked · 2')).toBeInTheDocument()
+    expect(screen.getByText('paster@securesg.test')).toBeInTheDocument()
+    // The URL source is shown scheme-stripped; the paste source reads "Pasted skill".
+    expect(screen.getByText('evil.example/payload')).toBeInTheDocument()
+    expect(screen.getByText('Pasted skill')).toBeInTheDocument()
+    // Every row carries a red BLOCK pill (one per threat).
+    expect(screen.getAllByText('BLOCK')).toHaveLength(2)
+  })
+
+  it('shows the empty state when there are no blocked threats', async () => {
+    stubOverview()
+    vi.spyOn(client, 'fetchMembers').mockResolvedValue(membersPage([]))
+    vi.spyOn(client, 'fetchThreats').mockResolvedValue(threatsPage([]))
+
+    render(<AdminDashboard />)
+    await waitFor(() =>
+      expect(screen.getByText('No blocked threats yet.')).toBeInTheDocument(),
+    )
+  })
+
+  it('refetches the report with the typed query after the debounce settles', async () => {
+    stubOverview()
+    vi.spyOn(client, 'fetchMembers').mockResolvedValue(membersPage([]))
+    const threatsSpy = vi
+      .spyOn(client, 'fetchThreats')
+      .mockResolvedValue(threatsPage([threat({ headHash: 'h1', email: 'victim@securesg.test' })]))
+
+    render(<AdminDashboard />)
+    await waitFor(() => expect(screen.getByText('victim@securesg.test')).toBeInTheDocument())
+
+    fireEvent.change(
+      screen.getByPlaceholderText('Search blocked threats by URL or member'),
+      { target: { value: 'evil.example' } },
+    )
+
+    await waitFor(() => expect(threatsSpy).toHaveBeenCalledWith('evil.example', 50))
+  })
+
+  it('reveals a Load more control when the total exceeds the rows shown', async () => {
+    stubOverview()
+    vi.spyOn(client, 'fetchMembers').mockResolvedValue(membersPage([]))
+    // Two rows shown, but the server reports a larger total — Load more appears.
+    vi.spyOn(client, 'fetchThreats').mockResolvedValue(
+      threatsPage(
+        [
+          threat({ id: 't1', headHash: 'h1', email: 'a@securesg.test' }),
+          threat({ id: 't2', headHash: 'h2', email: 'b@securesg.test' }),
+        ],
+        9,
+      ),
+    )
+
+    render(<AdminDashboard />)
+    await waitFor(() => expect(screen.getByText('a@securesg.test')).toBeInTheDocument())
+    expect(screen.getByRole('button', { name: /Load more/ })).toBeInTheDocument()
   })
 })

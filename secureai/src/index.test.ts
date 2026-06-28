@@ -244,6 +244,16 @@ describe('worker.fetch routing', () => {
     expect(res.status).toBe(403)
   })
 
+  it('routes GET /api/admin/threats and returns 503 when DB is unconfigured', async () => {
+    const res = await worker.fetch(req('/api/admin/threats', 'GET'), baseEnv)
+    expect(res.status).toBe(503)
+  })
+
+  it('rejects a non-GET /api/admin/threats with 405', async () => {
+    const res = await worker.fetch(req('/api/admin/threats', 'POST', {}), baseEnv)
+    expect(res.status).toBe(405)
+  })
+
   it('routes POST /api/admin/members/remove and returns 503 when DB is unconfigured', async () => {
     const res = await worker.fetch(req('/api/admin/members/remove', 'POST', { userId: 'x' }), baseEnv)
     expect(res.status).toBe(503)

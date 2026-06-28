@@ -52,6 +52,24 @@ export interface MemberRow {
   readonly scans: number
 }
 
+/**
+ * One blocked-threat row in the sitewide report: a `BLOCK`-verdict scan joined
+ * to its owner's email. Carries the source provenance (kind + truncated label,
+ * NEVER the scanned content), the flagged-indicator count, the proof head hash,
+ * and the edge-stamped scan time. The route projects this to its response shape.
+ */
+export interface ThreatRow {
+  readonly id: string
+  /** The owner account's email (from the `scan_history → users` join). */
+  readonly email: string
+  readonly verdict: string
+  readonly sourceKind: string
+  readonly sourceRef: string
+  readonly flagged: number
+  readonly headHash: string
+  readonly scannedAt: string
+}
+
 /** The three persisted account tiers, used to densify the tier breakdown. */
 const TIERS = ['free', 'pro', 'enterprise'] as const
 
@@ -205,12 +223,15 @@ export async function activeSubscriptions(db: Database): Promise<number> {
 /**
  * Read a page of the members directory: `limit` accounts from `offset`, ordered
  * oldest-first (stable signup order), each with its summed lifetime scan count.
+ * An optional `q` filters to accounts whose email contains `q` (case-insensitive
+ * substring) — absent/empty `q` returns every account (the directory's default).
  *
  * The scan total is a LEFT JOIN + `SUM` over `usage` keyed by the user id as the
  * `subject`, so an account that has never scanned still appears with `scans = 0`
  * (an INNER join would silently drop zero-scan accounts). `GROUP BY` collapses
- * the per-day usage rows to one total per user. The role column is returned
- * verbatim; the route derives the effective role.
+ * the per-day usage rows to one total per user. The `q` filter is a parameterized
+ * `lower(email) LIKE '%'||lower(?)||'%'` — `q` is bound, never interpolated. The
+ * role column is returned verbatim; the route derives the effective role.
  *
  * Time complexity: O(p log p) for the ordered page of size p = `limit` (the
  * index on `created_at` is unavailable, so SQLite sorts the page). Space
@@ -219,23 +240,27 @@ export async function activeSubscriptions(db: Database): Promise<number> {
  * @param db - The persistence seam.
  * @param limit - Max rows to return (caller-clamped to a sane bound).
  * @param offset - Rows to skip (caller-clamped to non-negative).
+ * @param q - Optional case-insensitive email substring filter.
  * @throws {AdminError} On a database failure (fail-closed).
  */
 export async function listMembers(
   db: Database,
   limit: number,
   offset: number,
+  q?: string,
 ): Promise<MemberRow[]> {
   try {
+    const filter = q !== undefined && q.length > 0
     const rows = await db.queryAll(
       'SELECT u.id AS id, u.email AS email, u.tier AS tier, u.role AS role, ' +
         'u.created_at AS created_at, ' +
         'COALESCE(SUM(g.scans), 0) AS scans ' +
         'FROM users u LEFT JOIN usage g ON g.subject = u.id ' +
+        (filter ? "WHERE lower(u.email) LIKE '%'||lower(?)||'%' " : '') +
         'GROUP BY u.id ' +
         'ORDER BY u.created_at ASC, u.id ASC ' +
         'LIMIT ? OFFSET ?',
-      [limit, offset],
+      filter ? [q, limit, offset] : [limit, offset],
     )
     const members: MemberRow[] = []
     for (const row of rows) {
@@ -255,20 +280,128 @@ export async function listMembers(
 }
 
 /**
- * Count all registered accounts (the total for the members directory's
- * pagination). Distinct from {@link countUsers} only in intent; both are a
- * single `COUNT(*)`.
+ * Count registered accounts for the members directory's pagination total. With
+ * an optional `q`, counts only accounts whose email contains `q` (the same
+ * case-insensitive substring match as {@link listMembers}), so the total
+ * reflects the filtered page; absent/empty `q` counts every account.
  *
  * Time complexity: O(1) — single `COUNT(*)` aggregate. Space complexity: O(1).
  *
+ * @param db - The persistence seam.
+ * @param q - Optional case-insensitive email substring filter.
  * @throws {AdminError} On a database failure (fail-closed).
  */
-export async function countMembers(db: Database): Promise<number> {
+export async function countMembers(db: Database, q?: string): Promise<number> {
   try {
-    const row = await db.queryOne('SELECT COUNT(*) AS total FROM users', [])
+    const filter = q !== undefined && q.length > 0
+    const row = await db.queryOne(
+      'SELECT COUNT(*) AS total FROM users' +
+        (filter ? " WHERE lower(email) LIKE '%'||lower(?)||'%'" : ''),
+      filter ? [q] : [],
+    )
     return readCount(row, 'total')
   } catch (error: unknown) {
     throw wrap('countMembers', error)
+  }
+}
+
+/** Pagination options for the blocked-threats report (caller-clamped). */
+export interface ThreatQuery {
+  readonly limit: number
+  readonly offset: number
+  /** Optional case-insensitive substring filter on source ref OR owner email. */
+  readonly q?: string
+}
+
+/**
+ * Read a page of the sitewide blocked-threats report: `BLOCK`-verdict scans
+ * joined to their owner's email, newest first. An optional `q` filters to rows
+ * whose source ref OR owner email contains `q` (case-insensitive substring);
+ * absent/empty `q` returns every blocked scan.
+ *
+ * One INNER JOIN `scan_history → users` on the user id (a blocked scan with no
+ * surviving owner is excluded — it can no longer be attributed), filtered to
+ * `verdict = 'BLOCK'`, ordered `scanned_at DESC`. The `q` filter is a
+ * parameterized `(lower(source_ref) LIKE ... OR lower(email) LIKE ...)` — `q` is
+ * bound twice, never interpolated.
+ *
+ * Time complexity: O(p log p) for the ordered page of size p = `limit`. Space
+ * complexity: O(p).
+ *
+ * @param db - The persistence seam.
+ * @param query - The clamped limit/offset and optional `q` filter.
+ * @throws {AdminError} On a database failure (fail-closed).
+ */
+export async function listThreats(db: Database, query: ThreatQuery): Promise<ThreatRow[]> {
+  try {
+    const filter = query.q !== undefined && query.q.length > 0
+    const params: unknown[] = []
+    if (filter) {
+      params.push(query.q, query.q)
+    }
+    params.push(query.limit, query.offset)
+    const rows = await db.queryAll(
+      'SELECT s.id AS id, u.email AS email, s.verdict AS verdict, ' +
+        's.source_kind AS source_kind, s.source_ref AS source_ref, ' +
+        's.flagged AS flagged, s.head_hash AS head_hash, s.scanned_at AS scanned_at ' +
+        'FROM scan_history s JOIN users u ON u.id = s.user_id ' +
+        "WHERE s.verdict = 'BLOCK' " +
+        (filter
+          ? "AND (lower(s.source_ref) LIKE '%'||lower(?)||'%' " +
+            "OR lower(u.email) LIKE '%'||lower(?)||'%') "
+          : '') +
+        'ORDER BY s.scanned_at DESC ' +
+        'LIMIT ? OFFSET ?',
+      params,
+    )
+    const threats: ThreatRow[] = []
+    for (const row of rows) {
+      threats.push({
+        id: requireString(row, 'id'),
+        email: requireString(row, 'email'),
+        verdict: requireString(row, 'verdict'),
+        sourceKind: requireString(row, 'source_kind'),
+        sourceRef: requireString(row, 'source_ref'),
+        flagged: readCount(row, 'flagged'),
+        headHash: requireString(row, 'head_hash'),
+        scannedAt: requireString(row, 'scanned_at'),
+      })
+    }
+    return threats
+  } catch (error: unknown) {
+    throw wrap('listThreats', error)
+  }
+}
+
+/**
+ * Count blocked-threat rows for the report's pagination total: `BLOCK`-verdict
+ * scans joined to a surviving owner, optionally filtered by the same `q`
+ * (source ref OR owner email substring) as {@link listThreats}, so the total
+ * matches the filtered page.
+ *
+ * Time complexity: O(1) — single joined `COUNT(*)` aggregate. Space complexity:
+ * O(1).
+ *
+ * @param db - The persistence seam.
+ * @param q - Optional case-insensitive source-ref-OR-email substring filter.
+ * @throws {AdminError} On a database failure (fail-closed).
+ */
+export async function countThreats(db: Database, q?: string): Promise<number> {
+  try {
+    const filter = q !== undefined && q.length > 0
+    const row = await db.queryOne(
+      'SELECT COUNT(*) AS total ' +
+        'FROM scan_history s JOIN users u ON u.id = s.user_id ' +
+        "WHERE s.verdict = 'BLOCK'" +
+        (filter
+          ? " AND (lower(s.source_ref) LIKE '%'||lower(?)||'%'" +
+            " OR lower(u.email) LIKE '%'||lower(?)||'%')"
+          : ''),
+      filter ? [q, q] : [],
+    )
+    return readCount(row, 'total')
+  } catch (error: unknown) {
+    throw wrap('countThreats', error)
   }
 }
 

@@ -9,7 +9,7 @@
  * theme leaks through — matching the protection Dashboard.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'motion/react'
 import {
   Area,
@@ -25,7 +25,10 @@ import {
 import {
   CheckCircle2,
   Crown,
+  FileText,
+  Link2,
   RefreshCw,
+  Search,
   ShieldAlert,
   ShieldCheck,
   ShieldX,
@@ -38,14 +41,21 @@ import {
   ApiError,
   fetchAdminOverview,
   fetchMembers,
+  fetchThreats,
   removeMember,
   setMemberRole,
 } from '../api/client'
-import { STATS_TREND_DAYS } from '../config'
+import {
+  ADMIN_SEARCH_DEBOUNCE_MS,
+  ADMIN_THREATS_LIMIT,
+  STATS_TREND_DAYS,
+} from '../config'
+import { relativeTime } from '../lib/format'
 import { zeroFillSignups } from '../lib/stats'
 import type {
   AdminMember,
   AdminOverview,
+  AdminThreat,
   AdminTierCounts,
   AssignableRole,
 } from '../api/types'
@@ -129,9 +139,27 @@ export function AdminDashboard({
         {load.phase === 'ready' && <OverviewBody overview={load.overview} />}
 
         <MembersSection canManageRoles={canManageRoles} viewerEmail={viewerEmail} />
+
+        <ThreatsSection />
       </div>
     </section>
   )
+}
+
+/**
+ * Debounce a fast-changing value: returns the latest `value`, but only after it
+ * has stopped changing for `delayMs`. Used to keep an admin search input off the
+ * keystroke hot path — a refetch fires once typing pauses, not per character.
+ *
+ * Time complexity: O(1) per update. Space complexity: O(1).
+ */
+function useDebouncedValue<T>(value: T, delayMs: number): T {
+  const [debounced, setDebounced] = useState(value)
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delayMs)
+    return () => clearTimeout(timer)
+  }, [value, delayMs])
+  return debounced
 }
 
 interface HeaderProps {
@@ -405,12 +433,14 @@ type MembersState =
   | { phase: 'error'; message: string }
 
 /**
- * The members directory: a table of every account (Email, Tier, Role, Joined,
- * Scans) loaded from `GET /api/admin/members`. An owner (`canManageRoles`) gets a
- * per-row Member/Admin select plus a Remove action on non-owner rows; owners'
- * rows show a static "Owner" badge, and a non-owner viewer sees every role
- * read-only with no Remove action. The viewer's OWN row (matched by
- * `viewerEmail`) never shows the Remove action.
+ * The members directory: a searchable table of every account (Email, Tier, Role,
+ * Joined, Scans) loaded from `GET /api/admin/members`. A search input filters by
+ * email via the server-side `q` param (debounced ~300ms so a fast typist sends
+ * one request, not one per character); the heading count reflects the filtered
+ * total. An owner (`canManageRoles`) gets a per-row Member/Admin select plus a
+ * Remove action on non-owner rows; owners' rows show a static "Owner" badge, and
+ * a non-owner viewer sees every role read-only with no Remove action. The
+ * viewer's OWN row (matched by `viewerEmail`) never shows the Remove action.
  */
 function MembersSection({
   canManageRoles,
@@ -420,33 +450,41 @@ function MembersSection({
   viewerEmail: string | null
 }) {
   const [state, setState] = useState<MembersState>({ phase: 'loading' })
+  /** The raw search box value; the debounced form drives the actual refetch. */
+  const [query, setQuery] = useState('')
+  const debouncedQuery = useDebouncedValue(query.trim(), ADMIN_SEARCH_DEBOUNCE_MS)
   /** The user id whose role/removal is mid-flight, so its row can disable + spin. */
   const [pendingId, setPendingId] = useState<string | null>(null)
 
-  const load = useCallback((): (() => void) => {
-    let active = true
-    setState({ phase: 'loading' })
-    fetchMembers()
-      .then((page) => {
-        if (active) setState({ phase: 'ready', members: page.members, total: page.total })
-      })
-      .catch(() => {
-        if (active) setState({ phase: 'error', message: 'Could not load members.' })
-      })
-    return () => {
-      active = false
-    }
-  }, [])
+  const load = useCallback(
+    (search: string): (() => void) => {
+      let active = true
+      setState({ phase: 'loading' })
+      fetchMembers(search)
+        .then((page) => {
+          if (active) setState({ phase: 'ready', members: page.members, total: page.total })
+        })
+        .catch(() => {
+          if (active) setState({ phase: 'error', message: 'Could not load members.' })
+        })
+      return () => {
+        active = false
+      }
+    },
+    [],
+  )
 
-  useEffect(() => load(), [load])
+  // Reload whenever the debounced query changes (including the initial empty
+  // query, which loads the first unfiltered page).
+  useEffect(() => load(debouncedQuery), [load, debouncedQuery])
 
   const changeRole = useCallback(
     async (userId: string, role: AssignableRole): Promise<void> => {
       setPendingId(userId)
       try {
         await setMemberRole(userId, role)
-        // Re-read so the table reflects the authoritative server state.
-        load()
+        // Re-read the current query so the table reflects authoritative state.
+        load(debouncedQuery)
       } catch (error) {
         const message =
           error instanceof ApiError ? error.message : 'Could not update the role.'
@@ -455,7 +493,7 @@ function MembersSection({
         setPendingId(null)
       }
     },
-    [load],
+    [load, debouncedQuery],
   )
 
   const remove = useCallback(
@@ -468,8 +506,9 @@ function MembersSection({
       setPendingId(member.id)
       try {
         await removeMember(member.id)
-        // Re-read so the removed row disappears and the count reflects the server.
-        load()
+        // Re-read the current query so the removed row disappears and the count
+        // reflects the server.
+        load(debouncedQuery)
       } catch (error) {
         const message =
           error instanceof ApiError ? error.message : 'Could not remove the member.'
@@ -478,7 +517,7 @@ function MembersSection({
         setPendingId(null)
       }
     },
-    [load],
+    [load, debouncedQuery],
   )
 
   return (
@@ -495,6 +534,13 @@ function MembersSection({
         <Users className="w-4 h-4 text-white/40" />
       </div>
 
+      <SearchInput
+        value={query}
+        onChange={setQuery}
+        placeholder="Search members by email"
+        ariaLabel="Search members by email"
+      />
+
       {state.phase === 'loading' && (
         <p className="text-white/45 font-mono text-sm py-8 text-center">Loading members…</p>
       )}
@@ -503,7 +549,9 @@ function MembersSection({
       )}
       {state.phase === 'ready' &&
         (state.members.length === 0 ? (
-          <p className="text-white/45 font-mono text-sm py-8 text-center">No members yet.</p>
+          <p className="text-white/45 font-mono text-sm py-8 text-center">
+            {debouncedQuery.length > 0 ? 'No members match your search.' : 'No members yet.'}
+          </p>
         ) : (
           <MembersTable
             members={state.members}
@@ -515,6 +563,34 @@ function MembersSection({
           />
         ))}
     </motion.div>
+  )
+}
+
+interface SearchInputProps {
+  value: string
+  onChange: (value: string) => void
+  placeholder: string
+  ariaLabel: string
+}
+
+/**
+ * A glass search field with a leading magnifier, matching the dashboard's dark
+ * styling. Purely controlled — the parent owns the value and debounces the
+ * refetch, so this only renders the input and forwards keystrokes.
+ */
+function SearchInput({ value, onChange, placeholder, ariaLabel }: SearchInputProps) {
+  return (
+    <div className="relative">
+      <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/35" />
+      <input
+        type="search"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        aria-label={ariaLabel}
+        className="w-full rounded-xl bg-white/[0.04] border border-white/10 pl-9 pr-3 py-2 text-[13px] text-white placeholder:text-white/35 focus:outline-none focus:border-white/25 transition-colors"
+      />
+    </div>
   )
 }
 
@@ -675,6 +751,196 @@ function RoleCell({ member, canManageRoles, pending, onChangeRole }: RoleCellPro
       <option value="admin">Admin</option>
     </select>
   )
+}
+
+/** The blocked-threats report load lifecycle, mirroring the members section's. */
+type ThreatsState =
+  | { phase: 'loading' }
+  | { phase: 'ready'; threats: AdminThreat[]; total: number }
+  | { phase: 'error'; message: string }
+
+/**
+ * The blocked-threats report ("the report"): every scan that ended in a `BLOCK`,
+ * loaded from `GET /api/admin/threats`. A search input filters by scanned URL or
+ * owning member email via the server-side `q` param (debounced ~300ms); the
+ * table lists Member (email), Source (truncated URL, or "Pasted skill" for a
+ * pasted skill), Flagged (indicator count), and When (relative time), each row
+ * tagged with a red BLOCK pill. Empty state: "No blocked threats yet." Loads the
+ * first {@link ADMIN_THREATS_LIMIT} rows; a "Load more" control raises the page
+ * size when the server total exceeds the rows shown.
+ */
+function ThreatsSection() {
+  const [state, setState] = useState<ThreatsState>({ phase: 'loading' })
+  const [query, setQuery] = useState('')
+  const debouncedQuery = useDebouncedValue(query.trim(), ADMIN_SEARCH_DEBOUNCE_MS)
+  const [limit, setLimit] = useState(ADMIN_THREATS_LIMIT)
+
+  // A new search resets the page size so a filtered view starts from the first
+  // page rather than carrying an expanded limit from the previous query.
+  const previousQueryRef = useRef(debouncedQuery)
+  useEffect(() => {
+    if (previousQueryRef.current !== debouncedQuery) {
+      previousQueryRef.current = debouncedQuery
+      setLimit(ADMIN_THREATS_LIMIT)
+    }
+  }, [debouncedQuery])
+
+  useEffect(() => {
+    let active = true
+    setState({ phase: 'loading' })
+    fetchThreats(debouncedQuery, limit)
+      .then((page) => {
+        if (active) setState({ phase: 'ready', threats: page.threats, total: page.total })
+      })
+      .catch(() => {
+        if (active) setState({ phase: 'error', message: 'Could not load blocked threats.' })
+      })
+    return () => {
+      active = false
+    }
+  }, [debouncedQuery, limit])
+
+  const shown = state.phase === 'ready' ? state.threats.length : 0
+  const total = state.phase === 'ready' ? state.total : 0
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+      className="liquid-glass rounded-2xl p-5 flex flex-col gap-4"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-[12px] font-mono uppercase tracking-[0.14em] text-white/55">
+          Threats blocked{state.phase === 'ready' ? ` · ${total}` : ''}
+        </h3>
+        <ShieldX className="w-4 h-4 text-block/70" />
+      </div>
+
+      <SearchInput
+        value={query}
+        onChange={setQuery}
+        placeholder="Search blocked threats by URL or member"
+        ariaLabel="Search blocked threats by URL or member"
+      />
+
+      {state.phase === 'loading' && (
+        <p className="text-white/45 font-mono text-sm py-8 text-center">
+          Loading blocked threats…
+        </p>
+      )}
+      {state.phase === 'error' && (
+        <p className="text-block/90 font-mono text-sm py-8 text-center">{state.message}</p>
+      )}
+      {state.phase === 'ready' &&
+        (state.threats.length === 0 ? (
+          <p className="text-white/45 font-mono text-sm py-8 text-center">
+            {debouncedQuery.length > 0
+              ? 'No blocked threats match your search.'
+              : 'No blocked threats yet.'}
+          </p>
+        ) : (
+          <>
+            <ThreatsTable threats={state.threats} />
+            {total > shown && (
+              <button
+                type="button"
+                onClick={() => setLimit((current) => current + ADMIN_THREATS_LIMIT)}
+                className="glass-pill self-center inline-flex items-center gap-1.5 px-4 py-1.5 text-[12px] font-medium text-white/70 hover:text-white transition-colors cursor-pointer"
+              >
+                Load more · {shown} of {total}
+              </button>
+            )}
+          </>
+        ))}
+    </motion.div>
+  )
+}
+
+/**
+ * The scrollable blocked-threats table. Columns: Member, Source, Flagged, When.
+ * Every row carries a red BLOCK pill (the report lists only blocked threats).
+ */
+function ThreatsTable({ threats }: { threats: AdminThreat[] }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-left border-collapse">
+        <thead>
+          <tr className="text-[10px] font-mono uppercase tracking-[0.14em] text-white/40">
+            <th className="font-medium py-2 pr-4">Member</th>
+            <th className="font-medium py-2 pr-4">Source</th>
+            <th className="font-medium py-2 pr-4 text-right tabular-nums">Flagged</th>
+            <th className="font-medium py-2 pr-4 text-right">When</th>
+          </tr>
+        </thead>
+        <tbody>
+          {threats.map((threat) => (
+            <ThreatRow key={threat.headHash} threat={threat} />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/** A small red BLOCK pill — every threat row is a blocked verdict. */
+function BlockPill() {
+  return (
+    <span className="inline-flex items-center justify-center rounded-full bg-block/10 px-2.5 py-1 text-[10px] font-mono font-bold uppercase tracking-[0.1em] text-block">
+      BLOCK
+    </span>
+  )
+}
+
+/** One blocked-threat row: member email, source, flagged count, relative time. */
+function ThreatRow({ threat }: { threat: AdminThreat }) {
+  const isUrl = threat.source.kind === 'url'
+  const SourceIcon = isUrl ? Link2 : FileText
+  const sourceLabel = isUrl ? truncateUrl(threat.source.ref) : 'Pasted skill'
+  return (
+    <tr className="border-t border-white/5 text-[13px] text-white/80 align-middle">
+      <td className="py-2.5 pr-4">
+        <div className="flex items-center gap-2">
+          <BlockPill />
+          <span className="font-medium text-white break-all">{threat.email}</span>
+        </div>
+      </td>
+      <td className="py-2.5 pr-4">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <SourceIcon className="w-3.5 h-3.5 shrink-0 text-white/40" />
+          <span className="truncate text-white/75 max-w-[220px]" title={threat.source.ref}>
+            {sourceLabel}
+          </span>
+        </span>
+      </td>
+      <td className="py-2.5 pr-4 text-right tabular-nums">
+        <span className="inline-flex items-center gap-1 text-block">
+          <ShieldAlert className="w-3 h-3" />
+          {formatCount(threat.flagged)}
+        </span>
+      </td>
+      <td className="py-2.5 pr-4 text-right font-mono text-[11px] text-white/45 whitespace-nowrap tabular-nums">
+        {relativeTime(threat.scannedAt)}
+      </td>
+    </tr>
+  )
+}
+
+/**
+ * Shorten a scanned URL for the report: drop the scheme and any trailing slash,
+ * so `https://evil.example/x/` reads as `evil.example/x`. Falls back to the raw
+ * value when it is not a parseable absolute URL.
+ *
+ * Time complexity: O(n) in the URL length. Space complexity: O(1).
+ */
+function truncateUrl(url: string): string {
+  try {
+    const parsed = new URL(url)
+    const path = parsed.pathname === '/' ? '' : parsed.pathname.replace(/\/$/, '')
+    return `${parsed.host}${path}${parsed.search}`
+  } catch {
+    return url
+  }
 }
 
 /** Format an ISO signup timestamp as a short local date, falling back to raw. */

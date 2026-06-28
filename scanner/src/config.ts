@@ -34,6 +34,7 @@ export const API = {
   adminMembers: `${API_BASE}/api/admin/members`,
   adminMemberRole: `${API_BASE}/api/admin/members/role`,
   adminMemberRemove: `${API_BASE}/api/admin/members/remove`,
+  adminThreats: `${API_BASE}/api/admin/threats`,
 } as const
 
 /** Where to email enterprise sales when the Pricing page Contact CTA is used. */
@@ -44,6 +45,20 @@ export const STATS_TREND_DAYS = 30
 
 /** How many recent scans the dashboard's recent-scans list requests. */
 export const RECENT_SCANS_LIMIT = 3
+
+/**
+ * Debounce window (ms) before an admin search input refetches. Keeps the
+ * members/threats search off the keystroke hot path: the query is only sent once
+ * typing pauses, so a fast typist triggers one request, not one per character.
+ */
+export const ADMIN_SEARCH_DEBOUNCE_MS = 300
+
+/**
+ * Default page size for the admin blocked-threats report. The worker clamps the
+ * authoritative cap; this is the display request so the report shows the newest
+ * blocked threats first and only fetches more on demand.
+ */
+export const ADMIN_THREATS_LIMIT = 50
 
 /** Static path to the prebuilt gallery dataset shipped alongside the SPA. */
 export const GALLERY_DATA_PATH = '/gallery.json' as const
@@ -67,6 +82,18 @@ export const BACKGROUND_VIDEO_SRC =
 
 /** Public source repository, linked from the navbar. */
 export const REPO_URL = 'https://github.com/danielwjh04/SecureAI' as const
+
+/**
+ * The SecureAI Guard install surface on the landing page. `GUARD_DOWNLOAD_PATH`
+ * is the same-origin path the Guard hook script is served from (a static public
+ * asset), and `GUARD_INSTALL_COMMAND` is the one-line installer users run to wire
+ * the PreToolUse hook into Claude Code. The installer's hosted origin lives in
+ * the command string itself (it must be absolute for `curl`); it is the public
+ * SecureAI host, not a secret.
+ */
+export const GUARD_DOWNLOAD_PATH = '/secureai-guard.mjs' as const
+export const GUARD_INSTALL_COMMAND =
+  'curl -fsSL https://secureai.zurielst.com/install.sh | bash' as const
 
 /**
  * The three skill-input modes offered by the hero's segmented control. The

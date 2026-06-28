@@ -2,6 +2,7 @@ import { API } from '../config'
 import type {
   AdminMembersPage,
   AdminOverview,
+  AdminThreatsPage,
   AssignableRole,
   AuthCredentials,
   AuthResponse,
@@ -208,20 +209,51 @@ export async function fetchAdminOverview(): Promise<AdminOverview> {
 }
 
 /**
- * Fetch a page of the members directory. Throws {@link ApiError}(403) when the
- * signed-in account may not view the admin surface, or (401) when logged out.
+ * Fetch a page of the members directory, optionally filtered by an email query.
+ * Throws {@link ApiError}(403) when the signed-in account may not view the admin
+ * surface, or (401) when logged out.
  *
- * `limit` and `offset` are display-only pagination params; the worker clamps
- * them server-side (default 100, cap 500), so omitting them returns the first
- * page.
+ * `q` (case-insensitive email substring), `limit`, and `offset` are all
+ * display-only filter/pagination params; the worker trims `q`, lowercases the
+ * match, and clamps `limit`/`offset` server-side (default 100, cap 500), so
+ * omitting them returns the first unfiltered page.
  */
-export async function fetchMembers(limit?: number, offset?: number): Promise<AdminMembersPage> {
+export async function fetchMembers(
+  q?: string,
+  limit?: number,
+  offset?: number,
+): Promise<AdminMembersPage> {
   const params = new URLSearchParams()
+  if (q !== undefined && q.length > 0) params.set('q', q)
   if (limit !== undefined) params.set('limit', String(limit))
   if (offset !== undefined) params.set('offset', String(offset))
   const query = params.toString()
   const path = query.length > 0 ? `${API.adminMembers}?${query}` : API.adminMembers
   return request<AdminMembersPage>(path, { ...WITH_CREDENTIALS })
+}
+
+/**
+ * Fetch a page of the blocked-threats report, optionally filtered by a query
+ * that matches the scanned URL or the owning member's email. Throws
+ * {@link ApiError}(403) when the signed-in account may not view the admin
+ * surface, or (401) when logged out.
+ *
+ * `q` (case-insensitive URL-or-email substring), `limit`, and `offset` are
+ * display-only filter/pagination params; the worker clamps them server-side, so
+ * omitting them returns the first unfiltered page (every row is a `BLOCK`).
+ */
+export async function fetchThreats(
+  q?: string,
+  limit?: number,
+  offset?: number,
+): Promise<AdminThreatsPage> {
+  const params = new URLSearchParams()
+  if (q !== undefined && q.length > 0) params.set('q', q)
+  if (limit !== undefined) params.set('limit', String(limit))
+  if (offset !== undefined) params.set('offset', String(offset))
+  const query = params.toString()
+  const path = query.length > 0 ? `${API.adminThreats}?${query}` : API.adminThreats
+  return request<AdminThreatsPage>(path, { ...WITH_CREDENTIALS })
 }
 
 /**

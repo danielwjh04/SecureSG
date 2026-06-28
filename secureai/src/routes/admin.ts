@@ -16,19 +16,27 @@
 
 import type { ScannerConfig } from '../config/env'
 import type { Database } from '../db/database'
-import type { MemberRow, SignupDay, TierCounts, UsageTotals } from '../db/admin'
+import type { MemberRow, SignupDay, ThreatRow, TierCounts, UsageTotals } from '../db/admin'
 import type { Role } from '../auth/roles'
 import { ParseError } from '../errors'
 import { authenticate } from '../middleware/auth'
 import { findRoleByUserId, getAccountProfile } from '../db/accounts'
 import { canManageRoles, canViewAdmin, effectiveRole, parseAssignableRole } from '../auth/roles'
-import { memberRoleSchema, removeMemberSchema } from '../schemas/validate'
+import {
+  adminSearchQuerySchema,
+  memberRoleSchema,
+  removeMemberSchema,
+  threatsLimitSchema,
+  threatsOffsetSchema,
+} from '../schemas/validate'
 import {
   activeSubscriptions,
   countMembers,
+  countThreats,
   countUsers,
   deleteMember,
   listMembers,
+  listThreats,
   setUserRole,
   signupsByDay,
   usageTotals,
@@ -88,6 +96,24 @@ export interface AdminMembersPage {
   readonly total: number
 }
 
+/** One blocked-threat entry in the report response (owner email + provenance). */
+export interface AdminThreat {
+  readonly id: string
+  /** The owner account's email (from the scan_history → users join). */
+  readonly email: string
+  readonly verdict: string
+  readonly source: { readonly kind: string; readonly ref: string }
+  readonly flagged: number
+  readonly headHash: string
+  readonly scannedAt: string
+}
+
+/** The 200 body of `GET /api/admin/threats`. */
+export interface AdminThreatsPage {
+  readonly threats: readonly AdminThreat[]
+  readonly total: number
+}
+
 /**
  * The viewer identity an admin gate resolved: the authenticated user id and the
  * effective role derived from the email allowlist + stored role column.
@@ -128,6 +154,11 @@ function unavailable(): Response {
 /** Build a 403 forbidden body (insufficient role). */
 function forbidden(): Response {
   return Response.json({ error: 'forbidden' }, { status: STATUS_FORBIDDEN })
+}
+
+/** Build a 422 for a malformed query param (invalid limit/offset/q). */
+function unprocessable(error: string): Response {
+  return Response.json({ error }, { status: STATUS_UNPROCESSABLE })
 }
 
 /**
@@ -251,11 +282,12 @@ function toAdminMember(row: MemberRow, adminEmails: ReadonlySet<string>): AdminM
 }
 
 /**
- * Handle `GET /api/admin/members?limit&offset`. Authenticates the caller and
+ * Handle `GET /api/admin/members?q&limit&offset`. Authenticates the caller and
  * requires the effective role to be owner OR admin ({@link canViewAdmin}; 403
  * otherwise), then returns a page of the members directory plus the total count
- * for pagination. Each row carries its effective (owner-aware) role. Requires
- * `env.DB` (503 otherwise).
+ * for pagination. An optional `q` filters by a case-insensitive email substring;
+ * the `total` reflects the filtered count, and an over-length `q` is a 422. Each
+ * row carries its effective (owner-aware) role. Requires `env.DB` (503 otherwise).
  *
  * Time complexity: O(p log p) in the page size p (the ordered LIMIT/OFFSET page).
  * Space complexity: O(p).
@@ -272,10 +304,18 @@ export async function handleAdminMembers(request: Request, deps: AdminDeps): Pro
     }
 
     const url = new URL(request.url)
+    const parsedQuery = adminSearchQuerySchema.safeParse(url.searchParams.get('q') ?? undefined)
+    if (!parsedQuery.success) {
+      return unprocessable('invalid_query')
+    }
+    const q = parsedQuery.data
     const limit = clampLimit(url.searchParams.get('limit'))
     const offset = clampOffset(url.searchParams.get('offset'))
 
-    const [rows, total] = await Promise.all([listMembers(db, limit, offset), countMembers(db)])
+    const [rows, total] = await Promise.all([
+      listMembers(db, limit, offset, q),
+      countMembers(db, q),
+    ])
     const members = rows.map((row) => toAdminMember(row, deps.config.adminEmails))
 
     const body: AdminMembersPage = { members, total }
@@ -284,6 +324,74 @@ export async function handleAdminMembers(request: Request, deps: AdminDeps): Pro
     const className = error instanceof Error ? error.constructor.name : typeof error
     console.error(`[handleAdminMembers] ${className}`)
     return Response.json({ error: 'admin_members_failed' }, { status: STATUS_SERVER_ERROR })
+  }
+}
+
+/**
+ * Project a stored {@link ThreatRow} to an {@link AdminThreat}: the same nested
+ * `source: { kind, ref }` shape the recent-scans endpoint uses, plus the owner
+ * email and proof head hash. `ref` is the source LABEL only (never the scanned
+ * content), exactly as persisted.
+ *
+ * Time complexity: O(1). Space complexity: O(1).
+ */
+function toAdminThreat(row: ThreatRow): AdminThreat {
+  return {
+    id: row.id,
+    email: row.email,
+    verdict: row.verdict,
+    source: { kind: row.sourceKind, ref: row.sourceRef },
+    flagged: row.flagged,
+    headHash: row.headHash,
+    scannedAt: row.scannedAt,
+  }
+}
+
+/**
+ * Handle `GET /api/admin/threats?q&limit&offset`. Authenticates the caller and
+ * requires the effective role to be owner OR admin ({@link canViewAdmin}; a
+ * member is 403, an anonymous caller is 401), then returns a newest-first page of
+ * the sitewide blocked-threats report (every `BLOCK`-verdict scan with its owner
+ * email) plus the filtered total. An optional `q` filters by a case-insensitive
+ * substring on the source ref OR owner email. `limit`/`offset` are Zod-validated
+ * integers (clamped limit, default 50 / cap 500) and `q` is a bounded string; a
+ * malformed param is a 422. Requires `env.DB` (503 otherwise).
+ *
+ * Time complexity: O(p log p) in the page size p (the ordered LIMIT/OFFSET page).
+ * Space complexity: O(p).
+ */
+export async function handleAdminThreats(request: Request, deps: AdminDeps): Promise<Response> {
+  if (deps.db === null) {
+    return unavailable()
+  }
+  const db = deps.db
+  try {
+    const viewer = await resolveViewer(request, deps, db, canViewAdmin)
+    if (viewer instanceof Response) {
+      return viewer
+    }
+
+    const url = new URL(request.url)
+    const parsedLimit = threatsLimitSchema.safeParse(url.searchParams.get('limit') ?? undefined)
+    const parsedOffset = threatsOffsetSchema.safeParse(url.searchParams.get('offset') ?? undefined)
+    const parsedQuery = adminSearchQuerySchema.safeParse(url.searchParams.get('q') ?? undefined)
+    if (!parsedLimit.success || !parsedOffset.success || !parsedQuery.success) {
+      return unprocessable('invalid_query')
+    }
+    const q = parsedQuery.data
+
+    const [rows, total] = await Promise.all([
+      listThreats(db, { limit: parsedLimit.data, offset: parsedOffset.data, q }),
+      countThreats(db, q),
+    ])
+    const threats = rows.map(toAdminThreat)
+
+    const body: AdminThreatsPage = { threats, total }
+    return Response.json(body, { status: STATUS_OK })
+  } catch (error: unknown) {
+    const className = error instanceof Error ? error.constructor.name : typeof error
+    console.error(`[handleAdminThreats] ${className}`)
+    return Response.json({ error: 'admin_threats_failed' }, { status: STATUS_SERVER_ERROR })
   }
 }
 

@@ -37,6 +37,7 @@ import {
   handleAdminMemberRole,
   handleAdminMembers,
   handleAdminOverview,
+  handleAdminThreats,
 } from './routes/admin'
 import { d1Database } from './db/database'
 import { buildEmailSender } from './email/sender'
@@ -59,6 +60,7 @@ const ROUTE_ME = '/api/me'
 const ROUTE_STATS = '/api/stats'
 const ROUTE_SCANS_RECENT = '/api/scans/recent'
 const ROUTE_ADMIN_OVERVIEW = '/api/admin/overview'
+const ROUTE_ADMIN_THREATS = '/api/admin/threats'
 const ROUTE_ADMIN_MEMBERS = '/api/admin/members'
 const ROUTE_ADMIN_MEMBER_ROLE = '/api/admin/members/role'
 const ROUTE_ADMIN_MEMBER_REMOVE = '/api/admin/members/remove'
@@ -214,6 +216,13 @@ export default {
         return jsonError('method not allowed', 405)
       }
       return await handleAdminOverview(request, adminDeps(env, config))
+    }
+
+    if (url.pathname === ROUTE_ADMIN_THREATS) {
+      if (request.method !== 'GET') {
+        return jsonError('method not allowed', 405)
+      }
+      return await handleAdminThreats(request, adminDeps(env, config))
     }
 
     // The role-change path is more specific than the members list path, so it is

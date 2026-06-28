@@ -216,3 +216,28 @@ export interface SetRoleResponse {
 export interface RemoveMemberResponse {
   removed: string
 }
+
+/**
+ * One blocked-threat row in the admin threats report. Every row is a `BLOCK`
+ * verdict (the report lists only blocked threats). `email` is the member the
+ * scan belongs to; `source.ref` is the scanned URL (`kind: 'url'`) or an opaque
+ * label for a pasted skill (`kind: 'paste'`); `flagged` is the count of
+ * malicious indicators caught; `headHash` keys the row stably and proves the
+ * sealed proof chain; `scannedAt` is an ISO timestamp rendered as a relative
+ * time.
+ */
+export interface AdminThreat {
+  id: string
+  email: string
+  verdict: 'BLOCK'
+  source: { kind: 'paste' | 'url'; ref: string }
+  flagged: number
+  headHash: string
+  scannedAt: string
+}
+
+/** Response body for `GET /api/admin/threats`: one page plus the total count. */
+export interface AdminThreatsPage {
+  threats: AdminThreat[]
+  total: number
+}

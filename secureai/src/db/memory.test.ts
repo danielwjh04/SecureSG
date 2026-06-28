@@ -184,7 +184,44 @@ export class MemoryStore {
       return null
     }
     // Admin aggregates (queryOne).
+    // Blocked-threats count: scan_history INNER JOIN users, verdict='BLOCK', with
+    // an optional (source_ref OR email) LIKE filter. Matched BEFORE the users
+    // count below because it too selects `COUNT(*) AS total`.
+    if (sql.includes('COUNT(*) AS total') && sql.includes('FROM scan_history s JOIN users u')) {
+      const filtered = sql.includes('lower(s.source_ref) LIKE')
+      const needle = filtered ? String(params[0]).toLowerCase() : ''
+      let total = 0
+      for (const record of this.scanHistory.values()) {
+        if (record.verdict !== 'BLOCK') {
+          continue
+        }
+        const user = this.users.get(record.user_id)
+        if (user === undefined) {
+          continue
+        }
+        if (
+          filtered &&
+          !record.source_ref.toLowerCase().includes(needle) &&
+          !user.email.toLowerCase().includes(needle)
+        ) {
+          continue
+        }
+        total += 1
+      }
+      return { total }
+    }
     if (sql.includes('COUNT(*) AS total FROM users')) {
+      // Members directory count, with an optional `lower(email) LIKE` filter.
+      if (sql.includes('lower(email) LIKE')) {
+        const needle = String(params[0]).toLowerCase()
+        let total = 0
+        for (const user of this.users.values()) {
+          if (user.email.toLowerCase().includes(needle)) {
+            total += 1
+          }
+        }
+        return { total }
+      }
       return { total: this.users.size }
     }
     if (sql.includes('SUM(scans)') && sql.includes('FROM usage')) {
@@ -310,11 +347,18 @@ export class MemoryStore {
     }
     // Admin members directory: each user LEFT JOIN usage, summed to a scan total
     // (zero-scan users still appear), ordered oldest-first, paged by LIMIT/OFFSET.
+    // An optional `lower(email) LIKE '%'||lower(?)||'%'` filter binds `q` FIRST,
+    // so the LIMIT/OFFSET params shift right by one when the filter is present.
     if (sql.includes('FROM users u LEFT JOIN usage g ON g.subject = u.id')) {
-      const limit = Number(params[0])
-      const offset = Number(params[1])
+      const filtered = sql.includes('lower(u.email) LIKE')
+      const needle = filtered ? String(params[0]).toLowerCase() : ''
+      const limit = Number(params[filtered ? 1 : 0])
+      const offset = Number(params[filtered ? 2 : 1])
       const rows: Record<string, unknown>[] = []
       for (const user of this.users.values()) {
+        if (filtered && !user.email.toLowerCase().includes(needle)) {
+          continue
+        }
         let scans = 0
         for (const record of this.usage.values()) {
           if (record.subject === user.id) {
@@ -335,6 +379,47 @@ export class MemoryStore {
         const byDay = String(a['created_at']).localeCompare(String(b['created_at']))
         return byDay !== 0 ? byDay : String(a['id']).localeCompare(String(b['id']))
       })
+      return rows.slice(offset, offset + limit)
+    }
+    // Admin blocked-threats report: scan_history INNER JOIN users on the user id,
+    // filtered to verdict='BLOCK', newest-first, paged by LIMIT/OFFSET. An optional
+    // `(source_ref LIKE q OR email LIKE q)` filter binds `q` TWICE first, so the
+    // LIMIT/OFFSET params shift right by two when the filter is present.
+    if (sql.includes('FROM scan_history s JOIN users u ON u.id = s.user_id')) {
+      const filtered = sql.includes('lower(s.source_ref) LIKE')
+      const needle = filtered ? String(params[0]).toLowerCase() : ''
+      const limit = Number(params[filtered ? 2 : 0])
+      const offset = Number(params[filtered ? 3 : 1])
+      const rows: Record<string, unknown>[] = []
+      for (const record of this.scanHistory.values()) {
+        if (record.verdict !== 'BLOCK') {
+          continue
+        }
+        const user = this.users.get(record.user_id)
+        if (user === undefined) {
+          // INNER JOIN: a blocked scan with no surviving owner is excluded.
+          continue
+        }
+        if (
+          filtered &&
+          !record.source_ref.toLowerCase().includes(needle) &&
+          !user.email.toLowerCase().includes(needle)
+        ) {
+          continue
+        }
+        rows.push({
+          id: record.id,
+          email: user.email,
+          verdict: record.verdict,
+          source_kind: record.source_kind,
+          source_ref: record.source_ref,
+          flagged: record.flagged,
+          head_hash: record.head_hash,
+          scanned_at: record.scanned_at,
+        })
+      }
+      // ORDER BY scanned_at DESC (newest first), then LIMIT/OFFSET.
+      rows.sort((a, b) => String(b['scanned_at']).localeCompare(String(a['scanned_at'])))
       return rows.slice(offset, offset + limit)
     }
     throw new Error(`MemoryStore: unrecognized queryAll SQL: ${sql}`)

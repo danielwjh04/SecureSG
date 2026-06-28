@@ -4,12 +4,15 @@ import type { MemoryStore } from './memory.test'
 import { createFreeUser, setUserTier } from './accounts'
 import { recordVerdict } from './usage'
 import { upsertSubscription } from './billing'
+import { insertScan } from './scans'
 import { AdminError } from '../errors'
 import {
   activeSubscriptions,
   countMembers,
+  countThreats,
   countUsers,
   listMembers,
+  listThreats,
   setUserRole,
   signupsByDay,
   usageTotals,
@@ -182,6 +185,23 @@ describe('listMembers', () => {
     expect(members[0]?.role).toBe('admin')
   })
 
+  it('filters by a case-insensitive email substring when q is given', async () => {
+    const { db, store } = memoryDatabase()
+    await seedUser(db, store, 'alice@acme.com', 'free', '2026-06-01')
+    await seedUser(db, store, 'bob@other.com', 'free', '2026-06-02')
+    await seedUser(db, store, 'carol@ACME.com', 'free', '2026-06-03')
+
+    const hits = await listMembers(db, 100, 0, 'AcMe')
+    expect(hits.map((m) => m.email).sort()).toEqual(['alice@acme.com', 'carol@ACME.com'])
+  })
+
+  it('treats an empty q as no filter (returns all)', async () => {
+    const { db, store } = memoryDatabase()
+    await seedUser(db, store, 'a@example.com', 'free', '2026-06-01')
+    await seedUser(db, store, 'b@example.com', 'free', '2026-06-02')
+    expect((await listMembers(db, 100, 0, '')).length).toBe(2)
+  })
+
   it('returns an empty page for an empty store', async () => {
     const { db } = memoryDatabase()
     expect(await listMembers(db, 100, 0)).toEqual([])
@@ -201,6 +221,15 @@ describe('countMembers', () => {
     await seedUser(db, store, 'm1@example.com', 'free', '2026-06-01')
     await seedUser(db, store, 'm2@example.com', 'pro', '2026-06-02')
     expect(await countMembers(db)).toBe(2)
+  })
+
+  it('counts only matching accounts when q is given (case-insensitive)', async () => {
+    const { db, store } = memoryDatabase()
+    await seedUser(db, store, 'alice@acme.com', 'free', '2026-06-01')
+    await seedUser(db, store, 'bob@other.com', 'free', '2026-06-02')
+    await seedUser(db, store, 'carol@ACME.com', 'free', '2026-06-03')
+    expect(await countMembers(db, 'acme')).toBe(2)
+    expect(await countMembers(db, '')).toBe(3)
   })
 
   it('wraps a database failure as an AdminError', async () => {
@@ -252,5 +281,109 @@ describe('activeSubscriptions', () => {
     const { db, store } = memoryDatabase()
     store.failNext = true
     await expect(activeSubscriptions(db)).rejects.toBeInstanceOf(AdminError)
+  })
+})
+
+/** Insert one scan-history row for `userId` with the given verdict + provenance. */
+async function seedScan(
+  db: Parameters<typeof insertScan>[0],
+  args: {
+    id: string
+    userId: string
+    verdict: string
+    sourceKind?: string
+    sourceRef?: string
+    scannedAt: string
+  },
+): Promise<void> {
+  await insertScan(db, {
+    id: args.id,
+    userId: args.userId,
+    verdict: args.verdict,
+    sourceKind: args.sourceKind ?? 'url',
+    sourceRef: args.sourceRef ?? 'https://x.test',
+    flagged: 2,
+    headHash: `head-${args.id}`,
+    scannedAt: args.scannedAt,
+  })
+}
+
+describe('listThreats', () => {
+  it('returns only BLOCK rows, newest-first, with the owner email', async () => {
+    const { db, store } = memoryDatabase()
+    const owner = await seedUser(db, store, 'owner@acme.com', 'pro', '2026-06-01')
+    await seedScan(db, { id: 's1', userId: owner, verdict: 'ALLOW', scannedAt: '2026-06-10T01:00:00.000Z' })
+    await seedScan(db, { id: 's2', userId: owner, verdict: 'BLOCK', scannedAt: '2026-06-10T02:00:00.000Z' })
+    await seedScan(db, { id: 's3', userId: owner, verdict: 'BLOCK', scannedAt: '2026-06-10T03:00:00.000Z' })
+
+    const threats = await listThreats(db, { limit: 50, offset: 0 })
+    expect(threats.map((t) => t.id)).toEqual(['s3', 's2'])
+    expect(threats.every((t) => t.verdict === 'BLOCK')).toBe(true)
+    expect(threats[0]?.email).toBe('owner@acme.com')
+    expect(threats[0]?.headHash).toBe('head-s3')
+  })
+
+  it('filters by a case-insensitive source-ref OR email substring when q is given', async () => {
+    const { db, store } = memoryDatabase()
+    const alice = await seedUser(db, store, 'alice@acme.com', 'pro', '2026-06-01')
+    const bob = await seedUser(db, store, 'bob@other.com', 'pro', '2026-06-02')
+    await seedScan(db, { id: 'a1', userId: alice, verdict: 'BLOCK', sourceRef: 'https://evil.test', scannedAt: '2026-06-10T01:00:00.000Z' })
+    await seedScan(db, { id: 'b1', userId: bob, verdict: 'BLOCK', sourceRef: 'https://safeish.test', scannedAt: '2026-06-10T02:00:00.000Z' })
+
+    // Matches by source ref.
+    expect((await listThreats(db, { limit: 50, offset: 0, q: 'EVIL' })).map((t) => t.id)).toEqual(['a1'])
+    // Matches by owner email.
+    expect((await listThreats(db, { limit: 50, offset: 0, q: 'bob@' })).map((t) => t.id)).toEqual(['b1'])
+  })
+
+  it('honors limit + offset over the newest-first order', async () => {
+    const { db, store } = memoryDatabase()
+    const owner = await seedUser(db, store, 'o@acme.com', 'pro', '2026-06-01')
+    await seedScan(db, { id: 'x1', userId: owner, verdict: 'BLOCK', scannedAt: '2026-06-10T01:00:00.000Z' })
+    await seedScan(db, { id: 'x2', userId: owner, verdict: 'BLOCK', scannedAt: '2026-06-10T02:00:00.000Z' })
+    await seedScan(db, { id: 'x3', userId: owner, verdict: 'BLOCK', scannedAt: '2026-06-10T03:00:00.000Z' })
+
+    const page = await listThreats(db, { limit: 1, offset: 1 })
+    expect(page.map((t) => t.id)).toEqual(['x2'])
+  })
+
+  it('returns an empty page when there are no blocked scans', async () => {
+    const { db, store } = memoryDatabase()
+    const owner = await seedUser(db, store, 'q@acme.com', 'pro', '2026-06-01')
+    await seedScan(db, { id: 'n1', userId: owner, verdict: 'ALLOW', scannedAt: '2026-06-10T01:00:00.000Z' })
+    expect(await listThreats(db, { limit: 50, offset: 0 })).toEqual([])
+  })
+
+  it('wraps a database failure as an AdminError', async () => {
+    const { db, store } = memoryDatabase()
+    store.failNext = true
+    await expect(listThreats(db, { limit: 50, offset: 0 })).rejects.toBeInstanceOf(AdminError)
+  })
+})
+
+describe('countThreats', () => {
+  it('counts only blocked scans, with an optional q filter', async () => {
+    const { db, store } = memoryDatabase()
+    const alice = await seedUser(db, store, 'alice@acme.com', 'pro', '2026-06-01')
+    const bob = await seedUser(db, store, 'bob@other.com', 'pro', '2026-06-02')
+    await seedScan(db, { id: 'c1', userId: alice, verdict: 'BLOCK', sourceRef: 'https://evil.test', scannedAt: '2026-06-10T01:00:00.000Z' })
+    await seedScan(db, { id: 'c2', userId: bob, verdict: 'BLOCK', sourceRef: 'https://safe.test', scannedAt: '2026-06-10T02:00:00.000Z' })
+    await seedScan(db, { id: 'c3', userId: bob, verdict: 'ALLOW', scannedAt: '2026-06-10T03:00:00.000Z' })
+
+    expect(await countThreats(db)).toBe(2)
+    expect(await countThreats(db, 'evil')).toBe(1)
+    expect(await countThreats(db, 'bob@')).toBe(1)
+    expect(await countThreats(db, '')).toBe(2)
+  })
+
+  it('returns 0 when there are no blocked scans', async () => {
+    const { db } = memoryDatabase()
+    expect(await countThreats(db)).toBe(0)
+  })
+
+  it('wraps a database failure as an AdminError', async () => {
+    const { db, store } = memoryDatabase()
+    store.failNext = true
+    await expect(countThreats(db)).rejects.toBeInstanceOf(AdminError)
   })
 })

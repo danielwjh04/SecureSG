@@ -214,3 +214,45 @@ export const recentScansLimitSchema = z
   .transform((raw) => (raw === undefined ? String(RECENT_SCANS_DEFAULT_LIMIT) : raw))
   .pipe(z.coerce.number().int().positive())
   .transform((value) => Math.min(value, RECENT_SCANS_MAX_LIMIT))
+
+/** Maximum length of a search/filter `q` query param, to bound the LIKE input. */
+const SEARCH_QUERY_MAX_LENGTH = 200
+
+/**
+ * The optional `q` query param shared by the admin members directory and the
+ * blocked-threats report: a free-text substring, bounded to
+ * {@link SEARCH_QUERY_MAX_LENGTH} chars so the bound `LIKE` input can never be
+ * abused. Absent → `undefined` (no filter); a present value over the bound is a
+ * 422 at the route boundary. The value is bound into a parameterized `LIKE`,
+ * never interpolated into SQL.
+ */
+export const adminSearchQuerySchema = z.string().max(SEARCH_QUERY_MAX_LENGTH).optional()
+
+/** Default blocked-threats page size when the `limit` query param is absent. */
+const THREATS_DEFAULT_LIMIT = 50
+/** Maximum blocked-threats page size; a larger `limit` is clamped to this. */
+const THREATS_MAX_LIMIT = 500
+
+/**
+ * The `limit` query param of `GET /api/admin/threats`. Absent → the default; a
+ * present value must be a positive integer string and is clamped to the max, so
+ * a caller can never read an unbounded page. A non-integer / non-positive value
+ * is a 422 at the route boundary.
+ */
+export const threatsLimitSchema = z
+  .string()
+  .optional()
+  .transform((raw) => (raw === undefined ? String(THREATS_DEFAULT_LIMIT) : raw))
+  .pipe(z.coerce.number().int().positive())
+  .transform((value) => Math.min(value, THREATS_MAX_LIMIT))
+
+/**
+ * The `offset` query param of `GET /api/admin/threats`. Absent → 0; a present
+ * value must be a non-negative integer string. A non-integer / negative value is
+ * a 422 at the route boundary.
+ */
+export const threatsOffsetSchema = z
+  .string()
+  .optional()
+  .transform((raw) => (raw === undefined ? '0' : raw))
+  .pipe(z.coerce.number().int().nonnegative())
