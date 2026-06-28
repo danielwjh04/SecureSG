@@ -17,10 +17,10 @@
   "compatibility_flags": ["nodejs_compat"],
   "ai": { "binding": "AI" },
   "d1_databases": [
-    { "binding": "DB", "database_name": "secureai", "database_id": "REPLACE_WITH_D1_ID" }
+    { "binding": "DB", "database_name": "secureai", "database_id": "bf2be342-138a-4367-beea-fad391461259" }
   ],
   "kv_namespaces": [
-    { "binding": "KV", "id": "REPLACE_WITH_KV_ID" }
+    { "binding": "KV", "id": "359931a308c640fdb90a2989912d6c4f" }
   ],
   // The rebranded React SPA (built from ../scanner) is served as static assets;
   // the Worker runs first only for /api/*, so the SPA owns every other path and
