@@ -20,7 +20,20 @@ export const API_BASE = '' as const
 export const API = {
   scan: `${API_BASE}/api/scan`,
   verify: `${API_BASE}/api/verify`,
+  register: `${API_BASE}/api/register`,
+  login: `${API_BASE}/api/login`,
+  logout: `${API_BASE}/api/logout`,
+  me: `${API_BASE}/api/me`,
+  stats: `${API_BASE}/api/stats`,
+  rotateKey: `${API_BASE}/api/key/rotate`,
+  checkout: `${API_BASE}/api/checkout`,
 } as const
+
+/** Where to email enterprise sales when the Pricing page Contact CTA is used. */
+export const ENTERPRISE_CONTACT_EMAIL = 'sales@secureai.example' as const
+
+/** How many trailing days the dashboard trend chart covers (zero-filled). */
+export const STATS_TREND_DAYS = 30
 
 /** Static path to the prebuilt gallery dataset shipped alongside the SPA. */
 export const GALLERY_DATA_PATH = '/gallery.json' as const

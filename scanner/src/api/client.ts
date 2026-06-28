@@ -1,5 +1,16 @@
 import { API } from '../config'
-import type { Proof, ScanRequest, ScanResult, VerifyResult } from './types'
+import type {
+  AuthCredentials,
+  AuthResponse,
+  CheckoutResponse,
+  MeResponse,
+  Proof,
+  RotateKeyResponse,
+  ScanRequest,
+  ScanResult,
+  StatsResponse,
+  VerifyResult,
+} from './types'
 
 const JSON_HEADERS = { 'content-type': 'application/json' }
 
@@ -78,3 +89,68 @@ export interface ScanClient {
 
 /** The production scan client, backed by the live API. */
 export const defaultScanClient: ScanClient = { scanSkill }
+
+/**
+ * Send the session cookie on every account call. The Worker serves the SPA and
+ * the API from one origin; `include` keeps the httpOnly session cookie flowing
+ * even when a remote {@link API_BASE} is configured.
+ */
+const WITH_CREDENTIALS = { credentials: 'include' } as const
+
+/** Register a new account. Sets the session cookie. 409 if the email exists. */
+export async function register(
+  credentials: AuthCredentials,
+): Promise<AuthResponse> {
+  return request<AuthResponse>(API.register, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(credentials),
+    ...WITH_CREDENTIALS,
+  })
+}
+
+/** Sign in to an existing account. Sets the session cookie. 401 on bad creds. */
+export async function login(
+  credentials: AuthCredentials,
+): Promise<AuthResponse> {
+  return request<AuthResponse>(API.login, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(credentials),
+    ...WITH_CREDENTIALS,
+  })
+}
+
+/** Sign out, clearing the session cookie. */
+export async function logout(): Promise<void> {
+  await request<unknown>(API.logout, {
+    method: 'POST',
+    ...WITH_CREDENTIALS,
+  })
+}
+
+/** Fetch the signed-in account. Throws {@link ApiError}(401) when logged out. */
+export async function fetchMe(): Promise<MeResponse> {
+  return request<MeResponse>(API.me, { ...WITH_CREDENTIALS })
+}
+
+/** Fetch the account's protection statistics. */
+export async function fetchStats(): Promise<StatsResponse> {
+  return request<StatsResponse>(API.stats, { ...WITH_CREDENTIALS })
+}
+
+/** Rotate the account's API key. The new key is returned once and not stored. */
+export async function rotateApiKey(): Promise<RotateKeyResponse> {
+  return request<RotateKeyResponse>(API.rotateKey, {
+    method: 'POST',
+    ...WITH_CREDENTIALS,
+  })
+}
+
+/** Start a Stripe checkout session and return the URL to redirect to. */
+export async function startCheckout(): Promise<CheckoutResponse> {
+  return request<CheckoutResponse>(API.checkout, {
+    method: 'POST',
+    ...WITH_CREDENTIALS,
+  })
+}

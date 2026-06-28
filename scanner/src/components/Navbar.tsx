@@ -1,20 +1,25 @@
 /**
  * Glassmorphism navbar for the dark hero. Animates in from the top, carries the
- * SecureAI mark, and routes between the scanner and the Enterprise page with hash
- * links. The mark calls `onHome` so it always returns to a fresh scanner landing.
+ * SecureAI mark, and routes between the scanner, Pricing, and the Enterprise page
+ * with hash links. The mark calls `onHome` so it always returns to a fresh
+ * scanner landing. The right side is session-aware: a "Log in" link when logged
+ * out, a "Dashboard" link once a session cookie is present.
  */
 
 import { motion } from 'motion/react'
-import { ShieldCheck } from 'lucide-react'
+import { LayoutDashboard, ShieldCheck } from 'lucide-react'
 import { REPO_URL } from '../config'
 import { useHashRoute } from '../hooks/useHashRoute'
+import type { AuthState } from '../hooks/useAuth'
 
 interface NavbarProps {
   /** Return to the scanner landing, clearing any in-progress or finished scan. */
   onHome?: () => void
+  /** App-level session state; drives the right-side Log in / Dashboard link. */
+  auth: AuthState
 }
 
-export function Navbar({ onHome }: NavbarProps) {
+export function Navbar({ onHome, auth }: NavbarProps) {
   const { route, target } = useHashRoute()
   const linkClass = (active: boolean): string =>
     active
@@ -48,6 +53,9 @@ export function Navbar({ onHome }: NavbarProps) {
               >
                 How it works
               </a>
+              <a href="#pricing" className={linkClass(route === 'pricing')}>
+                Pricing
+              </a>
               <a href="#enterprise" className={linkClass(route === 'enterprise')}>
                 Enterprise
               </a>
@@ -60,6 +68,31 @@ export function Navbar({ onHome }: NavbarProps) {
                 GitHub
               </a>
             </div>
+          </div>
+
+          <div className="flex items-center text-sm font-medium">
+            {auth.status === 'authenticated' ? (
+              <a
+                href="#dashboard"
+                className={`glass-pill inline-flex items-center gap-1.5 px-4 py-1.5 ${
+                  route === 'dashboard' ? 'text-white' : 'text-white/70 hover:text-white'
+                } transition-colors`}
+              >
+                <LayoutDashboard className="w-4 h-4" />
+                Dashboard
+              </a>
+            ) : auth.status === 'anonymous' ? (
+              <a
+                href="#login"
+                className={`glass-pill px-4 py-1.5 ${
+                  route === 'login' || route === 'register'
+                    ? 'text-white'
+                    : 'text-white/70 hover:text-white'
+                } transition-colors`}
+              >
+                Log in
+              </a>
+            ) : null}
           </div>
         </div>
       </div>

@@ -29,6 +29,29 @@ describe('useHashRoute', () => {
     expect(result.current).toEqual({ route: 'scanner', target: 'how' })
   })
 
+  it.each([
+    ['#pricing', 'pricing'],
+    ['#login', 'login'],
+    ['#register', 'register'],
+    ['#dashboard', 'dashboard'],
+  ])('maps %s to the %s route at the top target', (hash, route) => {
+    replaceHash('')
+    const { result } = renderHook(() => useHashRoute())
+
+    act(() => dispatchHash(hash))
+
+    expect(result.current).toEqual({ route, target: 'top' })
+  })
+
+  it('falls back to the scanner route for an unknown hash', () => {
+    replaceHash('')
+    const { result } = renderHook(() => useHashRoute())
+
+    act(() => dispatchHash('#nope'))
+
+    expect(result.current).toEqual({ route: 'scanner', target: 'top' })
+  })
+
   it('uses manual scroll restoration while mounted', () => {
     replaceHash('')
     const previousScrollRestoration = window.history.scrollRestoration

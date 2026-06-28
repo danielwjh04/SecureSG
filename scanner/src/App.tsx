@@ -20,8 +20,12 @@ import { HowItWorks } from './components/HowItWorks'
 import { Gallery } from './components/Gallery'
 import { ResultView } from './components/ResultView'
 import { Enterprise } from './components/Enterprise'
+import { Pricing } from './components/Pricing'
+import { Auth } from './components/Auth'
+import { Dashboard } from './components/Dashboard'
 import { useScan } from './scan/useScan'
 import { useHashRoute } from './hooks/useHashRoute'
+import { useAuth } from './hooks/useAuth'
 import { REPO_URL } from './config'
 import type { ScanState } from './scan/scanMachine'
 
@@ -121,8 +125,18 @@ function ErrorSurface({
 function App(): ReactNode {
   const { route, target } = useHashRoute()
   const controller = useScan()
+  const auth = useAuth()
   const { state } = controller
   const previousRouteRef = useRef(route)
+
+  // The dashboard is gated: a logged-out visitor is bounced to the login screen
+  // as soon as the session resolves to anonymous. The redirect runs in an effect
+  // (not during render) so it never fires mid-commit.
+  useEffect(() => {
+    if (route === 'dashboard' && auth.status === 'anonymous') {
+      window.location.assign('#login')
+    }
+  }, [route, auth.status])
 
   useEffect(() => {
     const sameRoute = previousRouteRef.current === route
@@ -149,8 +163,53 @@ function App(): ReactNode {
     return (
       <main id="top" className={SHELL}>
         <BackgroundVideo />
-        <Navbar onHome={controller.reset} />
+        <Navbar onHome={controller.reset} auth={auth} />
         <Enterprise />
+        <Footer />
+      </main>
+    )
+  }
+
+  // Pricing surface.
+  if (route === 'pricing') {
+    return (
+      <main id="top" className={SHELL}>
+        <BackgroundVideo />
+        <Navbar onHome={controller.reset} auth={auth} />
+        <Pricing auth={auth} />
+        <Footer />
+      </main>
+    )
+  }
+
+  // Auth surfaces (login / register): a centered glass card over the video.
+  if (route === 'login' || route === 'register') {
+    return (
+      <main id="top" className={SHELL}>
+        <BackgroundVideo />
+        <div className="fixed inset-0 bg-black/70" aria-hidden="true" />
+        <Navbar onHome={controller.reset} auth={auth} />
+        <Auth mode={route} auth={auth} />
+        <Footer />
+      </main>
+    )
+  }
+
+  // Dashboard surface. While the session is resolving, hold a quiet loading
+  // line; an anonymous visitor is redirected by the effect above.
+  if (route === 'dashboard') {
+    return (
+      <main id="top" className={SHELL}>
+        <BackgroundVideo />
+        <div className="fixed inset-0 bg-black/80" aria-hidden="true" />
+        <Navbar onHome={controller.reset} auth={auth} />
+        {auth.status === 'authenticated' && auth.user !== null ? (
+          <Dashboard user={auth.user} auth={auth} />
+        ) : (
+          <section className="relative z-10 flex-1 flex items-center justify-center px-6 py-20">
+            <p className="text-white/45 font-mono text-sm">Loading your dashboard…</p>
+          </section>
+        )}
         <Footer />
       </main>
     )
@@ -162,7 +221,7 @@ function App(): ReactNode {
       <main id="top" className={SHELL}>
         <BackgroundVideo />
         <div className="fixed inset-0 bg-black/80" aria-hidden="true" />
-        <Navbar onHome={controller.reset} />
+        <Navbar onHome={controller.reset} auth={auth} />
         <ResultSurface state={state} onReset={controller.reset} />
         <Footer />
       </main>
@@ -175,7 +234,7 @@ function App(): ReactNode {
       <main id="top" className="relative bg-black w-screen h-screen flex flex-col overflow-hidden selection:bg-white selection:text-black">
         <BackgroundVideo />
         <div className="fixed inset-0 bg-black/70" aria-hidden="true" />
-        <Navbar onHome={controller.reset} />
+        <Navbar onHome={controller.reset} auth={auth} />
         <ErrorSurface message={state.message} onRetry={controller.reset} />
       </main>
     )
@@ -186,7 +245,7 @@ function App(): ReactNode {
   return (
     <main id="top" className={SHELL}>
       <BackgroundVideo />
-      <Navbar onHome={controller.reset} />
+      <Navbar onHome={controller.reset} auth={auth} />
       <Hero state={state} onScan={controller.scan} />
       <div className="relative z-10 bg-black">
         <HowItWorks />

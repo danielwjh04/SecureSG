@@ -1,13 +1,20 @@
 /**
  * Minimal hash-based routing for the single-page scanner: no router dependency,
- * just the two top-level surfaces. `#enterprise` shows the Enterprise page;
- * anything else is the scanner. Hash routing keeps the URL shareable and the
- * back button working without a history library.
+ * just the top-level surfaces. The hash selects the surface — `#enterprise`,
+ * `#pricing`, `#login`, `#register`, `#dashboard` — and anything else is the
+ * scanner. Hash routing keeps the URL shareable and the back button working
+ * without a history library.
  */
 
 import { useEffect, useState } from 'react'
 
-export type Route = 'scanner' | 'enterprise'
+export type Route =
+  | 'scanner'
+  | 'enterprise'
+  | 'pricing'
+  | 'login'
+  | 'register'
+  | 'dashboard'
 export type RouteTarget = 'top' | 'how'
 
 export interface HashRoute {
@@ -15,18 +22,27 @@ export interface HashRoute {
   target: RouteTarget
 }
 
-const ENTERPRISE_HASH = '#enterprise'
-const HOW_HASH = '#how'
+/**
+ * Map each known hash to its route. The leading `#` is stripped so a hash with a
+ * trailing query (none today, but cheap insurance) still resolves. Every entry
+ * lands on the `top` target except `#how`, which deep-links into the scanner
+ * landing's how-it-works section.
+ */
+const HASH_ROUTES: Record<string, HashRoute> = {
+  enterprise: { route: 'enterprise', target: 'top' },
+  pricing: { route: 'pricing', target: 'top' },
+  login: { route: 'login', target: 'top' },
+  register: { route: 'register', target: 'top' },
+  dashboard: { route: 'dashboard', target: 'top' },
+  how: { route: 'scanner', target: 'how' },
+}
+
+const DEFAULT_ROUTE: HashRoute = { route: 'scanner', target: 'top' }
 
 /** Map the current location hash to a known route. */
 function routeFromHash(): HashRoute {
-  if (window.location.hash === ENTERPRISE_HASH) {
-    return { route: 'enterprise', target: 'top' }
-  }
-  if (window.location.hash === HOW_HASH) {
-    return { route: 'scanner', target: 'how' }
-  }
-  return { route: 'scanner', target: 'top' }
+  const key = window.location.hash.replace(/^#/, '')
+  return HASH_ROUTES[key] ?? DEFAULT_ROUTE
 }
 
 /**
