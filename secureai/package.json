@@ -6,6 +6,8 @@
   "description": "SecureAI: antivirus for AI coding agents. Scanner Worker + Guard.",
   "scripts": {
     "dev": "wrangler dev",
+    "build:web": "npm --prefix ../scanner run build",
+    "predeploy": "npm run build:web",
     "deploy": "wrangler deploy",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
