@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { ReputationReport, Verdict } from '../schemas/contract'
 import { InferenceError } from '../errors'
+import { passThroughBreaker } from '../resilience/circuitBreaker'
 import {
   buildInferenceClient,
   WorkersAiInferenceClient,
@@ -78,7 +79,7 @@ describe('WorkersAiInferenceClient.detect', () => {
     const runner = staticRunner(
       JSON.stringify({ pInjection: 0.5, findings: [], rationale: 'unclear' }),
     )
-    const client = new WorkersAiInferenceClient(runner, CONFIG)
+    const client = new WorkersAiInferenceClient(runner, CONFIG, passThroughBreaker())
 
     const result = await client.detect('borderline skill', NO_REPUTATION, 'ALLOW')
 

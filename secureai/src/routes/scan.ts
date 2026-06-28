@@ -12,6 +12,7 @@ import type { Env, ScannerConfig } from '../config/env'
 import type { BatchStatement, Database } from '../db/database'
 import type { ScanRequest, ScanResult } from '../schemas/contract'
 import {
+  CircuitOpenError,
   ConfigError,
   InferenceError,
   ParseError,
@@ -23,6 +24,7 @@ import {
 } from '../errors'
 import { runScan } from '../scanner/runScan'
 import { buildInferenceClient, type AiRunner } from '../pipeline/inference'
+import { breakerFor, type BreakerStore } from '../resilience/circuitBreaker'
 import { DenylistReputationClient, type IndicatorKv } from '../pipeline/indicators'
 import { scanRequestSchema } from '../schemas/validate'
 import { d1Database } from '../db/database'
@@ -359,8 +361,21 @@ export async function handleScan(
     const aiEligible =
       aiAllowedForTier(ctx.tier, config) && env.AI !== undefined && env.AI !== null
     const inference = aiEligible
-      ? // The Workers AI binding's `run` is structurally an AiRunner.
-        buildInferenceClient(env.AI as unknown as AiRunner, config)
+      ? // The Workers AI binding's `run` is structurally an AiRunner. The model
+        // call is guarded by a KV-backed breaker (pass-through when KV is unbound).
+        buildInferenceClient(
+          env.AI as unknown as AiRunner,
+          config,
+          breakerFor(
+            (env.KV as BreakerStore | undefined) ?? null,
+            config,
+            'inference',
+            () =>
+              new InferenceError('inference circuit open', {
+                cause: new CircuitOpenError('inference breaker open'),
+              }),
+          ),
+        )
       : null
 
     // Known-bad indicator lookup: the curated host denylist from config plus,

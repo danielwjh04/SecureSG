@@ -47,7 +47,8 @@ import {
 import { d1Database } from './db/database'
 import { buildEmailSender } from './email/sender'
 import { buildStripe, StripeBillingGateway } from './billing/stripe'
-import { ParseError, ScannerError } from './errors'
+import { BillingError, CircuitOpenError, ParseError, ScannerError } from './errors'
+import { breakerFor, type BreakerStore } from './resilience/circuitBreaker'
 
 const ROUTE_SCAN = '/api/scan'
 const ROUTE_VERIFY = '/api/verify'
@@ -142,7 +143,7 @@ export default {
       return await handleCheckout(
         request,
         billingDatabase(env),
-        billingGateway(env),
+        billingGateway(env, config),
         config,
         sessionSecretOf(env),
       )
@@ -156,7 +157,7 @@ export default {
       return await handlePortal(
         request,
         billingDatabase(env),
-        billingGateway(env),
+        billingGateway(env, config),
         config,
         sessionSecretOf(env),
       )
@@ -169,7 +170,7 @@ export default {
       // handleWebhook owns its own error→status mapping and never throws. The
       // ledger day is stamped here, at the edge, so it is deterministic per call.
       const day = new Date().toISOString()
-      return await handleWebhook(request, billingDatabase(env), billingGateway(env), day)
+      return await handleWebhook(request, billingDatabase(env), billingGateway(env, config), day)
     }
 
     if (url.pathname === ROUTE_REGISTER) {
@@ -363,7 +364,7 @@ function adminDeps(env: Env, config: ScannerConfig): AdminDeps {
  * secret degrades the billing routes to 503; it never fails config load for the
  * other routes (the secrets are read here, not in `loadConfig`).
  */
-function billingGateway(env: Env): BillingGateway | null {
+function billingGateway(env: Env, config: ScannerConfig): BillingGateway | null {
   const secret = env.STRIPE_SECRET_KEY
   const webhookSecret = env.STRIPE_WEBHOOK_SECRET
   if (typeof secret !== 'string' || secret.length === 0) {
@@ -372,7 +373,13 @@ function billingGateway(env: Env): BillingGateway | null {
   if (typeof webhookSecret !== 'string' || webhookSecret.length === 0) {
     return null
   }
-  return new StripeBillingGateway(buildStripe(secret), webhookSecret)
+  const store = (env.KV as BreakerStore | undefined) ?? null
+  const breaker = breakerFor(store, config, 'stripe', () =>
+    new BillingError('payment provider circuit open', {
+      cause: new CircuitOpenError('stripe breaker open'),
+    }),
+  )
+  return new StripeBillingGateway(buildStripe(secret, config), webhookSecret, breaker)
 }
 
 /** Map a thrown error to an HTTP response, logging its exact class. */

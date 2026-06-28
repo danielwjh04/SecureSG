@@ -24,6 +24,15 @@ export class ConfigError extends ScannerError {}
  */
 export class PersistenceError extends ScannerError {}
 
+/**
+ * Raised INTERNALLY by a circuit breaker when it short-circuits a call because
+ * the breaker is open. It is never surfaced to a route directly — the breaker's
+ * `onOpen` maps it to the wrapped dependency's OWN typed error (e.g.
+ * {@link InferenceError}, {@link EmailError}, {@link BillingError}), carrying this
+ * as the `cause` so logs can tell "circuit open" apart from a real upstream fault.
+ */
+export class CircuitOpenError extends ScannerError {}
+
 /** A value could not be canonicalized to hash-stable bytes. */
 export class CanonicalizationError extends ScannerError {}
 

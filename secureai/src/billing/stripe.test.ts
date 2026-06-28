@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type Stripe from 'stripe'
-import { buildStripe, StripeBillingGateway } from './stripe'
+import { buildStripe, stripeClientOptions, StripeBillingGateway } from './stripe'
 import { BillingError } from '../errors'
+import { loadConfig } from '../config/env'
+import { passThroughBreaker } from '../resilience/circuitBreaker'
+
+const config = loadConfig({})
+const breaker = passThroughBreaker()
 
 /**
  * A minimal fake of the Stripe client surface the gateway touches. Each
@@ -32,16 +37,24 @@ function fakeStripe(overrides: {
 
 describe('buildStripe', () => {
   it('constructs a Stripe client without throwing', () => {
-    const stripe = buildStripe('sk_test_dummy')
+    const stripe = buildStripe('sk_test_dummy', config)
     expect(stripe).toBeDefined()
     // The fetch HTTP client is wired (Workers correctness); webhooks surface is present.
     expect(typeof stripe.webhooks.constructEventAsync).toBe('function')
   })
 })
 
+describe('stripeClientOptions', () => {
+  it('carries the config-driven timeout and network-retry count', () => {
+    const opts = stripeClientOptions(config)
+    expect(opts.timeout).toBe(config.stripeTimeoutMs)
+    expect(opts.maxNetworkRetries).toBe(config.stripeMaxNetworkRetries)
+  })
+})
+
 describe('StripeBillingGateway.constructEvent', () => {
   it('fails closed (BillingError) on an unverifiable signature', async () => {
-    const gateway = new StripeBillingGateway(buildStripe('sk_test_dummy'), 'whsec_dummy')
+    const gateway = new StripeBillingGateway(buildStripe('sk_test_dummy', config), 'whsec_dummy', breaker)
     // A body+signature that cannot verify against the secret must NOT be trusted.
     await expect(
       gateway.constructEvent('{"id":"evt_1"}', 't=1,v1=deadbeef'),
@@ -54,6 +67,7 @@ describe('StripeBillingGateway operations', () => {
     const gw = new StripeBillingGateway(
       fakeStripe({ customer: async () => ({ id: 'cus_made' }) }),
       'whsec',
+      breaker,
     )
     expect(await gw.ensureCustomer('u1', 'a@b.com')).toBe('cus_made')
     // Email may be null (no email on file).
@@ -64,6 +78,7 @@ describe('StripeBillingGateway operations', () => {
     const gw = new StripeBillingGateway(
       fakeStripe({ checkout: async () => ({ url: 'https://pay' }) }),
       'whsec',
+      breaker,
     )
     const url = await gw.createCheckoutSession({
       customerId: 'cus_1',
@@ -78,6 +93,7 @@ describe('StripeBillingGateway operations', () => {
     const gw = new StripeBillingGateway(
       fakeStripe({ checkout: async () => ({ url: null }) }),
       'whsec',
+      breaker,
     )
     await expect(
       gw.createCheckoutSession({ customerId: 'c', priceId: 'p', successUrl: 's', cancelUrl: 'x' }),
@@ -88,6 +104,7 @@ describe('StripeBillingGateway operations', () => {
     const gw = new StripeBillingGateway(
       fakeStripe({ portal: async () => ({ url: 'https://manage' }) }),
       'whsec',
+      breaker,
     )
     expect(await gw.createPortalSession({ customerId: 'cus_1', returnUrl: 'r' })).toBe(
       'https://manage',
@@ -102,6 +119,7 @@ describe('StripeBillingGateway operations', () => {
         },
       }),
       'whsec',
+      breaker,
     )
     await expect(gw.ensureCustomer('u1', 'a@b.com')).rejects.toBeInstanceOf(BillingError)
   })
@@ -114,6 +132,7 @@ describe('StripeBillingGateway operations', () => {
         },
       }),
       'whsec',
+      breaker,
     )
     await expect(
       gw.createCheckoutSession({ customerId: 'c', priceId: 'p', successUrl: 's', cancelUrl: 'x' }),
@@ -128,6 +147,7 @@ describe('StripeBillingGateway operations', () => {
         },
       }),
       'whsec',
+      breaker,
     )
     await expect(
       gw.createPortalSession({ customerId: 'c', returnUrl: 'r' }),

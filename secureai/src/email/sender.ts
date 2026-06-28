@@ -17,7 +17,8 @@
  */
 
 import type { Env, ScannerConfig } from '../config/env'
-import { EmailError } from '../errors'
+import { EmailError, CircuitOpenError } from '../errors'
+import { breakerFor, type BreakerStore, type CircuitBreaker } from '../resilience/circuitBreaker'
 
 /** A single transactional email to deliver. */
 export interface EmailMessage {
@@ -65,10 +66,14 @@ export class ResendEmailSender implements EmailSender {
   /**
    * @param apiKey - The Resend API key (a secret, from `env.RESEND_API_KEY`).
    * @param from - The verified `From` address (from `config.emailFrom`).
+   * @param timeoutMs - Hard timeout for the send fetch (`config.emailTimeoutMs`).
+   * @param breaker - Circuit breaker guarding the Resend dependency.
    */
   public constructor(
     private readonly apiKey: string,
     private readonly from: string,
+    private readonly timeoutMs: number,
+    private readonly breaker: CircuitBreaker,
   ) {}
 
   /**
@@ -102,25 +107,33 @@ export class ResendEmailSender implements EmailSender {
     if (message.replyTo !== undefined) {
       payload.reply_to = message.replyTo
     }
-    let response: Response
-    try {
-      response = await fetch(RESEND_ENDPOINT, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      })
-    } catch (error: unknown) {
-      const name = error instanceof Error ? error.constructor.name : typeof error
-      console.error(`[email] Resend request failed: ${name}`)
-      throw new EmailError('email provider unreachable', { cause: error })
-    }
-    if (response.status < HTTP_OK_MIN || response.status >= HTTP_OK_MAX_EXCLUSIVE) {
-      console.error(`[email] Resend rejected the send: HTTP ${response.status}`)
-      throw new EmailError(`email provider returned status ${response.status}`)
-    }
+    // The fetch + status check run through the breaker: a bounded-timeout request,
+    // and a non-2xx is raised so the breaker counts it as a failure. When the
+    // breaker is open it throws EmailError (cause: CircuitOpenError) without
+    // calling Resend — the login route then fails closed, exactly as on a real
+    // send failure.
+    await this.breaker.run(async () => {
+      let response: Response
+      try {
+        response = await fetch(RESEND_ENDPOINT, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+          signal: AbortSignal.timeout(this.timeoutMs),
+        })
+      } catch (error: unknown) {
+        const name = error instanceof Error ? error.constructor.name : typeof error
+        console.error(`[email] Resend request failed: ${name}`)
+        throw new EmailError('email provider unreachable', { cause: error })
+      }
+      if (response.status < HTTP_OK_MIN || response.status >= HTTP_OK_MAX_EXCLUSIVE) {
+        console.error(`[email] Resend rejected the send: HTTP ${response.status}`)
+        throw new EmailError(`email provider returned status ${response.status}`)
+      }
+    })
   }
 }
 
@@ -141,5 +154,11 @@ export function buildEmailSender(env: Env, config: ScannerConfig): EmailSender |
   if (typeof apiKey !== 'string' || apiKey.length === 0) {
     return null
   }
-  return new ResendEmailSender(apiKey, config.emailFrom)
+  const store = (env.KV as BreakerStore | undefined) ?? null
+  const breaker = breakerFor(store, config, 'email', () =>
+    new EmailError('email provider circuit open', {
+      cause: new CircuitOpenError('email breaker open'),
+    }),
+  )
+  return new ResendEmailSender(apiKey, config.emailFrom, config.emailTimeoutMs, breaker)
 }

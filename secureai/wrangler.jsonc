@@ -124,6 +124,19 @@
     "SCANNER_PWNED_TIMEOUT_MS": "2500",
     // Per-scan writes (metering + history + detail) run as one atomic D1 batch by
     // default; set to "false" to fall back to the legacy sequential writes.
-    "SCANNER_SCAN_WRITE_ATOMIC": "true"
+    "SCANNER_SCAN_WRITE_ATOMIC": "true",
+    // Resilience (non-secret). Outbound-dependency timeouts: SCANNER_EMAIL_TIMEOUT_MS
+    // bounds the Resend send fetch; SCANNER_STRIPE_TIMEOUT_MS + SCANNER_STRIPE_MAX_NETWORK_RETRIES
+    // bound each Stripe API call (retries multiply worst-case wall time, so keep
+    // them low). The KV-backed circuit breaker around Resend / Stripe / Workers AI
+    // is on by default (SCANNER_BREAKER_ENABLED); it trips after
+    // SCANNER_BREAKER_FAILURE_THRESHOLD failures and short-circuits for
+    // SCANNER_BREAKER_COOLDOWN_S seconds. When KV is unbound the breaker is a no-op.
+    "SCANNER_EMAIL_TIMEOUT_MS": "10000",
+    "SCANNER_STRIPE_TIMEOUT_MS": "10000",
+    "SCANNER_STRIPE_MAX_NETWORK_RETRIES": "1",
+    "SCANNER_BREAKER_ENABLED": "true",
+    "SCANNER_BREAKER_FAILURE_THRESHOLD": "5",
+    "SCANNER_BREAKER_COOLDOWN_S": "30"
   }
 }

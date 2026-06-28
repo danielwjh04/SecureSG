@@ -19,7 +19,9 @@
  */
 
 import Stripe from 'stripe'
+import type { ScannerConfig } from '../config/env'
 import { BillingError } from '../errors'
+import type { CircuitBreaker } from '../resilience/circuitBreaker'
 
 /** Inputs for a subscription Checkout Session. */
 export interface CheckoutSessionParams {
@@ -77,21 +79,39 @@ export interface BillingGateway {
 const STRIPE_API_VERSION = '2026-06-24.dahlia' as const
 
 /**
+ * The Stripe client options derived from config — extracted as a pure function so
+ * the timeout / retry plumbing is unit-testable without constructing a live SDK.
+ *
+ * Time complexity: O(1). Space complexity: O(1).
+ */
+export function stripeClientOptions(
+  config: ScannerConfig,
+): NonNullable<ConstructorParameters<typeof Stripe>[1]> {
+  return {
+    apiVersion: STRIPE_API_VERSION,
+    httpClient: Stripe.createFetchHttpClient(),
+    // Bound each call so a hung Stripe request cannot stall a Worker; retries are
+    // kept low because worst-case wall time ≈ timeout × (retries + 1).
+    timeout: config.stripeTimeoutMs,
+    maxNetworkRetries: config.stripeMaxNetworkRetries,
+  }
+}
+
+/**
  * Build a Workers-correct Stripe client.
  *
- * Uses the fetch-based HTTP client (Workers has no Node `http`) and a pinned API
- * version. Construct this once per request lifecycle, not per call.
+ * Uses the fetch-based HTTP client (Workers has no Node `http`), a pinned API
+ * version, and the config-driven timeout + retry count. Construct this once per
+ * request lifecycle, not per call.
  *
  * Time complexity: O(1). Space complexity: O(1).
  *
  * @param secret - The `STRIPE_SECRET_KEY`.
+ * @param config - The validated config (supplies timeout + retry count).
  * @returns A configured {@link Stripe} client.
  */
-export function buildStripe(secret: string): Stripe {
-  return new Stripe(secret, {
-    apiVersion: STRIPE_API_VERSION,
-    httpClient: Stripe.createFetchHttpClient(),
-  })
+export function buildStripe(secret: string, config: ScannerConfig): Stripe {
+  return new Stripe(secret, stripeClientOptions(config))
 }
 
 /**
@@ -103,14 +123,19 @@ export function buildStripe(secret: string): Stripe {
 export class StripeBillingGateway implements BillingGateway {
   private readonly stripe: Stripe
   private readonly webhookSecret: string
+  private readonly breaker: CircuitBreaker
 
   /**
    * @param stripe - A client from {@link buildStripe}.
    * @param webhookSecret - The `STRIPE_WEBHOOK_SECRET` used to verify events.
+   * @param breaker - Circuit breaker guarding the Stripe network calls. The local
+   *   webhook signature check ({@link constructEvent}) is NOT wrapped — it makes no
+   *   network call.
    */
-  public constructor(stripe: Stripe, webhookSecret: string) {
+  public constructor(stripe: Stripe, webhookSecret: string, breaker: CircuitBreaker) {
     this.stripe = stripe
     this.webhookSecret = webhookSecret
+    this.breaker = breaker
   }
 
   /**
@@ -124,18 +149,20 @@ export class StripeBillingGateway implements BillingGateway {
    * @throws {BillingError} On any Stripe API failure.
    */
   public async ensureCustomer(userId: string, email: string | null): Promise<string> {
-    try {
-      const customer = await this.stripe.customers.create(
-        {
-          email: email ?? undefined,
-          metadata: { user_id: userId },
-        },
-        { idempotencyKey: `customer:${userId}` },
-      )
-      return customer.id
-    } catch (error: unknown) {
-      throw billingFault('ensureCustomer', error)
-    }
+    return this.breaker.run(async () => {
+      try {
+        const customer = await this.stripe.customers.create(
+          {
+            email: email ?? undefined,
+            metadata: { user_id: userId },
+          },
+          { idempotencyKey: `customer:${userId}` },
+        )
+        return customer.id
+      } catch (error: unknown) {
+        throw billingFault('ensureCustomer', error)
+      }
+    })
   }
 
   /**
@@ -146,22 +173,24 @@ export class StripeBillingGateway implements BillingGateway {
    * @throws {BillingError} On a Stripe failure, or if Stripe returns no URL.
    */
   public async createCheckoutSession(params: CheckoutSessionParams): Promise<string> {
-    let session: Stripe.Checkout.Session
-    try {
-      session = await this.stripe.checkout.sessions.create({
-        mode: 'subscription',
-        customer: params.customerId,
-        line_items: [{ price: params.priceId, quantity: 1 }],
-        success_url: params.successUrl,
-        cancel_url: params.cancelUrl,
-      })
-    } catch (error: unknown) {
-      throw billingFault('createCheckoutSession', error)
-    }
-    if (session.url === null) {
-      throw new BillingError('Stripe returned a checkout session without a URL')
-    }
-    return session.url
+    return this.breaker.run(async () => {
+      let session: Stripe.Checkout.Session
+      try {
+        session = await this.stripe.checkout.sessions.create({
+          mode: 'subscription',
+          customer: params.customerId,
+          line_items: [{ price: params.priceId, quantity: 1 }],
+          success_url: params.successUrl,
+          cancel_url: params.cancelUrl,
+        })
+      } catch (error: unknown) {
+        throw billingFault('createCheckoutSession', error)
+      }
+      if (session.url === null) {
+        throw new BillingError('Stripe returned a checkout session without a URL')
+      }
+      return session.url
+    })
   }
 
   /**
@@ -172,15 +201,17 @@ export class StripeBillingGateway implements BillingGateway {
    * @throws {BillingError} On a Stripe failure.
    */
   public async createPortalSession(params: PortalSessionParams): Promise<string> {
-    try {
-      const session = await this.stripe.billingPortal.sessions.create({
-        customer: params.customerId,
-        return_url: params.returnUrl,
-      })
-      return session.url
-    } catch (error: unknown) {
-      throw billingFault('createPortalSession', error)
-    }
+    return this.breaker.run(async () => {
+      try {
+        const session = await this.stripe.billingPortal.sessions.create({
+          customer: params.customerId,
+          return_url: params.returnUrl,
+        })
+        return session.url
+      } catch (error: unknown) {
+        throw billingFault('createPortalSession', error)
+      }
+    })
   }
 
   /**

@@ -31,6 +31,7 @@ import type {
   Verdict,
 } from '../schemas/contract'
 import { InferenceError } from '../errors'
+import { passThroughBreaker, type CircuitBreaker } from '../resilience/circuitBreaker'
 import { escalate, mapProbabilityToVerdict } from '../verdict'
 
 /**
@@ -136,8 +137,9 @@ const SYSTEM_PROMPT =
 export function buildInferenceClient(
   ai: AiRunner,
   config: InferenceConfig,
+  breaker: CircuitBreaker = passThroughBreaker(),
 ): WorkersAiInferenceClient {
-  return new WorkersAiInferenceClient(ai, config)
+  return new WorkersAiInferenceClient(ai, config, breaker)
 }
 
 /**
@@ -150,15 +152,18 @@ export function buildInferenceClient(
 export class WorkersAiInferenceClient {
   private readonly ai: AiRunner
   private readonly config: InferenceConfig
+  private readonly breaker: CircuitBreaker
 
   /**
    * @param ai - The Workers AI runner (the `env.AI` binding).
    * @param config - Resolved config supplying the model id, request timeout, and
    *   verdict thresholds.
+   * @param breaker - Circuit breaker guarding the Workers AI dependency.
    */
-  public constructor(ai: AiRunner, config: InferenceConfig) {
+  public constructor(ai: AiRunner, config: InferenceConfig, breaker: CircuitBreaker) {
     this.ai = ai
     this.config = config
+    this.breaker = breaker
   }
 
   /**
@@ -257,14 +262,19 @@ export class WorkersAiInferenceClient {
   private async runModel(userContent: string): Promise<string> {
     const signal = AbortSignal.timeout(this.config.aiTimeoutMs)
     try {
-      const result = await this.race(
-        this.ai.run(this.config.aiModel, {
-          messages: [
-            { role: 'system', content: SYSTEM_PROMPT },
-            { role: 'user', content: userContent },
-          ],
-        }),
-        signal,
+      // The timeout-bounded model call runs through the breaker: when open it
+      // throws InferenceError (cause: CircuitOpenError) WITHOUT calling the model,
+      // flowing into the existing AI fail-closed escalation unchanged.
+      const result = await this.breaker.run(() =>
+        this.race(
+          this.ai.run(this.config.aiModel, {
+            messages: [
+              { role: 'system', content: SYSTEM_PROMPT },
+              { role: 'user', content: userContent },
+            ],
+          }),
+          signal,
+        ),
       )
       const text = result.response
       if (typeof text !== 'string' || text.trim().length === 0) {

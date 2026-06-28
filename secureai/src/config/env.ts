@@ -162,6 +162,21 @@ export interface ScannerConfig {
    * still returned); set to `false` to fall back if a batch issue is suspected.
    */
   readonly scanWriteAtomic: boolean
+  /** Hard timeout (ms) for the Resend email-send fetch. */
+  readonly emailTimeoutMs: number
+  /** Hard timeout (ms) the Stripe SDK applies to each API call. */
+  readonly stripeTimeoutMs: number
+  /** Stripe SDK automatic network-retry count (multiplies worst-case wall time). */
+  readonly stripeMaxNetworkRetries: number
+  /**
+   * Circuit-breaker tuning for outbound dependencies (Resend / Stripe / Workers
+   * AI). `enabled` off, or KV unbound, yields a pass-through breaker.
+   * `failureThreshold` consecutive-ish failures trip it OPEN; it then short-circuits
+   * for `cooldownSeconds` before allowing a half-open probe.
+   */
+  readonly breakerEnabled: boolean
+  readonly breakerFailureThreshold: number
+  readonly breakerCooldownSeconds: number
 }
 
 /**
@@ -261,6 +276,15 @@ export function loadConfig(env: Env): ScannerConfig {
   // Per-scan writes default to one atomic D1 batch; flip to false to fall back to
   // the legacy sequential path.
   const scanWriteAtomic = readBool(env, 'SCANNER_SCAN_WRITE_ATOMIC', true)
+  // Resilience: outbound-dependency timeouts + circuit breaker. Email/Stripe
+  // fetches default to a 10s timeout; Stripe retries once. The breaker is on by
+  // default, tripping after 5 failures and cooling down 30s.
+  const emailTimeoutMs = readIntInRange(env, 'SCANNER_EMAIL_TIMEOUT_MS', 10000, 100, 60000)
+  const stripeTimeoutMs = readIntInRange(env, 'SCANNER_STRIPE_TIMEOUT_MS', 10000, 100, 60000)
+  const stripeMaxNetworkRetries = readIntInRange(env, 'SCANNER_STRIPE_MAX_NETWORK_RETRIES', 1, 0, 5)
+  const breakerEnabled = readBool(env, 'SCANNER_BREAKER_ENABLED', true)
+  const breakerFailureThreshold = readIntInRange(env, 'SCANNER_BREAKER_FAILURE_THRESHOLD', 5, 1, 100)
+  const breakerCooldownSeconds = readIntInRange(env, 'SCANNER_BREAKER_COOLDOWN_S', 30, 1, 3600)
 
   // Cross-field invariants (fail-closed).
   if (!(reviewThreshold < blockThreshold)) {
@@ -320,6 +344,12 @@ export function loadConfig(env: Env): ScannerConfig {
     pwnedCheckEnabled,
     pwnedTimeoutMs,
     scanWriteAtomic,
+    emailTimeoutMs,
+    stripeTimeoutMs,
+    stripeMaxNetworkRetries,
+    breakerEnabled,
+    breakerFailureThreshold,
+    breakerCooldownSeconds,
   }
 }
 

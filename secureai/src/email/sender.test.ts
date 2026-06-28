@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Env, ScannerConfig } from '../config/env'
 import { loadConfig } from '../config/env'
 import { EmailError } from '../errors'
+import { passThroughBreaker } from '../resilience/circuitBreaker'
 import { ResendEmailSender, buildEmailSender } from './sender'
 
 const config: ScannerConfig = loadConfig({})
@@ -16,7 +17,7 @@ describe('ResendEmailSender', () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
 
-    const sender = new ResendEmailSender('re_test_key', 'SecureAI <noreply@zurielst.com>')
+    const sender = new ResendEmailSender('re_test_key', 'SecureAI <noreply@zurielst.com>', 5000, passThroughBreaker())
     await sender.send({ to: 'a@b.com', subject: 'Subj', html: '<p>h</p>', text: 't' })
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
@@ -36,10 +37,35 @@ describe('ResendEmailSender', () => {
     })
   })
 
+  it('bounds the send with an AbortSignal timeout', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const sender = new ResendEmailSender('re_test_key', 'from@x.com', 5000, passThroughBreaker())
+    await sender.send({ to: 'a@b.com', subject: 's', html: 'h', text: 't' })
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(init.signal).toBeInstanceOf(AbortSignal)
+  })
+
+  it('short-circuits via an open breaker (EmailError, no fetch)', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    // An always-open breaker throws before the operation runs.
+    const openBreaker = {
+      run: async (): Promise<never> => {
+        throw new EmailError('email provider circuit open')
+      },
+    }
+    const sender = new ResendEmailSender('re_test_key', 'from@x.com', 5000, openBreaker)
+    await expect(
+      sender.send({ to: 'a@b.com', subject: 's', html: 'h', text: 't' }),
+    ).rejects.toBeInstanceOf(EmailError)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('normalizes a single string recipient to an array and omits reply_to', async () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
-    const sender = new ResendEmailSender('re_test_key', 'from@x.com')
+    const sender = new ResendEmailSender('re_test_key', 'from@x.com', 5000, passThroughBreaker())
     await sender.send({ to: 'one@b.com', subject: 's', html: 'h', text: 't' })
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     const body = JSON.parse(init.body as string) as Record<string, unknown>
@@ -50,7 +76,7 @@ describe('ResendEmailSender', () => {
   it('passes MULTIPLE recipients through as an array and forwards replyTo as reply_to', async () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 200 }))
     vi.stubGlobal('fetch', fetchMock)
-    const sender = new ResendEmailSender('re_test_key', 'from@x.com')
+    const sender = new ResendEmailSender('re_test_key', 'from@x.com', 5000, passThroughBreaker())
     await sender.send({
       to: ['a@b.com', 'c@d.com'],
       replyTo: 'visitor@x.com',
@@ -66,7 +92,7 @@ describe('ResendEmailSender', () => {
 
   it('throws EmailError on a non-2xx response (and never logs the body)', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{"error":"x"}', { status: 422 })))
-    const sender = new ResendEmailSender('re_test_key', 'from@x.com')
+    const sender = new ResendEmailSender('re_test_key', 'from@x.com', 5000, passThroughBreaker())
     await expect(
       sender.send({ to: 'a@b.com', subject: 's', html: 'h', text: 't' }),
     ).rejects.toBeInstanceOf(EmailError)
@@ -79,7 +105,7 @@ describe('ResendEmailSender', () => {
         throw new TypeError('network down')
       }),
     )
-    const sender = new ResendEmailSender('re_test_key', 'from@x.com')
+    const sender = new ResendEmailSender('re_test_key', 'from@x.com', 5000, passThroughBreaker())
     await expect(
       sender.send({ to: 'a@b.com', subject: 's', html: 'h', text: 't' }),
     ).rejects.toBeInstanceOf(EmailError)
