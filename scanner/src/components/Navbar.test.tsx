@@ -99,6 +99,23 @@ describe('Navbar guard link removal', () => {
   })
 })
 
+describe('Navbar GitHub link removal', () => {
+  it('does not render a GitHub link in the desktop nav', () => {
+    render(<Navbar auth={authState()} />)
+    expect(screen.queryByRole('link', { name: 'GitHub' })).toBeNull()
+    // The neighbouring Enterprise link it sat after still renders.
+    expect(screen.getByRole('link', { name: 'Enterprise' })).toBeInTheDocument()
+  })
+
+  it('does not render a GitHub link in the mobile dropdown', () => {
+    render(<Navbar auth={authState()} />)
+    fireEvent.click(screen.getByRole('button', { name: /Open menu/ }))
+    // The dropdown is open (Enterprise is duplicated) but carries no GitHub link.
+    expect(screen.getAllByRole('link', { name: 'Enterprise' })).toHaveLength(2)
+    expect(screen.queryByRole('link', { name: 'GitHub' })).toBeNull()
+  })
+})
+
 describe('Navbar mobile menu', () => {
   it('keeps the inline links hidden below md and a hamburger toggle visible', () => {
     render(<Navbar auth={authState()} />)
@@ -119,7 +136,7 @@ describe('Navbar mobile menu', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Open menu/ }))
 
-    // Open: the dropdown adds a second Pricing link (plus Enterprise, GitHub).
+    // Open: the dropdown adds a second Pricing link (plus Enterprise).
     expect(screen.getAllByRole('link', { name: 'Pricing' })).toHaveLength(2)
     expect(screen.getAllByRole('link', { name: 'Enterprise' })).toHaveLength(2)
     // The toggle now offers to close.

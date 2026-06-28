@@ -6,15 +6,14 @@
  * when logged out, a "Dashboard" link once a session cookie is present.
  *
  * On phones the primary nav links collapse behind a hamburger toggle: tapping it
- * drops a glass menu with the same links + GitHub, so every destination stays
- * reachable on a ~360px screen without changing the desktop layout (the inline
- * links and the hamburger are mutually exclusive via `md:` breakpoints).
+ * drops a glass menu with the same links, so every destination stays reachable on
+ * a ~360px screen without changing the desktop layout (the inline links and the
+ * hamburger are mutually exclusive via `md:` breakpoints).
  */
 
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { BarChart3, LayoutDashboard, Menu, ShieldCheck, X } from 'lucide-react'
-import { REPO_URL } from '../config'
 import { useHashRoute } from '../hooks/useHashRoute'
 import type { AuthState } from '../hooks/useAuth'
 
@@ -67,14 +66,6 @@ export function Navbar({ onHome, auth }: NavbarProps) {
               </a>
               <a href="#enterprise" className={linkClass(route === 'enterprise')}>
                 Enterprise
-              </a>
-              <a
-                href={REPO_URL}
-                target="_blank"
-                rel="noreferrer"
-                className={linkClass(false)}
-              >
-                GitHub
               </a>
             </div>
           </div>
@@ -161,15 +152,6 @@ export function Navbar({ onHome, auth }: NavbarProps) {
                   className="px-2 py-2.5 rounded-xl hover:bg-white/5 text-white/80 hover:text-white transition-colors"
                 >
                   Enterprise
-                </a>
-                <a
-                  href={REPO_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={closeMenu}
-                  className="px-2 py-2.5 rounded-xl hover:bg-white/5 text-white/80 hover:text-white transition-colors"
-                >
-                  GitHub
                 </a>
               </div>
             </motion.div>

@@ -29,7 +29,6 @@ import { useScan } from './scan/useScan'
 import { useHashRoute } from './hooks/useHashRoute'
 import { useAuth } from './hooks/useAuth'
 import { guardRedirect } from './lib/routeGuard'
-import { REPO_URL } from './config'
 import type { ScanState } from './scan/scanMachine'
 
 const SHELL =
@@ -50,14 +49,6 @@ function Footer(): ReactNode {
           </a>
           <a href="#enterprise" className="hover:text-white transition-colors">
             Enterprise
-          </a>
-          <a
-            href={REPO_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="hover:text-white transition-colors"
-          >
-            GitHub
           </a>
         </div>
       </div>
