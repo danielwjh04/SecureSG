@@ -92,11 +92,10 @@
 		// short (default 300s = 5 min); 0 disables it; range 0..86400. Tradeoff: a
 		// changed indicator/feed can be briefly masked within the window.
 		"SCANNER_VERDICT_CACHE_TTL_S": "300",
-		// Billing (Stripe). STRIPE_PRICE_PRO is the $12/mo recurring Price id —
-		// create it in the Stripe dashboard and replace the placeholder before the
-		// billing routes function. The secrets STRIPE_SECRET_KEY and
-		// STRIPE_WEBHOOK_SECRET are NOT vars; set them with `wrangler secret put`.
-		"STRIPE_PRICE_PRO": "price_1TnAF0FJWAOFEgFe37bi8IFf",
+		// Billing (Stripe). STRIPE_PRICE_PRO is the S$9.90/mo recurring Price id
+		// (live mode). The secrets STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are
+		// NOT vars; set them with `wrangler secret put`.
+		"STRIPE_PRICE_PRO": "price_1TnNM9PZTz6qwIUp2lhMHLDL",
 		"SCANNER_APP_BASE_URL": "https://secureai.software",
 		// Email/password auth tunables (non-secret). The SESSION_SECRET that signs
 		// session cookies is a SECRET, not a var — set it with
