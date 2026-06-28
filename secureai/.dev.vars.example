@@ -1,0 +1,11 @@
+# SecureAI local secrets. Copy to .dev.vars (gitignored) for `wrangler dev`.
+# Non-secret tunables live in wrangler.jsonc `vars`, not here.
+# Set real secrets in deploys with `wrangler secret put <NAME>`.
+
+# Stripe (billing) — added when the billing routes land.
+# STRIPE_SECRET_KEY=sk_test_...
+# STRIPE_WEBHOOK_SECRET=whsec_...
+# STRIPE_PRICE_PRO=price_...
+
+# Threat-intel feed credentials, if a feed requires one (Spamhaus DROP does not).
+# Workers AI needs no key — it uses the account `AI` binding.

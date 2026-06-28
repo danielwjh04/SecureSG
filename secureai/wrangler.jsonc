@@ -1,0 +1,26 @@
+{
+  // SecureAI scanner Worker. Bindings (AI, D1, KV, rate-limit) and the ASSETS
+  // SPA mount are added as those features land; this file currently wires the
+  // proof-verify slice. All tunables live here as vars and are read through a
+  // typed Env in src/config/env.ts — never hardcoded in source.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "secureai-scanner",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "SCANNER_GENESIS_SEED": "secureai-scanner-genesis-v1",
+    "SCANNER_GRAPH_PATH": "./graph.json",
+    "SCANNER_MAX_URLS": "4",
+    "SCANNER_MAX_REDIRECT_HOPS": "10",
+    "SCANNER_REDIRECT_TIMEOUT_MS": "5000",
+    "SCANNER_ALLOWED_SCHEMES": "https",
+    "SCANNER_URL_SHORTENERS": "bit.ly,tinyurl.com,t.co,goo.gl,ow.ly,buff.ly,is.gd,rebrand.ly,cutt.ly",
+    "SCANNER_AI_MODEL": "@cf/meta/llama-3.2-1b-instruct",
+    "SCANNER_AI_TIMEOUT_MS": "8000",
+    "SCANNER_REVIEW_THRESHOLD": "0.30",
+    "SCANNER_BLOCK_THRESHOLD": "0.70",
+    "SCANNER_SKILL_MAX_BYTES": "262144",
+    "SCANNER_SUBREQUEST_CAP": "50"
+  }
+}
