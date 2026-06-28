@@ -19,6 +19,17 @@ describe('loadConfig', () => {
     expect(config.aiModel).toBe('@cf/x/y')
   })
 
+  it('defaults the verdict-cache TTL to 300s and parses an override', () => {
+    expect(loadConfig({}).verdictCacheTtlSeconds).toBe(300)
+    expect(loadConfig({ SCANNER_VERDICT_CACHE_TTL_S: '0' }).verdictCacheTtlSeconds).toBe(0)
+    expect(loadConfig({ SCANNER_VERDICT_CACHE_TTL_S: '600' }).verdictCacheTtlSeconds).toBe(600)
+  })
+
+  it('rejects an out-of-range verdict-cache TTL', () => {
+    expect(() => loadConfig({ SCANNER_VERDICT_CACHE_TTL_S: '-1' })).toThrow(ConfigError)
+    expect(() => loadConfig({ SCANNER_VERDICT_CACHE_TTL_S: '86401' })).toThrow(ConfigError)
+  })
+
   it('rejects review >= block thresholds', () => {
     expect(() =>
       loadConfig({ SCANNER_REVIEW_THRESHOLD: '0.8', SCANNER_BLOCK_THRESHOLD: '0.5' }),

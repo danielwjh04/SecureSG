@@ -877,3 +877,43 @@
   color: #ffffff;
   font-weight: 800;
 }
+
+/* Phone layout (~360–430px) ----------------------------------------------- */
+/* Mobile-only overrides for the grid-driven result panels. They keep the
+   desktop look untouched (everything above the breakpoint is unchanged) while
+   ensuring nothing overflows the panel body horizontally on a narrow phone:
+   the reputation row stacks, the proof step rows reflow, and long hostnames
+   stay within their node instead of pushing the row wider than the viewport. */
+@media (max-width: 640px) {
+  /* Reputation: stack the host, bar, and status so the two 120px-min columns
+     never overflow the panel on a narrow screen. */
+  .exa__row {
+    grid-template-columns: 1fr;
+    gap: var(--space-2);
+  }
+
+  .exa__bar {
+    width: 100%;
+  }
+
+  /* Proof step: drop the fixed 4-column grid to a two-row reflow — index+kind
+     on top, the editor full width, the mark/hash trailing — so the editable
+     payload is usable and the truncated hash never forces horizontal scroll. */
+  .proof__step {
+    grid-template-columns: auto 1fr;
+  }
+
+  .proof__editor {
+    grid-column: 1 / -1;
+  }
+
+  /* Keep a single redirect node from growing wider than the row. */
+  .chain-vis__final {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .chain-vis__host {
+    max-width: 100%;
+  }
+}

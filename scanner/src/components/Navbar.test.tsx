@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { Navbar } from './Navbar'
 import type { AuthState } from '../hooks/useAuth'
@@ -55,5 +55,33 @@ describe('Navbar admin link', () => {
     render(<Navbar auth={authState()} />)
     expect(screen.queryByRole('link', { name: /Admin/ })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Log in/ })).toBeInTheDocument()
+  })
+})
+
+describe('Navbar mobile menu', () => {
+  it('keeps the inline links hidden below md and a hamburger toggle visible', () => {
+    render(<Navbar auth={authState()} />)
+    // The inline link cluster is hidden on mobile (md:flex), proving the desktop
+    // links collapse on a phone rather than overflowing the bar.
+    const inlineHow = screen.getByRole('link', { name: 'How it works' })
+    expect(inlineHow.parentElement?.className).toContain('hidden')
+    expect(inlineHow.parentElement?.className).toContain('md:flex')
+    // The hamburger toggle is present for phones (md:hidden).
+    const toggle = screen.getByRole('button', { name: /Open menu/ })
+    expect(toggle.className).toContain('md:hidden')
+  })
+
+  it('toggles the dropdown with the primary links on click', () => {
+    render(<Navbar auth={authState()} />)
+    // Closed: only the single inline (hidden) Pricing link exists.
+    expect(screen.getAllByRole('link', { name: 'Pricing' })).toHaveLength(1)
+
+    fireEvent.click(screen.getByRole('button', { name: /Open menu/ }))
+
+    // Open: the dropdown adds a second Pricing link (plus Enterprise, GitHub).
+    expect(screen.getAllByRole('link', { name: 'Pricing' })).toHaveLength(2)
+    expect(screen.getAllByRole('link', { name: 'Enterprise' })).toHaveLength(2)
+    // The toggle now offers to close.
+    expect(screen.getByRole('button', { name: /Close menu/ })).toBeInTheDocument()
   })
 })

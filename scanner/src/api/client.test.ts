@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ApiError,
   fetchMe,
+  fetchRecentScans,
   login,
   logout,
   rotateApiKey,
@@ -149,6 +150,33 @@ describe('account endpoints', () => {
       vi.fn(async () => ({ ok: false, status: 401, json: async () => ({}) }) as Response),
     )
     await expect(fetchMe()).rejects.toMatchObject({ name: 'ApiError', status: 401 })
+  })
+
+  it('fetchRecentScans GETs the recent endpoint with the limit and credentials', async () => {
+    const body = {
+      scans: [
+        {
+          id: 's1',
+          verdict: 'BLOCK',
+          source: { kind: 'url', ref: 'https://example.com' },
+          flagged: 1,
+          headHash: 'a'.repeat(64),
+          scannedAt: '2026-06-28T00:00:00.000Z',
+        },
+      ],
+    }
+    const fetchMock = captureFetch(body)
+    await expect(fetchRecentScans(3)).resolves.toEqual(body)
+    const [path] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(path).toBe(`${API.recentScans}?limit=3`)
+    expect(lastInit(fetchMock).credentials).toBe('include')
+  })
+
+  it('fetchRecentScans omits the query when no limit is given', async () => {
+    const fetchMock = captureFetch({ scans: [] })
+    await fetchRecentScans()
+    const [path] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(path).toBe(API.recentScans)
   })
 
   it('logout, rotateApiKey, and startCheckout POST with credentials', async () => {

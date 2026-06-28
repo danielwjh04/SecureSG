@@ -59,6 +59,12 @@
     "SCANNER_CAP_FREE_PER_DAY": "100",
     "SCANNER_CAP_PRO_PER_DAY": "5000",
     "SCANNER_AI_TIERS": "pro",
+    // Edge verdict cache (KV-backed). A repeated identical scan within the TTL
+    // returns the cached result without re-tracing redirects or re-running the
+    // AI stage — auth, caps, metering, and history still run for the caller. Kept
+    // short (default 300s = 5 min); 0 disables it; range 0..86400. Tradeoff: a
+    // changed indicator/feed can be briefly masked within the window.
+    "SCANNER_VERDICT_CACHE_TTL_S": "300",
     // Billing (Stripe). STRIPE_PRICE_PRO is the $12/mo recurring Price id —
     // create it in the Stripe dashboard and replace the placeholder before the
     // billing routes function. The secrets STRIPE_SECRET_KEY and

@@ -68,6 +68,17 @@ interface OtpChallengeRecord {
   created_at: string
 }
 
+interface ScanHistoryRecord {
+  id: string
+  user_id: string
+  verdict: string
+  source_kind: string
+  source_ref: string
+  flagged: number
+  head_hash: string
+  scanned_at: string
+}
+
 /** Composite key for the usage map, mirroring the `(subject, day)` PK. */
 function usageKey(subject: string, day: string): string {
   return `${subject} ${day}`
@@ -89,6 +100,8 @@ export class MemoryStore {
   public readonly webhookEvents = new Map<string, WebhookEventRecord>()
   /** Keyed by challenge `id` (the 2FA OTP challenge store). */
   public readonly otpChallenges = new Map<string, OtpChallengeRecord>()
+  /** Keyed by scan-history row `id` (the per-user recent-scans store). */
+  public readonly scanHistory = new Map<string, ScanHistoryRecord>()
 
   /** Per-statement failure injection: when armed, the next call throws once. */
   public failNext = false
@@ -241,6 +254,28 @@ export class MemoryStore {
       // ORDER BY day ASC.
       rows.sort((a, b) => String(a['day']).localeCompare(String(b['day'])))
       return rows
+    }
+    // Recent scans: a user's history, newest first, capped by LIMIT.
+    if (sql.includes('FROM scan_history WHERE user_id')) {
+      const userId = String(params[0])
+      const limit = Number(params[1])
+      const rows: Record<string, unknown>[] = []
+      for (const record of this.scanHistory.values()) {
+        if (record.user_id === userId) {
+          rows.push({
+            id: record.id,
+            verdict: record.verdict,
+            source_kind: record.source_kind,
+            source_ref: record.source_ref,
+            flagged: record.flagged,
+            head_hash: record.head_hash,
+            scanned_at: record.scanned_at,
+          })
+        }
+      }
+      // ORDER BY scanned_at DESC (newest first), then LIMIT.
+      rows.sort((a, b) => String(b['scanned_at']).localeCompare(String(a['scanned_at'])))
+      return rows.slice(0, limit)
     }
     // Admin: accounts grouped by tier.
     if (sql.includes('COUNT(*) AS count FROM users GROUP BY tier')) {
@@ -471,6 +506,20 @@ export class MemoryStore {
       }
       return { changes }
     }
+    if (sql.startsWith('INSERT INTO scan_history')) {
+      const id = String(params[0])
+      this.scanHistory.set(id, {
+        id,
+        user_id: String(params[1]),
+        verdict: String(params[2]),
+        source_kind: String(params[3]),
+        source_ref: String(params[4]),
+        flagged: Number(params[5]),
+        head_hash: String(params[6]),
+        scanned_at: String(params[7]),
+      })
+      return { changes: 1 }
+    }
     if (sql.startsWith('INSERT INTO otp_challenges')) {
       const id = String(params[0])
       this.otpChallenges.set(id, {
@@ -573,6 +622,29 @@ describe('MemoryD1', () => {
     await db.execute(upsert, ['u1', '2026-06-28', 1, 1])
     await db.execute(upsert, ['u1', '2026-06-28', 0, 0])
     expect(store.usage.get('u1 2026-06-28')).toMatchObject({ scans: 2, ai_scans: 1 })
+  })
+
+  it('stores and reads back scan_history rows newest-first under LIMIT', async () => {
+    const { db, store } = memoryDatabase()
+    const insert =
+      'INSERT INTO scan_history ' +
+      '(id, user_id, verdict, source_kind, source_ref, flagged, head_hash, scanned_at) ' +
+      'VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    await db.execute(insert, ['a', 'u1', 'ALLOW', 'paste', 'paste', 0, 'h1', '2026-06-28T01:00:00.000Z'])
+    await db.execute(insert, ['b', 'u1', 'BLOCK', 'url', 'https://x.test', 2, 'h2', '2026-06-28T02:00:00.000Z'])
+    await db.execute(insert, ['c', 'u2', 'ALLOW', 'paste', 'paste', 0, 'h3', '2026-06-28T03:00:00.000Z'])
+    expect(store.scanHistory.size).toBe(3)
+
+    const select =
+      'SELECT id, verdict, source_kind, source_ref, flagged, head_hash, scanned_at ' +
+      'FROM scan_history WHERE user_id = ? ORDER BY scanned_at DESC LIMIT ?'
+    const { results } = await new MemoryD1(store)
+      .prepare(select)
+      .bind('u1', 1)
+      .all<{ id: string }>()
+    // Only u1's rows, newest first, capped at 1 → the BLOCK at 02:00 (id 'b').
+    expect(results).toHaveLength(1)
+    expect(results[0]?.id).toBe('b')
   })
 
   it('throws on an unrecognized statement', async () => {

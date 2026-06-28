@@ -180,3 +180,21 @@ export const memberRoleSchema = z
 
 /** The validated payload `POST /api/admin/members/role` operates on. */
 export type MemberRolePayload = z.infer<typeof memberRoleSchema>
+
+/** Default recent-scans page size when the `limit` query param is absent. */
+const RECENT_SCANS_DEFAULT_LIMIT = 3
+/** Maximum recent-scans page size; a larger `limit` is clamped to this. */
+const RECENT_SCANS_MAX_LIMIT = 20
+
+/**
+ * The `limit` query param of `GET /api/scans/recent`. Absent → the default; a
+ * present value must be a positive integer string and is clamped to the max, so
+ * a caller can never read an unbounded page. A non-integer / non-positive value
+ * is a 422 at the route boundary.
+ */
+export const recentScansLimitSchema = z
+  .string()
+  .optional()
+  .transform((raw) => (raw === undefined ? String(RECENT_SCANS_DEFAULT_LIMIT) : raw))
+  .pipe(z.coerce.number().int().positive())
+  .transform((value) => Math.min(value, RECENT_SCANS_MAX_LIMIT))

@@ -11,6 +11,7 @@ import type { Database } from './db/database'
 import type { BillingGateway } from './billing/stripe'
 import type { AuthDeps } from './routes/auth'
 import type { StatsDeps } from './routes/stats'
+import type { RecentScansDeps } from './routes/recentScans'
 import type { AdminDeps } from './routes/admin'
 import { loadConfig } from './config/env'
 import { handleGuard } from './routes/guard'
@@ -30,6 +31,7 @@ import {
   handleRegister,
 } from './routes/auth'
 import { handleStats } from './routes/stats'
+import { handleRecentScans } from './routes/recentScans'
 import { handleAdminMemberRole, handleAdminMembers, handleAdminOverview } from './routes/admin'
 import { d1Database } from './db/database'
 import { buildEmailSender } from './email/sender'
@@ -50,6 +52,7 @@ const ROUTE_LOGIN_RESEND = '/api/login/resend'
 const ROUTE_LOGOUT = '/api/logout'
 const ROUTE_ME = '/api/me'
 const ROUTE_STATS = '/api/stats'
+const ROUTE_SCANS_RECENT = '/api/scans/recent'
 const ROUTE_ADMIN_OVERVIEW = '/api/admin/overview'
 const ROUTE_ADMIN_MEMBERS = '/api/admin/members'
 const ROUTE_ADMIN_MEMBER_ROLE = '/api/admin/members/role'
@@ -193,6 +196,13 @@ export default {
       return await handleStats(request, statsDeps(env, config))
     }
 
+    if (url.pathname === ROUTE_SCANS_RECENT) {
+      if (request.method !== 'GET') {
+        return jsonError('method not allowed', 405)
+      }
+      return await handleRecentScans(request, recentScansDeps(env))
+    }
+
     if (url.pathname === ROUTE_ADMIN_OVERVIEW) {
       if (request.method !== 'GET') {
         return jsonError('method not allowed', 405)
@@ -262,6 +272,11 @@ function authDeps(env: Env, config: ScannerConfig): AuthDeps {
 /** Assemble the stats route's dependencies (DB seam, session secret, config). */
 function statsDeps(env: Env, config: ScannerConfig): StatsDeps {
   return { db: billingDatabase(env), sessionSecret: sessionSecretOf(env), config }
+}
+
+/** Assemble the recent-scans route's dependencies (DB seam, session secret). */
+function recentScansDeps(env: Env): RecentScansDeps {
+  return { db: billingDatabase(env), sessionSecret: sessionSecretOf(env) }
 }
 
 /** Assemble the admin route's dependencies (DB seam, session secret, config). */

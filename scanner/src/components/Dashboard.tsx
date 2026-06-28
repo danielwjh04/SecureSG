@@ -10,7 +10,7 @@
  * --block) — no default light recharts theme leaks through.
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'motion/react'
 import {
   Area,
@@ -26,7 +26,9 @@ import {
 import {
   Check,
   Copy,
+  FileText,
   Key,
+  Link2,
   LogOut,
   RefreshCw,
   ScanLine,
@@ -35,10 +37,23 @@ import {
   Sparkles,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { fetchStats, logout, rotateApiKey, startCheckout } from '../api/client'
-import { STATS_TREND_DAYS } from '../config'
+import {
+  fetchRecentScans,
+  fetchStats,
+  logout,
+  rotateApiKey,
+  startCheckout,
+} from '../api/client'
+import { RECENT_SCANS_LIMIT, STATS_TREND_DAYS } from '../config'
 import { zeroFillDaily } from '../lib/stats'
-import type { AccountTier, MeResponse, StatsResponse } from '../api/types'
+import { hostname, relativeTime } from '../lib/format'
+import type { Verdict } from '../api/types'
+import type {
+  AccountTier,
+  MeResponse,
+  RecentScan,
+  StatsResponse,
+} from '../api/types'
 import type { AuthState } from '../hooks/useAuth'
 
 /** The verdict palette, read once so cards and charts share exact colors. */
@@ -119,6 +134,8 @@ export function Dashboard({ user, auth }: DashboardProps) {
           </p>
         )}
         {load.phase === 'ready' && <StatsBody stats={load.stats} />}
+
+        <RecentScans />
 
         <ApiKeyCard apiKeyPrefix={user.apiKeyPrefix} />
       </div>
@@ -225,7 +242,7 @@ function StatsBody({ stats }: { stats: StatsResponse }) {
       className="flex flex-col gap-6"
     >
       {/* Stat cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {tiles.map(({ key, Icon, label, value, accent }) => (
           <div key={key} className="liquid-glass rounded-2xl p-5 flex flex-col gap-3">
             <Icon className={`w-5 h-5 ${accent}`} />
@@ -391,17 +408,175 @@ const TOOLTIP_STYLE = {
   color: '#fff',
 } as const
 
+/** The verdict palette (text tint + chip background) for a recent-scan pill. */
+const VERDICT_PILL: Record<Verdict, { label: string; className: string }> = {
+  ALLOW: { label: 'ALLOW', className: 'text-allow bg-allow/10' },
+  HUMAN_APPROVAL_REQUIRED: { label: 'REVIEW', className: 'text-review bg-review/10' },
+  BLOCK: { label: 'BLOCK', className: 'text-block bg-block/10' },
+}
+
+/** A small verdict-colored pill. REVIEW is the display for HUMAN_APPROVAL_REQUIRED. */
+function VerdictPill({ verdict }: { verdict: Verdict }) {
+  const { label, className } = VERDICT_PILL[verdict]
+  return (
+    <span
+      className={`inline-flex items-center justify-center rounded-full px-2.5 py-1 text-[10px] font-mono font-bold uppercase tracking-[0.1em] ${className}`}
+    >
+      {label}
+    </span>
+  )
+}
+
+/** The source label for a recent scan: a truncated URL, or a paste label. */
+function recentSource(source: RecentScan['source']): string {
+  return source.kind === 'url' ? hostname(source.ref) : 'Pasted skill'
+}
+
+type RecentState =
+  | { phase: 'loading' }
+  | { phase: 'ready'; scans: RecentScan[] }
+  | { phase: 'error' }
+
+/**
+ * The dashboard's recent-scans list: the account's last few scans, each a
+ * verdict pill, the source (truncated URL or a paste label), a flagged-count
+ * chip when indicators were caught, and a relative time. A brand-new account
+ * (or a transport failure) lands on the intentional empty state pointing back to
+ * the scanner. Loads `GET /api/scans/recent?limit=RECENT_SCANS_LIMIT` on mount.
+ */
+function RecentScans() {
+  const [state, setState] = useState<RecentState>({ phase: 'loading' })
+
+  useEffect(() => {
+    let active = true
+    fetchRecentScans(RECENT_SCANS_LIMIT)
+      .then(({ scans }) => {
+        if (active) setState({ phase: 'ready', scans })
+      })
+      .catch(() => {
+        if (active) setState({ phase: 'error' })
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const scans = state.phase === 'ready' ? state.scans : []
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay: 0.03, ease: [0.16, 1, 0.3, 1] }}
+      className="liquid-glass rounded-2xl p-5 flex flex-col gap-4"
+    >
+      <div className="flex items-center gap-2">
+        <ScanLine className="w-4 h-4 text-white/70" />
+        <h3 className="text-[12px] font-mono uppercase tracking-[0.14em] text-white/55">
+          Recent scans
+        </h3>
+      </div>
+
+      {state.phase === 'loading' && (
+        <p className="text-white/45 font-mono text-sm py-6 text-center">
+          Loading your recent scans…
+        </p>
+      )}
+
+      {(state.phase === 'error' || (state.phase === 'ready' && scans.length === 0)) && (
+        <p className="text-white/45 text-[13px] py-6 text-center leading-relaxed">
+          No scans yet — run one from the scanner.
+        </p>
+      )}
+
+      {state.phase === 'ready' && scans.length > 0 && (
+        <ul className="flex flex-col divide-y divide-white/[0.06]">
+          {scans.map((scan) => (
+            <RecentScanRow key={scan.headHash} scan={scan} />
+          ))}
+        </ul>
+      )}
+    </motion.div>
+  )
+}
+
+/** One recent-scan row: verdict pill, source, flagged chip, relative time. */
+function RecentScanRow({ scan }: { scan: RecentScan }) {
+  const SourceIcon = scan.source.kind === 'url' ? Link2 : FileText
+  return (
+    <li className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+      <VerdictPill verdict={scan.verdict} />
+      <span className="flex min-w-0 flex-1 items-center gap-1.5">
+        <SourceIcon className="w-3.5 h-3.5 shrink-0 text-white/40" />
+        <span className="truncate text-[13px] text-white/80" title={scan.source.ref}>
+          {recentSource(scan.source)}
+        </span>
+      </span>
+      {scan.flagged > 0 && (
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-block/10 px-2 py-0.5 text-[11px] font-mono font-semibold text-block">
+          <ShieldAlert className="w-3 h-3" />
+          {scan.flagged}
+        </span>
+      )}
+      <span className="shrink-0 font-mono text-[11px] text-white/40 tabular-nums">
+        {relativeTime(scan.scannedAt)}
+      </span>
+    </li>
+  )
+}
+
+/** How long (ms) the copy button stays in its confirmed "Copied" state. */
+const COPY_FEEDBACK_MS = 1500
+
+/**
+ * A copy-to-clipboard button: copies `value` via `navigator.clipboard`, then
+ * flips to a check + "Copied" for {@link COPY_FEEDBACK_MS} before reverting. A
+ * denied clipboard leaves the button idle (the value stays visible to copy by
+ * hand) rather than throwing.
+ */
+function CopyButton({ value, label }: { value: string; label: string }) {
+  const [copied, setCopied] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) clearTimeout(timerRef.current)
+    }
+  }, [])
+
+  const handleCopy = async (): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(true)
+      if (timerRef.current !== null) clearTimeout(timerRef.current)
+      timerRef.current = setTimeout(() => setCopied(false), COPY_FEEDBACK_MS)
+    } catch {
+      /* clipboard denied: the value is still visible to copy by hand */
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      aria-label={label}
+      className="glass-pill inline-flex items-center gap-1.5 px-3 py-2 text-[12px] font-medium text-white/70 hover:text-white transition-colors cursor-pointer shrink-0"
+    >
+      {copied ? <Check className="w-3.5 h-3.5 text-allow" /> : <Copy className="w-3.5 h-3.5" />}
+      {copied ? 'Copied' : 'Copy'}
+    </button>
+  )
+}
+
 /** The API-key card: shows the prefix and reveals a rotated key once. */
 function ApiKeyCard({ apiKeyPrefix }: { apiKeyPrefix: string }) {
   const [revealed, setRevealed] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const handleRotate = async (): Promise<void> => {
     setBusy(true)
     setError(null)
-    setCopied(false)
     try {
       const { apiKey } = await rotateApiKey()
       setRevealed(apiKey)
@@ -409,16 +584,6 @@ function ApiKeyCard({ apiKeyPrefix }: { apiKeyPrefix: string }) {
       setError('Could not regenerate the key. Please try again.')
     } finally {
       setBusy(false)
-    }
-  }
-
-  const handleCopy = async (): Promise<void> => {
-    if (revealed === null) return
-    try {
-      await navigator.clipboard.writeText(revealed)
-      setCopied(true)
-    } catch {
-      /* clipboard denied: the key is still visible to copy by hand */
     }
   }
 
@@ -448,24 +613,20 @@ function ApiKeyCard({ apiKeyPrefix }: { apiKeyPrefix: string }) {
       </div>
 
       {revealed === null ? (
-        <div className="font-mono text-[13px] text-white/70">
-          {apiKeyPrefix}
-          <span className="text-white/30">··········</span>
+        <div className="flex items-center gap-2">
+          <code className="flex-1 min-w-0 break-all rounded-lg bg-white/[0.04] border border-white/10 px-3 py-2 font-mono text-[13px] text-white/70">
+            {apiKeyPrefix}
+            <span className="text-white/30">··········</span>
+          </code>
+          <CopyButton value={apiKeyPrefix} label="Copy API key prefix" />
         </div>
       ) : (
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2">
-            <code className="flex-1 break-all rounded-lg bg-white/[0.04] border border-white/10 px-3 py-2 font-mono text-[13px] text-allow">
+            <code className="flex-1 min-w-0 break-all rounded-lg bg-white/[0.04] border border-white/10 px-3 py-2 font-mono text-[13px] text-allow">
               {revealed}
             </code>
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="glass-pill inline-flex items-center gap-1.5 px-3 py-2 text-[12px] font-medium text-white/70 hover:text-white transition-colors cursor-pointer shrink-0"
-            >
-              {copied ? <Check className="w-3.5 h-3.5 text-allow" /> : <Copy className="w-3.5 h-3.5" />}
-              {copied ? 'Copied' : 'Copy'}
-            </button>
+            <CopyButton value={revealed} label="Copy new API key" />
           </div>
           <p className="text-review/90 font-mono text-[11px] leading-snug">
             Copy this now — it will not be shown again.

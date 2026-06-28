@@ -72,6 +72,15 @@ export interface ScannerConfig {
   readonly capProPerDay: number
   /** Tiers granted the paid AI stage. Lowercased tier names, e.g. `pro`. */
   readonly aiTiers: ReadonlySet<string>
+  /**
+   * TTL, in seconds, of an edge verdict-cache entry (CLAUDE.md O(1) target). A
+   * repeated identical scan within the window returns the cached
+   * {@link ScanResult} (with a fresh `scannedAt`) without re-tracing redirects
+   * or re-running the AI stage. `0` disables the cache. Kept SHORT by default:
+   * the cache serves identical content for the window, so a changed indicator /
+   * feed could be briefly masked — the documented tradeoff for the latency win.
+   */
+  readonly verdictCacheTtlSeconds: number
   /** Stripe Price id for the Pro tier ($12/mo recurring). Used at checkout. */
   readonly stripePricePro: string
   /** Public base URL for billing redirect (success/cancel) and portal returns. */
@@ -139,6 +148,16 @@ export function loadConfig(env: Env): ScannerConfig {
   const capProPerDay = readIntInRange(env, 'SCANNER_CAP_PRO_PER_DAY', 5000, 0, 1000000)
   // Tiers that get the paid AI stage. Comma var, default just `pro`.
   const aiTiers = readSet(env, 'SCANNER_AI_TIERS', 'pro')
+  // Edge verdict-cache TTL (seconds). Default 5 minutes; 0 disables the cache;
+  // capped at 24h. A repeated identical scan within the window returns the
+  // cached result without re-running the redirect trace or the AI stage.
+  const verdictCacheTtlSeconds = readIntInRange(
+    env,
+    'SCANNER_VERDICT_CACHE_TTL_S',
+    300,
+    0,
+    86400,
+  )
   // Billing (Stripe). The Pro price id has no safe default — it is account- and
   // mode-specific — so the placeholder is shipped in wrangler.jsonc and must be
   // replaced before the billing routes function. The base URL has a public
@@ -207,6 +226,7 @@ export function loadConfig(env: Env): ScannerConfig {
     capFreePerDay,
     capProPerDay,
     aiTiers,
+    verdictCacheTtlSeconds,
     stripePricePro,
     appBaseUrl,
     pbkdf2Iterations,

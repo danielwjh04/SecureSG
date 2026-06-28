@@ -208,6 +208,16 @@ describe('worker.fetch routing', () => {
     expect(res.status).toBe(405)
   })
 
+  it('routes GET /api/scans/recent and returns 503 when DB is unconfigured', async () => {
+    const res = await worker.fetch(req('/api/scans/recent', 'GET'), baseEnv)
+    expect(res.status).toBe(503)
+  })
+
+  it('rejects a non-GET /api/scans/recent with 405', async () => {
+    const res = await worker.fetch(req('/api/scans/recent', 'POST', {}), baseEnv)
+    expect(res.status).toBe(405)
+  })
+
   it('routes GET /api/admin/overview and returns 503 when DB is unconfigured', async () => {
     const res = await worker.fetch(req('/api/admin/overview', 'GET'), baseEnv)
     expect(res.status).toBe(503)

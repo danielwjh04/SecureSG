@@ -12,7 +12,7 @@
 export type * from '../../shared/contract'
 export * from '../../shared/proof'
 
-import type { ScanResult } from '../../shared/contract'
+import type { ScanResult, Verdict } from '../../shared/contract'
 
 /** One entry in the curated scan gallery (a recorded benign or attack scan). */
 export interface GalleryEntry {
@@ -129,6 +129,26 @@ export interface StatsResponse {
 /** Response body for `POST /api/key/rotate`: the freshly minted key, shown once. */
 export interface RotateKeyResponse {
   apiKey: string
+}
+
+/**
+ * One row in the dashboard's recent-scans list. `source.ref` is the scanned URL
+ * (`kind: 'url'`) or an opaque label for a pasted skill (`kind: 'paste'`);
+ * `flagged` is the count of malicious indicators caught; `scannedAt` is an ISO
+ * timestamp rendered as a relative time. `headHash` keys the row stably.
+ */
+export interface RecentScan {
+  id: string
+  verdict: Verdict
+  source: { kind: 'paste' | 'url'; ref: string }
+  flagged: number
+  headHash: string
+  scannedAt: string
+}
+
+/** Response body for `GET /api/scans/recent`: the newest scans, newest first. */
+export interface RecentScansResponse {
+  scans: RecentScan[]
 }
 
 /** Response body for `POST /api/checkout`: the Stripe checkout URL. */

@@ -9,6 +9,7 @@ import type {
   LoginResponse,
   MeResponse,
   Proof,
+  RecentScansResponse,
   ResendResponse,
   RotateKeyResponse,
   ScanRequest,
@@ -184,6 +185,17 @@ export async function fetchMe(): Promise<MeResponse> {
 /** Fetch the account's protection statistics. */
 export async function fetchStats(): Promise<StatsResponse> {
   return request<StatsResponse>(API.stats, { ...WITH_CREDENTIALS })
+}
+
+/**
+ * Fetch the account's most recent scans, newest first. `limit` (display-only)
+ * is clamped server-side; omitting it returns the server default. Throws
+ * {@link ApiError}(401) when logged out.
+ */
+export async function fetchRecentScans(limit?: number): Promise<RecentScansResponse> {
+  const path =
+    limit !== undefined ? `${API.recentScans}?limit=${limit}` : API.recentScans
+  return request<RecentScansResponse>(path, { ...WITH_CREDENTIALS })
 }
 
 /**
