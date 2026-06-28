@@ -32,7 +32,12 @@ import {
 } from './routes/auth'
 import { handleStats } from './routes/stats'
 import { handleRecentScans } from './routes/recentScans'
-import { handleAdminMemberRole, handleAdminMembers, handleAdminOverview } from './routes/admin'
+import {
+  handleAdminMemberRemove,
+  handleAdminMemberRole,
+  handleAdminMembers,
+  handleAdminOverview,
+} from './routes/admin'
 import { d1Database } from './db/database'
 import { buildEmailSender } from './email/sender'
 import { buildStripe, StripeBillingGateway } from './billing/stripe'
@@ -56,6 +61,7 @@ const ROUTE_SCANS_RECENT = '/api/scans/recent'
 const ROUTE_ADMIN_OVERVIEW = '/api/admin/overview'
 const ROUTE_ADMIN_MEMBERS = '/api/admin/members'
 const ROUTE_ADMIN_MEMBER_ROLE = '/api/admin/members/role'
+const ROUTE_ADMIN_MEMBER_REMOVE = '/api/admin/members/remove'
 const ROUTE_KEY_ROTATE = '/api/key/rotate'
 
 export default {
@@ -217,6 +223,13 @@ export default {
         return jsonError('method not allowed', 405)
       }
       return await handleAdminMemberRole(request, adminDeps(env, config))
+    }
+
+    if (url.pathname === ROUTE_ADMIN_MEMBER_REMOVE) {
+      if (request.method !== 'POST') {
+        return jsonError('method not allowed', 405)
+      }
+      return await handleAdminMemberRemove(request, adminDeps(env, config))
     }
 
     if (url.pathname === ROUTE_ADMIN_MEMBERS) {

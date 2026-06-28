@@ -554,6 +554,46 @@ export class MemoryStore {
       }
       return { changes }
     }
+    // Member removal: hard-delete every row keyed by a user id, dependents first.
+    if (sql.startsWith('DELETE FROM api_keys WHERE user_id')) {
+      const userId = String(params[0])
+      let changes = 0
+      for (const [keyHash, key] of this.apiKeys) {
+        if (key.user_id === userId) {
+          this.apiKeys.delete(keyHash)
+          changes += 1
+        }
+      }
+      return { changes }
+    }
+    if (sql.startsWith('DELETE FROM usage WHERE subject')) {
+      const userId = String(params[0])
+      let changes = 0
+      for (const [composite, record] of this.usage) {
+        if (record.subject === userId) {
+          this.usage.delete(composite)
+          changes += 1
+        }
+      }
+      return { changes }
+    }
+    if (sql.startsWith('DELETE FROM scan_history WHERE user_id')) {
+      const userId = String(params[0])
+      let changes = 0
+      for (const [id, record] of this.scanHistory) {
+        if (record.user_id === userId) {
+          this.scanHistory.delete(id)
+          changes += 1
+        }
+      }
+      return { changes }
+    }
+    if (sql.startsWith('DELETE FROM subscriptions WHERE user_id')) {
+      return { changes: this.subscriptions.delete(String(params[0])) ? 1 : 0 }
+    }
+    if (sql.startsWith('DELETE FROM users WHERE id')) {
+      return { changes: this.users.delete(String(params[0])) ? 1 : 0 }
+    }
     throw new Error(`MemoryStore: unrecognized execute SQL: ${sql}`)
   }
 }

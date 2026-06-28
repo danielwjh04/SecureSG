@@ -22,11 +22,12 @@ import { ParseError } from '../errors'
 import { authenticate } from '../middleware/auth'
 import { findRoleByUserId, getAccountProfile } from '../db/accounts'
 import { canManageRoles, canViewAdmin, effectiveRole, parseAssignableRole } from '../auth/roles'
-import { memberRoleSchema } from '../schemas/validate'
+import { memberRoleSchema, removeMemberSchema } from '../schemas/validate'
 import {
   activeSubscriptions,
   countMembers,
   countUsers,
+  deleteMember,
   listMembers,
   setUserRole,
   signupsByDay,
@@ -360,5 +361,87 @@ export async function handleAdminMemberRole(request: Request, deps: AdminDeps): 
       return Response.json({ error: 'invalid_role' }, { status: STATUS_UNPROCESSABLE })
     }
     return Response.json({ error: 'admin_member_role_failed' }, { status: STATUS_SERVER_ERROR })
+  }
+}
+
+/**
+ * Parse + Zod-validate the member-removal body, or throw {@link ParseError}
+ * (→ 422).
+ *
+ * Time complexity: O(b) in the body byte length. Space complexity: O(b).
+ */
+async function parseRemoveBody(request: Request): Promise<{ userId: string }> {
+  let raw: unknown
+  try {
+    raw = await request.json()
+  } catch (error: unknown) {
+    throw new ParseError('request body is not valid JSON', { cause: error })
+  }
+  const parsed = removeMemberSchema.safeParse(raw)
+  if (!parsed.success) {
+    throw new ParseError(`invalid member remove request: ${parsed.error.message}`)
+  }
+  return parsed.data
+}
+
+/**
+ * Handle `POST /api/admin/members/remove`. Authenticates the caller and requires
+ * the effective role to be OWNER ({@link canManageRoles}; an admin or member is
+ * 403, an anonymous caller is 401). Validates `{ userId }`. Refuses to remove the
+ * caller's OWN account (403) and refuses to remove an OWNER-by-email target
+ * (403), and an unknown `userId` is a 404 — all BEFORE any delete. On success
+ * hard-deletes the account and every row keyed by its user id (api_keys, usage,
+ * scan_history, subscriptions, otp_challenges, then users), returning
+ * `200 { removed: userId }`. Requires `env.DB` (503 otherwise).
+ *
+ * Time complexity: O(k) in the target's dependent rows (a bounded set of indexed
+ * deletes). Space complexity: O(1).
+ */
+export async function handleAdminMemberRemove(
+  request: Request,
+  deps: AdminDeps,
+): Promise<Response> {
+  if (deps.db === null) {
+    return unavailable()
+  }
+  const db = deps.db
+  try {
+    const viewer = await resolveViewer(request, deps, db, canManageRoles)
+    if (viewer instanceof Response) {
+      return viewer
+    }
+
+    const body = await parseRemoveBody(request)
+
+    // An owner can never delete their own account via the API — guard the self
+    // case first, before any read, so it is unambiguous regardless of the target.
+    if (body.userId === viewer.userId) {
+      return forbidden()
+    }
+
+    // The target must exist. Read its profile first so an unknown id is a 404 and
+    // an owner-by-email target is a 403 — BEFORE any delete.
+    const target = await getAccountProfile(db, body.userId)
+    if (target === null) {
+      return Response.json({ error: 'not_found' }, { status: STATUS_NOT_FOUND })
+    }
+    if (deps.config.adminEmails.has(target.email.toLowerCase())) {
+      // An owner is conferred by the allowlist and can never be removed via the API.
+      return forbidden()
+    }
+
+    const changes = await deleteMember(db, body.userId)
+    if (changes === 0) {
+      // Lost a race (the row vanished between the profile read and the delete).
+      return Response.json({ error: 'not_found' }, { status: STATUS_NOT_FOUND })
+    }
+    return Response.json({ removed: body.userId }, { status: STATUS_OK })
+  } catch (error: unknown) {
+    const className = error instanceof Error ? error.constructor.name : typeof error
+    console.error(`[handleAdminMemberRemove] ${className}`)
+    if (error instanceof ParseError) {
+      return Response.json({ error: 'invalid_remove' }, { status: STATUS_UNPROCESSABLE })
+    }
+    return Response.json({ error: 'admin_member_remove_failed' }, { status: STATUS_SERVER_ERROR })
   }
 }

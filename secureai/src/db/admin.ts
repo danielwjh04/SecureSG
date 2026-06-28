@@ -299,6 +299,42 @@ export async function setUserRole(
   }
 }
 
+/**
+ * Hard-delete a member account and EVERY row keyed by its user id, used by the
+ * owner-only member-removal endpoint. The deletes run dependents-first and the
+ * `users` row LAST, so a fault partway through can never orphan a `users` row
+ * while its credentials/usage still resolve (the account stays removable on a
+ * retry). The order is: `api_keys` (`user_id`), `usage` (`subject` = the user
+ * id), `scan_history` (`user_id`), `subscriptions` (`user_id`), `otp_challenges`
+ * (`user_id`), then `users` (`id`).
+ *
+ * Idempotent: replaying a removal for an already-deleted id changes zero rows in
+ * every statement and is a no-op, not an error. Returns the `users` row-change
+ * count so the route can distinguish a real delete (1) from a vanished target
+ * (0) without a follow-up read.
+ *
+ * Time complexity: O(k) in the account's dependent rows (each delete is an
+ * indexed range delete on the user id). Space complexity: O(1).
+ *
+ * @param db - The persistence seam.
+ * @param userId - The account to delete (already gated owner-only by the route).
+ * @returns The number of `users` rows deleted (1 on success, 0 if already gone).
+ * @throws {AdminError} On a database failure (fail-closed).
+ */
+export async function deleteMember(db: Database, userId: string): Promise<number> {
+  try {
+    await db.execute('DELETE FROM api_keys WHERE user_id = ?', [userId])
+    await db.execute('DELETE FROM usage WHERE subject = ?', [userId])
+    await db.execute('DELETE FROM scan_history WHERE user_id = ?', [userId])
+    await db.execute('DELETE FROM subscriptions WHERE user_id = ?', [userId])
+    await db.execute('DELETE FROM otp_challenges WHERE user_id = ?', [userId])
+    const result = await db.execute('DELETE FROM users WHERE id = ?', [userId])
+    return result.changes
+  } catch (error: unknown) {
+    throw wrap('deleteMember', error)
+  }
+}
+
 /** Read a column as a non-empty string, failing closed on a malformed record. */
 function requireString(row: Row, column: string): string {
   const value = row[column]

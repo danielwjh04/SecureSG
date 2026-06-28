@@ -33,6 +33,7 @@ export const API = {
   adminOverview: `${API_BASE}/api/admin/overview`,
   adminMembers: `${API_BASE}/api/admin/members`,
   adminMemberRole: `${API_BASE}/api/admin/members/role`,
+  adminMemberRemove: `${API_BASE}/api/admin/members/remove`,
 } as const
 
 /** Where to email enterprise sales when the Pricing page Contact CTA is used. */

@@ -6,6 +6,7 @@ import {
   fetchRecentScans,
   login,
   logout,
+  removeMember,
   rotateApiKey,
   scanSkill,
   startCheckout,
@@ -177,6 +178,24 @@ describe('account endpoints', () => {
     await fetchRecentScans()
     const [path] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     expect(path).toBe(API.recentScans)
+  })
+
+  it('removeMember POSTs the user id to the remove endpoint with credentials', async () => {
+    const fetchMock = captureFetch({ removed: 'u1' })
+    await expect(removeMember('u1')).resolves.toEqual({ removed: 'u1' })
+    const [path, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(path).toBe(API.adminMemberRemove)
+    expect(init.method).toBe('POST')
+    expect(init.credentials).toBe('include')
+    expect(JSON.parse(init.body as string)).toEqual({ userId: 'u1' })
+  })
+
+  it('removeMember surfaces a 403 as ApiError', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 403, json: async () => ({}) }) as Response),
+    )
+    await expect(removeMember('u1')).rejects.toMatchObject({ name: 'ApiError', status: 403 })
   })
 
   it('logout, rotateApiKey, and startCheckout POST with credentials', async () => {

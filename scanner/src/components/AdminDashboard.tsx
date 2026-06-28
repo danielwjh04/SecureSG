@@ -29,11 +29,18 @@ import {
   ShieldAlert,
   ShieldCheck,
   ShieldX,
+  Trash2,
   Users,
   Wallet,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { ApiError, fetchAdminOverview, fetchMembers, setMemberRole } from '../api/client'
+import {
+  ApiError,
+  fetchAdminOverview,
+  fetchMembers,
+  removeMember,
+  setMemberRole,
+} from '../api/client'
 import { STATS_TREND_DAYS } from '../config'
 import { zeroFillSignups } from '../lib/stats'
 import type {
@@ -72,9 +79,17 @@ type LoadState =
 /**
  * The admin analytics dashboard. `canManageRoles` (owner-only, sourced from
  * `/api/me`) gates the per-row role controls in the members directory: an admin
- * viewer sees the directory read-only, an owner sees the Member/Admin selects.
+ * viewer sees the directory read-only, an owner sees the Member/Admin selects and
+ * a Remove action. `viewerEmail` (the signed-in account's email) identifies the
+ * viewer's own row, on which the destructive Remove action is hidden.
  */
-export function AdminDashboard({ canManageRoles = false }: { canManageRoles?: boolean }) {
+export function AdminDashboard({
+  canManageRoles = false,
+  viewerEmail = null,
+}: {
+  canManageRoles?: boolean
+  viewerEmail?: string | null
+}) {
   const [load, setLoad] = useState<LoadState>({ phase: 'loading' })
 
   const refresh = useCallback((): (() => void) => {
@@ -113,7 +128,7 @@ export function AdminDashboard({ canManageRoles = false }: { canManageRoles?: bo
         )}
         {load.phase === 'ready' && <OverviewBody overview={load.overview} />}
 
-        <MembersSection canManageRoles={canManageRoles} />
+        <MembersSection canManageRoles={canManageRoles} viewerEmail={viewerEmail} />
       </div>
     </section>
   )
@@ -392,12 +407,20 @@ type MembersState =
 /**
  * The members directory: a table of every account (Email, Tier, Role, Joined,
  * Scans) loaded from `GET /api/admin/members`. An owner (`canManageRoles`) gets a
- * per-row Member/Admin select on non-owner rows; owners' rows show a static
- * "Owner" badge, and a non-owner viewer sees every role read-only.
+ * per-row Member/Admin select plus a Remove action on non-owner rows; owners'
+ * rows show a static "Owner" badge, and a non-owner viewer sees every role
+ * read-only with no Remove action. The viewer's OWN row (matched by
+ * `viewerEmail`) never shows the Remove action.
  */
-function MembersSection({ canManageRoles }: { canManageRoles: boolean }) {
+function MembersSection({
+  canManageRoles,
+  viewerEmail,
+}: {
+  canManageRoles: boolean
+  viewerEmail: string | null
+}) {
   const [state, setState] = useState<MembersState>({ phase: 'loading' })
-  /** The user id whose role is mid-update, so its select can disable + spin. */
+  /** The user id whose role/removal is mid-flight, so its row can disable + spin. */
   const [pendingId, setPendingId] = useState<string | null>(null)
 
   const load = useCallback((): (() => void) => {
@@ -435,6 +458,29 @@ function MembersSection({ canManageRoles }: { canManageRoles: boolean }) {
     [load],
   )
 
+  const remove = useCallback(
+    async (member: AdminMember): Promise<void> => {
+      // A destructive, irreversible action: confirm with the operator first, named
+      // by the target's email so they cannot mistake the row.
+      if (!window.confirm(`Remove ${member.email}? This deletes their account and data.`)) {
+        return
+      }
+      setPendingId(member.id)
+      try {
+        await removeMember(member.id)
+        // Re-read so the removed row disappears and the count reflects the server.
+        load()
+      } catch (error) {
+        const message =
+          error instanceof ApiError ? error.message : 'Could not remove the member.'
+        setState({ phase: 'error', message })
+      } finally {
+        setPendingId(null)
+      }
+    },
+    [load],
+  )
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
@@ -462,8 +508,10 @@ function MembersSection({ canManageRoles }: { canManageRoles: boolean }) {
           <MembersTable
             members={state.members}
             canManageRoles={canManageRoles}
+            viewerEmail={viewerEmail}
             pendingId={pendingId}
             onChangeRole={changeRole}
+            onRemove={remove}
           />
         ))}
     </motion.div>
@@ -473,12 +521,26 @@ function MembersSection({ canManageRoles }: { canManageRoles: boolean }) {
 interface MembersTableProps {
   members: AdminMember[]
   canManageRoles: boolean
+  viewerEmail: string | null
   pendingId: string | null
   onChangeRole: (userId: string, role: AssignableRole) => void
+  onRemove: (member: AdminMember) => void
 }
 
-/** The scrollable members table. Columns: Email, Tier, Role, Joined, Scans. */
-function MembersTable({ members, canManageRoles, pendingId, onChangeRole }: MembersTableProps) {
+/**
+ * The scrollable members table. Columns: Email, Tier, Role, Joined, Scans, and —
+ * for an owner viewer only — an Actions column carrying the per-row Remove
+ * control. The Remove control is never shown for an owner row or for the viewer's
+ * own row.
+ */
+function MembersTable({
+  members,
+  canManageRoles,
+  viewerEmail,
+  pendingId,
+  onChangeRole,
+  onRemove,
+}: MembersTableProps) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left border-collapse">
@@ -489,6 +551,11 @@ function MembersTable({ members, canManageRoles, pendingId, onChangeRole }: Memb
             <th className="font-medium py-2 pr-4">Role</th>
             <th className="font-medium py-2 pr-4">Joined</th>
             <th className="font-medium py-2 pr-4 text-right tabular-nums">Scans</th>
+            {canManageRoles && (
+              <th className="font-medium py-2 pr-4 text-right">
+                <span className="sr-only">Actions</span>
+              </th>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -517,11 +584,54 @@ function MembersTable({ members, canManageRoles, pendingId, onChangeRole }: Memb
               <td className="py-2.5 pr-4 text-right tabular-nums text-white/70">
                 {formatCount(member.scans)}
               </td>
+              {canManageRoles && (
+                <td className="py-2.5 pr-4 text-right">
+                  <RemoveCell
+                    member={member}
+                    viewerEmail={viewerEmail}
+                    pending={pendingId === member.id}
+                    onRemove={onRemove}
+                  />
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
       </table>
     </div>
+  )
+}
+
+interface RemoveCellProps {
+  member: AdminMember
+  viewerEmail: string | null
+  pending: boolean
+  onRemove: (member: AdminMember) => void
+}
+
+/**
+ * The Remove cell (owner viewer only). Renders nothing for an OWNER row (an owner
+ * can never be removed via the API) or for the viewer's OWN row (matched
+ * case-insensitively by email). Otherwise a small destructive trash button that
+ * confirms before deleting the account and its data.
+ */
+function RemoveCell({ member, viewerEmail, pending, onRemove }: RemoveCellProps) {
+  const isOwnRow =
+    viewerEmail !== null && member.email.toLowerCase() === viewerEmail.toLowerCase()
+  if (member.role === 'owner' || isOwnRow) {
+    return null
+  }
+  return (
+    <button
+      type="button"
+      aria-label={`Remove ${member.email}`}
+      title={`Remove ${member.email}`}
+      disabled={pending}
+      onClick={() => onRemove(member)}
+      className="glass-pill inline-flex items-center justify-center w-7 h-7 rounded-full text-block/80 hover:text-block hover:bg-block/10 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+    >
+      <Trash2 className="w-3.5 h-3.5" />
+    </button>
   )
 }
 

@@ -211,3 +211,8 @@ export interface SetRoleResponse {
   id: string
   role: AssignableRole
 }
+
+/** Response body for `POST /api/admin/members/remove`: the removed account id. */
+export interface RemoveMemberResponse {
+  removed: string
+}

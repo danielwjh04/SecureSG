@@ -181,6 +181,22 @@ export const memberRoleSchema = z
 /** The validated payload `POST /api/admin/members/role` operates on. */
 export type MemberRolePayload = z.infer<typeof memberRoleSchema>
 
+/**
+ * Body of `POST /api/admin/members/remove`: the target account id to hard-delete.
+ * `.strict()` rejects unexpected fields so a malformed payload fails closed at
+ * the boundary. The route enforces the owner-only gate and the
+ * cannot-remove-an-owner / cannot-remove-self rules; the schema only shape-checks
+ * the id.
+ */
+export const removeMemberSchema = z
+  .object({
+    userId: z.string().min(1).max(100),
+  })
+  .strict()
+
+/** The validated payload `POST /api/admin/members/remove` operates on. */
+export type RemoveMemberPayload = z.infer<typeof removeMemberSchema>
+
 /** Default recent-scans page size when the `limit` query param is absent. */
 const RECENT_SCANS_DEFAULT_LIMIT = 3
 /** Maximum recent-scans page size; a larger `limit` is clamped to this. */

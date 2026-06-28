@@ -1,13 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import type { AdminDeps, AdminMembersPage, AdminOverview } from './admin'
 import { memoryDatabase } from '../db/memory.test'
-import { createFreeUser, setUserTier } from '../db/accounts'
+import { createFreeUser, setUserTier, sha256Hex } from '../db/accounts'
 import { setUserRole } from '../db/admin'
 import { recordVerdict } from '../db/usage'
 import { upsertSubscription } from '../db/billing'
+import { insertScan } from '../db/scans'
+import { createChallenge } from '../db/otp'
 import { loadConfig } from '../config/env'
 import { signSession, SESSION_COOKIE_NAME } from '../auth/session'
-import { handleAdminMemberRole, handleAdminMembers, handleAdminOverview } from './admin'
+import {
+  handleAdminMemberRemove,
+  handleAdminMemberRole,
+  handleAdminMembers,
+  handleAdminOverview,
+} from './admin'
 
 const ADMIN_EMAIL = 'owner@example.com'
 const SECRET = 'admin-route-test-secret'
@@ -38,6 +45,14 @@ function membersReq(headers: Record<string, string> = {}, query = ''): Request {
 
 function roleReq(headers: Record<string, string>, body: unknown): Request {
   return new Request('https://secureai.test/api/admin/members/role', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+  })
+}
+
+function removeReq(headers: Record<string, string>, body: unknown): Request {
+  return new Request('https://secureai.test/api/admin/members/remove', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
@@ -281,6 +296,123 @@ describe('handleAdminMemberRole', () => {
 
   it('returns 503 when the account store is absent', async () => {
     const res = await handleAdminMemberRole(roleReq({}, { userId: 'x', role: 'admin' }), deps(null))
+    expect(res.status).toBe(503)
+  })
+})
+
+describe('handleAdminMemberRemove', () => {
+  it('lets an owner remove a member (200) and hard-deletes the user + every related row', async () => {
+    const { db, store } = memoryDatabase()
+    const ownerKey = await adminBearer(db)
+    const { user: target, apiKey: targetKey } = await createFreeUser(db, 'gone@example.com')
+    // Seed a row in every table keyed by the target's user id.
+    const day = new Date().toISOString().slice(0, 10)
+    await recordVerdict(db, target.id, day, 'BLOCK', 2, { ai: true })
+    await upsertSubscription(db, target.id, 'active', 'price_pro', null)
+    await insertScan(db, {
+      id: 'scan-1',
+      userId: target.id,
+      verdict: 'BLOCK',
+      sourceKind: 'url',
+      sourceRef: 'https://x.test',
+      flagged: 2,
+      headHash: 'h1',
+      scannedAt: `${day}T00:00:00.000Z`,
+    })
+    await createChallenge(db, {
+      id: 'otp-1',
+      userId: target.id,
+      codeHash: 'codehash',
+      expiresAt: `${day}T01:00:00.000Z`,
+      createdAt: `${day}T00:00:00.000Z`,
+    })
+    const targetKeyHash = await sha256Hex(targetKey)
+    // Precondition: every table holds the target's row.
+    expect(store.users.has(target.id)).toBe(true)
+    expect(store.apiKeys.has(targetKeyHash)).toBe(true)
+    expect(store.usage.has(`${target.id} ${day}`)).toBe(true)
+    expect(store.scanHistory.has('scan-1')).toBe(true)
+    expect(store.subscriptions.has(target.id)).toBe(true)
+    expect(store.otpChallenges.has('otp-1')).toBe(true)
+
+    const res = await handleAdminMemberRemove(removeReq(bearer(ownerKey), { userId: target.id }), deps(db))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ removed: target.id })
+
+    // Postcondition: the user and EVERY row keyed by its id are gone.
+    expect(store.users.has(target.id)).toBe(false)
+    expect(store.apiKeys.has(targetKeyHash)).toBe(false)
+    expect(store.usage.has(`${target.id} ${day}`)).toBe(false)
+    expect(store.scanHistory.has('scan-1')).toBe(false)
+    expect(store.subscriptions.has(target.id)).toBe(false)
+    expect(store.otpChallenges.has('otp-1')).toBe(false)
+  })
+
+  it('forbids a granted admin from removing a member (403) and leaves the target intact', async () => {
+    const { db, store } = memoryDatabase()
+    await adminBearer(db)
+    const { user: adminUser, apiKey: adminKey } = await createFreeUser(db, 'admin-rm@example.com')
+    await setUserRole(db, adminUser.id, 'admin')
+    const { user: target } = await createFreeUser(db, 'keep@example.com')
+    const res = await handleAdminMemberRemove(removeReq(bearer(adminKey), { userId: target.id }), deps(db))
+    expect(res.status).toBe(403)
+    expect(store.users.has(target.id)).toBe(true)
+  })
+
+  it('forbids a plain member from removing anyone (403)', async () => {
+    const { db, store } = memoryDatabase()
+    await adminBearer(db)
+    const { apiKey: memberKey } = await createFreeUser(db, 'm-rm@example.com')
+    const { user: target } = await createFreeUser(db, 't-rm@example.com')
+    const res = await handleAdminMemberRemove(removeReq(bearer(memberKey), { userId: target.id }), deps(db))
+    expect(res.status).toBe(403)
+    expect(store.users.has(target.id)).toBe(true)
+  })
+
+  it('returns 401 for an anonymous caller', async () => {
+    const { db } = memoryDatabase()
+    const { user: target } = await createFreeUser(db, 't-anon@example.com')
+    const res = await handleAdminMemberRemove(removeReq({}, { userId: target.id }), deps(db))
+    expect(res.status).toBe(401)
+  })
+
+  it('forbids removing an owner-by-email target with 403 and leaves it intact', async () => {
+    const { db, store } = memoryDatabase()
+    const ownerKey = await adminBearer(db)
+    const ownerConfig = loadConfig({ SCANNER_ADMIN_EMAILS: `${ADMIN_EMAIL},co-owner@example.com` })
+    const { user: coOwner } = await createFreeUser(db, 'co-owner@example.com')
+    const res = await handleAdminMemberRemove(
+      removeReq(bearer(ownerKey), { userId: coOwner.id }),
+      { db, sessionSecret: SECRET, config: ownerConfig },
+    )
+    expect(res.status).toBe(403)
+    expect(store.users.has(coOwner.id)).toBe(true)
+  })
+
+  it('forbids an owner from removing their own account with 403', async () => {
+    const { db, store } = memoryDatabase()
+    const { user: owner, apiKey: ownerKey } = await createFreeUser(db, ADMIN_EMAIL)
+    const res = await handleAdminMemberRemove(removeReq(bearer(ownerKey), { userId: owner.id }), deps(db))
+    expect(res.status).toBe(403)
+    expect(store.users.has(owner.id)).toBe(true)
+  })
+
+  it('returns 404 for an unknown user id', async () => {
+    const { db } = memoryDatabase()
+    const ownerKey = await adminBearer(db)
+    const res = await handleAdminMemberRemove(removeReq(bearer(ownerKey), { userId: 'ghost' }), deps(db))
+    expect(res.status).toBe(404)
+  })
+
+  it('rejects a malformed body with 422', async () => {
+    const { db } = memoryDatabase()
+    const ownerKey = await adminBearer(db)
+    const res = await handleAdminMemberRemove(removeReq(bearer(ownerKey), { nope: true }), deps(db))
+    expect(res.status).toBe(422)
+  })
+
+  it('returns 503 when the account store is absent', async () => {
+    const res = await handleAdminMemberRemove(removeReq({}, { userId: 'x' }), deps(null))
     expect(res.status).toBe(503)
   })
 })

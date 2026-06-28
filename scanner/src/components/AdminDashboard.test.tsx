@@ -177,3 +177,80 @@ describe('AdminDashboard · members', () => {
     await waitFor(() => expect(screen.getByText('Could not load members.')).toBeInTheDocument())
   })
 })
+
+describe('AdminDashboard · remove member', () => {
+  it('hides the Remove action entirely from a non-owner viewer', async () => {
+    stubOverview()
+    vi.spyOn(client, 'fetchMembers').mockResolvedValue(
+      membersPage([member({ id: 'u1', email: 'a@securesg.test', role: 'member' })]),
+    )
+    render(<AdminDashboard canManageRoles={false} viewerEmail="owner@securesg.test" />)
+    await waitFor(() => expect(screen.getByText('a@securesg.test')).toBeInTheDocument())
+    expect(screen.queryByRole('button', { name: /Remove a@securesg.test/ })).toBeNull()
+  })
+
+  it('shows Remove for an owner viewer on non-owner rows, but not on owner or own rows', async () => {
+    stubOverview()
+    vi.spyOn(client, 'fetchMembers').mockResolvedValue(
+      membersPage([
+        member({ id: 'u1', email: 'member@securesg.test', role: 'member' }),
+        member({ id: 'u2', email: 'admin@securesg.test', role: 'admin' }),
+        member({ id: 'u3', email: 'boss@securesg.test', role: 'owner' }),
+        member({ id: 'u4', email: 'me@securesg.test', role: 'admin' }),
+      ]),
+    )
+    render(<AdminDashboard canManageRoles={true} viewerEmail="me@securesg.test" />)
+    await waitFor(() => expect(screen.getByText('member@securesg.test')).toBeInTheDocument())
+
+    // Non-owner, non-self rows show a Remove button.
+    expect(screen.getByRole('button', { name: 'Remove member@securesg.test' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Remove admin@securesg.test' })).toBeInTheDocument()
+    // The owner row never shows Remove.
+    expect(screen.queryByRole('button', { name: 'Remove boss@securesg.test' })).toBeNull()
+    // The viewer's own row never shows Remove (matched by email, case-insensitive).
+    expect(screen.queryByRole('button', { name: 'Remove me@securesg.test' })).toBeNull()
+  })
+
+  it('confirms, calls removeMember, and refetches on confirm', async () => {
+    stubOverview()
+    const fetchSpy = vi
+      .spyOn(client, 'fetchMembers')
+      .mockResolvedValue(membersPage([member({ id: 'u1', email: 'gone@securesg.test', role: 'member' })]))
+    const removeSpy = vi.spyOn(client, 'removeMember').mockResolvedValue({ removed: 'u1' })
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    render(<AdminDashboard canManageRoles={true} viewerEmail="owner@securesg.test" />)
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Remove gone@securesg.test' })).toBeInTheDocument(),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove gone@securesg.test' }))
+
+    expect(confirmSpy).toHaveBeenCalledWith(
+      'Remove gone@securesg.test? This deletes their account and data.',
+    )
+    await waitFor(() => expect(removeSpy).toHaveBeenCalledWith('u1'))
+    // The table is re-read after a successful removal (initial load + refetch).
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2))
+  })
+
+  it('does not call removeMember when the confirm is cancelled', async () => {
+    stubOverview()
+    const fetchSpy = vi
+      .spyOn(client, 'fetchMembers')
+      .mockResolvedValue(membersPage([member({ id: 'u1', email: 'safe@securesg.test', role: 'member' })]))
+    const removeSpy = vi.spyOn(client, 'removeMember').mockResolvedValue({ removed: 'u1' })
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+
+    render(<AdminDashboard canManageRoles={true} viewerEmail="owner@securesg.test" />)
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Remove safe@securesg.test' })).toBeInTheDocument(),
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove safe@securesg.test' }))
+
+    expect(removeSpy).not.toHaveBeenCalled()
+    // Only the initial load — no refetch, since nothing changed.
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+})

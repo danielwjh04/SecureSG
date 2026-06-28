@@ -10,6 +10,7 @@ import type {
   MeResponse,
   Proof,
   RecentScansResponse,
+  RemoveMemberResponse,
   ResendResponse,
   RotateKeyResponse,
   ScanRequest,
@@ -236,6 +237,21 @@ export async function setMemberRole(
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify({ userId, role }),
+    ...WITH_CREDENTIALS,
+  })
+}
+
+/**
+ * Permanently remove another account (owner-only): hard-deletes the user and all
+ * of its data. Throws {@link ApiError}(403) when the caller is not an owner, the
+ * target is an owner, or the target is the caller themselves; (404) for an
+ * unknown user.
+ */
+export async function removeMember(userId: string): Promise<RemoveMemberResponse> {
+  return request<RemoveMemberResponse>(API.adminMemberRemove, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ userId }),
     ...WITH_CREDENTIALS,
   })
 }
