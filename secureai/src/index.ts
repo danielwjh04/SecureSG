@@ -14,6 +14,7 @@ import type { ContactDeps, ContactRateLimitKv } from './routes/contact'
 import type { StatsDeps } from './routes/stats'
 import type { RecentScansDeps } from './routes/recentScans'
 import type { AdminDeps } from './routes/admin'
+import type { RateLimitKv } from './middleware/rateLimit'
 import { loadConfig } from './config/env'
 import { handleGuard } from './routes/guard'
 import { handleScan } from './routes/scan'
@@ -326,6 +327,7 @@ function authDeps(env: Env, config: ScannerConfig): AuthDeps {
     sessionSecret: sessionSecretOf(env),
     config,
     emailSender: buildEmailSender(env, config),
+    kv: env.KV !== undefined && env.KV !== null ? (env.KV as RateLimitKv) : null,
   }
 }
 

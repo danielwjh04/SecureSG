@@ -23,6 +23,8 @@ import type { ContactPayload } from '../schemas/validate'
 import type { EmailSender } from '../email/sender'
 import { EmailError, ParseError, ScannerError } from '../errors'
 import { contactSchema } from '../schemas/validate'
+import { clientIp, withinHourlyLimit } from '../middleware/rateLimit'
+import type { RateLimitKv } from '../middleware/rateLimit'
 
 const STATUS_OK = 200
 const STATUS_UNPROCESSABLE = 422
@@ -31,25 +33,15 @@ const STATUS_SERVER_ERROR = 500
 const STATUS_BAD_GATEWAY = 502
 const STATUS_SERVICE_UNAVAILABLE = 503
 
-/** Cloudflare's true-client-IP header, used to key the per-IP rate limit. */
-const CLIENT_IP_HEADER = 'CF-Connecting-IP'
-/** Rate-limit key suffix when no client IP is present (one shared bucket). */
-const UNKNOWN_IP = 'unknown'
 /** Namespaced, versioned prefix for every contact rate-limit key. */
 const RATE_KEY_PREFIX = 'contact:rl:v1:'
-/** Seconds in one hour — the rate-limit window length and KV entry TTL. */
-const SECONDS_PER_HOUR = 3600
 
 /**
- * The minimal Cloudflare KV surface the rate limit uses: a string `get` and a
- * `put` with an optional `expirationTtl`. Declared structurally (rather than
- * depending on the full `KVNamespace` type) so a test can inject a tiny
- * `{ get, put }` fake, mirroring {@link ../scanner/verdictCache.VerdictCacheKv}.
+ * The KV surface the contact rate limit uses. Aliases the shared
+ * {@link RateLimitKv} so the worker entry's existing `ContactRateLimitKv` import
+ * keeps resolving while a single limiter implementation backs every caller.
  */
-export interface ContactRateLimitKv {
-  get(key: string): Promise<string | null>
-  put(key: string, value: string, options?: { expirationTtl?: number }): Promise<void>
-}
+export type ContactRateLimitKv = RateLimitKv
 
 /** A configured contact route's dependencies, assembled by the worker entry. */
 export interface ContactDeps {
@@ -81,58 +73,6 @@ const HTML_ESCAPE_PATTERN = /[&<>"']/g
  */
 function escapeHtml(value: string): string {
   return value.replace(HTML_ESCAPE_PATTERN, (char) => HTML_ESCAPES[char] ?? char)
-}
-
-/**
- * Resolve the client IP from the CF-Connecting-IP header, or a shared `unknown`
- * bucket when it is absent/blank. The IP only keys the rate limit; it is never
- * stored or emailed.
- *
- * Time complexity: O(1). Space complexity: O(1).
- */
-function clientIp(request: Request): string {
-  const ip = request.headers.get(CLIENT_IP_HEADER)?.trim()
-  return ip !== undefined && ip.length > 0 ? ip : UNKNOWN_IP
-}
-
-/**
- * Enforce the per-IP hourly cap against KV, returning `true` when the request is
- * within budget (and recording it) or `false` when the cap is already reached.
- *
- * Window model: a fixed clock-hour bucket keyed by `floor(now / 3600)`, so each
- * IP gets `limit` inquiries per hour; the KV entry is written with a one-hour
- * TTL so a stale bucket self-expires (no cleanup pass). The count is read, the
- * cap checked, then the incremented count written back — a benign race under
- * concurrency can only UNDER-count by a hair (two reads seeing the same value),
- * which is acceptable for an anti-abuse bound and never over-counts a legitimate
- * caller.
- *
- * Time complexity: O(1) — one KV read + one KV write. Space complexity: O(1).
- *
- * @param kv - The rate-limit store (non-null; the caller skips this on `null`).
- * @param ip - The client IP keying the bucket.
- * @param limit - The max inquiries per hour (`config.contactRatePerHour`).
- * @param nowSeconds - The current edge time in whole seconds (bucket selector).
- * @returns `true` if within budget (request recorded), else `false`.
- */
-async function withinRateLimit(
-  kv: ContactRateLimitKv,
-  ip: string,
-  limit: number,
-  nowSeconds: number,
-): Promise<boolean> {
-  const bucket = Math.floor(nowSeconds / SECONDS_PER_HOUR)
-  const key = `${RATE_KEY_PREFIX}${ip}:${bucket}`
-  const raw = await kv.get(key)
-  const used = raw === null ? 0 : Number.parseInt(raw, 10)
-  // A corrupt/non-numeric entry fails closed: treat it as the cap so a poisoned
-  // counter cannot be used to lift the limit.
-  const current = Number.isFinite(used) && used >= 0 ? used : limit
-  if (current >= limit) {
-    return false
-  }
-  await kv.put(key, String(current + 1), { expirationTtl: SECONDS_PER_HOUR })
-  return true
 }
 
 /**
@@ -227,8 +167,9 @@ export async function handleContact(request: Request, deps: ContactDeps): Promis
     const body = await parseContactBody(request)
 
     if (deps.kv !== null) {
-      const allowed = await withinRateLimit(
+      const allowed = await withinHourlyLimit(
         deps.kv,
+        RATE_KEY_PREFIX,
         clientIp(request),
         deps.config.contactRatePerHour,
         Math.floor(Date.now() / 1000),

@@ -13,7 +13,13 @@ import { loadConfig } from '../config/env'
 import { SESSION_COOKIE_NAME } from '../auth/session'
 import { handleLogin, handleLoginResend, handleLoginVerify, handleMe, handleRegister } from './auth'
 
-const config = loadConfig({ SCANNER_PBKDF2_ITERATIONS: '100000' })
+// Disable the online HIBP check (no network in tests; dedicated tests cover it)
+// and use 'Sapphire92' fixtures (3 classes, not denylisted) for the password
+// policy. The 2FA paths under test are orthogonal to password strength.
+const config = loadConfig({
+  SCANNER_PBKDF2_ITERATIONS: '100000',
+  SCANNER_PWNED_CHECK_ENABLED: 'false',
+})
 const SECRET = 'twofactor-test-secret'
 
 /** An EmailSender that records every sent message (no network). */
@@ -35,7 +41,7 @@ function deps(
   emailSender: EmailSender | null,
   sessionSecret: string | null = SECRET,
 ): AuthDeps {
-  return { db, sessionSecret, config, emailSender }
+  return { db, sessionSecret, config, emailSender, kv: null }
 }
 
 function jsonReq(path: string, body: unknown): Request {
@@ -66,7 +72,7 @@ function codeFromMessage(message: EmailMessage): string {
 
 /** Register an account so a password login can succeed. */
 async function registerAccount(db: Database, email = 'tf@example.com'): Promise<void> {
-  await handleRegister(jsonReq('/api/register', { email, password: 'password123' }), deps(db, null))
+  await handleRegister(jsonReq('/api/register', { email, password: 'Sapphire92' }), deps(db, null))
 }
 
 describe('handleLogin with an email sender (2FA active)', () => {
@@ -76,7 +82,7 @@ describe('handleLogin with an email sender (2FA active)', () => {
     const sender = new FakeEmailSender()
 
     const res = await handleLogin(
-      jsonReq('/api/login', { email: 'zuriel@gmail.com', password: 'password123' }),
+      jsonReq('/api/login', { email: 'zuriel@gmail.com', password: 'Sapphire92' }),
       deps(db, sender),
     )
 
@@ -99,9 +105,9 @@ describe('handleLogin with an email sender (2FA active)', () => {
     await registerAccount(db)
     const sender = new FakeEmailSender()
 
-    await handleLogin(jsonReq('/api/login', { email: 'tf@example.com', password: 'password123' }), deps(db, sender))
+    await handleLogin(jsonReq('/api/login', { email: 'tf@example.com', password: 'Sapphire92' }), deps(db, sender))
     const firstId = [...store.otpChallenges.keys()][0]
-    await handleLogin(jsonReq('/api/login', { email: 'tf@example.com', password: 'password123' }), deps(db, sender))
+    await handleLogin(jsonReq('/api/login', { email: 'tf@example.com', password: 'Sapphire92' }), deps(db, sender))
 
     expect(store.otpChallenges.size).toBe(1)
     expect(store.otpChallenges.has(firstId as string)).toBe(false)
@@ -128,7 +134,7 @@ describe('handleLogin with an email sender (2FA active)', () => {
     sender.failNext = true
 
     const res = await handleLogin(
-      jsonReq('/api/login', { email: 'tf@example.com', password: 'password123' }),
+      jsonReq('/api/login', { email: 'tf@example.com', password: 'Sapphire92' }),
       deps(db, sender),
     )
     expect(res.status).toBe(502)
@@ -142,7 +148,7 @@ async function startChallenge(
   sender: FakeEmailSender,
   email = 'tf@example.com',
 ): Promise<{ challengeId: string; code: string }> {
-  const res = await handleLogin(jsonReq('/api/login', { email, password: 'password123' }), deps(db, sender))
+  const res = await handleLogin(jsonReq('/api/login', { email, password: 'Sapphire92' }), deps(db, sender))
   const body = (await res.json()) as { challengeId: string }
   const code = codeFromMessage(sender.sent[sender.sent.length - 1] as EmailMessage)
   return { challengeId: body.challengeId, code }
@@ -309,7 +315,7 @@ describe('handleRegister with an email sender (verification deferred to login)',
     const sender = new FakeEmailSender()
 
     const res = await handleRegister(
-      jsonReq('/api/register', { email: 'zuriel@gmail.com', password: 'password123' }),
+      jsonReq('/api/register', { email: 'zuriel@gmail.com', password: 'Sapphire92' }),
       deps(db, sender),
     )
 
@@ -330,7 +336,7 @@ describe('handleRegister with an email sender (verification deferred to login)',
   it("an UNVERIFIED registrant's API key does not authenticate, but the first login verifies it", async () => {
     const { db, store } = memoryDatabase()
     const sender = new FakeEmailSender()
-    await handleRegister(jsonReq('/api/register', { email: 'gate@example.com', password: 'password123' }), deps(db, sender))
+    await handleRegister(jsonReq('/api/register', { email: 'gate@example.com', password: 'Sapphire92' }), deps(db, sender))
 
     // Rotate is unreachable without a session; mint a key directly to assert the
     // verified gate on the API-key path (the account is unverified post-register).
@@ -351,11 +357,11 @@ describe('handleRegister with an email sender (verification deferred to login)',
   it('full path: register → login sends the single code → verify flips email_verified, issues a session, and /api/me works', async () => {
     const { db, store } = memoryDatabase()
     const sender = new FakeEmailSender()
-    await handleRegister(jsonReq('/api/register', { email: 'flow@example.com', password: 'password123' }), deps(db, sender))
+    await handleRegister(jsonReq('/api/register', { email: 'flow@example.com', password: 'Sapphire92' }), deps(db, sender))
 
     // Register sent nothing; the first login opens the one challenge and emails the code.
     expect(sender.sent).toHaveLength(0)
-    const login = await handleLogin(jsonReq('/api/login', { email: 'flow@example.com', password: 'password123' }), deps(db, sender))
+    const login = await handleLogin(jsonReq('/api/login', { email: 'flow@example.com', password: 'Sapphire92' }), deps(db, sender))
     expect(login.status).toBe(200)
     const loginBody = (await login.json()) as { twoFactor: boolean; challengeId: string }
     expect(loginBody.twoFactor).toBe(true)
@@ -387,10 +393,10 @@ describe('handleRegister with an email sender (verification deferred to login)',
   it('rejects a duplicate email with 409 (and still sends no code)', async () => {
     const { db, store } = memoryDatabase()
     const sender = new FakeEmailSender()
-    await handleRegister(jsonReq('/api/register', { email: 'dupe@example.com', password: 'password123' }), deps(db, sender))
+    await handleRegister(jsonReq('/api/register', { email: 'dupe@example.com', password: 'Sapphire92' }), deps(db, sender))
 
     const res = await handleRegister(
-      jsonReq('/api/register', { email: 'dupe@example.com', password: 'otherpass1' }),
+      jsonReq('/api/register', { email: 'dupe@example.com', password: 'Sapphire93' }),
       deps(db, sender),
     )
     expect(res.status).toBe(409)

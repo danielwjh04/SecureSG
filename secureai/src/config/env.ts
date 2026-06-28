@@ -134,6 +134,34 @@ export interface ScannerConfig {
    * KV is unbound the limit is skipped (the endpoint still functions).
    */
   readonly contactRatePerHour: number
+  /**
+   * Max auth attempts accepted per rolling hour per client IP, the brute-force
+   * bound on `POST /api/login`, `/api/register`, and the OTP verify/resend
+   * endpoints (each endpoint gets its own per-IP bucket). Enforced via KV; when
+   * KV is unbound the limit is skipped.
+   */
+  readonly authRatePerHour: number
+  /**
+   * Minimum distinct character classes (of lowercase / uppercase / digit /
+   * symbol) a registration password must mix. The deterministic offline strength
+   * gate; password LENGTH is enforced separately by the register schema.
+   */
+  readonly passwordMinClasses: number
+  /**
+   * Whether registration runs the online HIBP k-anonymity leaked-password check.
+   * Default on; the check fails OPEN (a HIBP outage never blocks signup), and the
+   * offline common-password denylist runs regardless of this flag.
+   */
+  readonly pwnedCheckEnabled: boolean
+  /** Hard timeout (ms) for the HIBP range fetch when {@link pwnedCheckEnabled}. */
+  readonly pwnedTimeoutMs: number
+  /**
+   * Whether the per-scan writes (metering + history + detail) run as ONE atomic
+   * `Database.batch` (default) or the legacy sequential path. The atomic path also
+   * makes a write failure non-fatal to the scan response (logged, the verdict is
+   * still returned); set to `false` to fall back if a batch issue is suspected.
+   */
+  readonly scanWriteAtomic: boolean
 }
 
 /**
@@ -222,6 +250,17 @@ export function loadConfig(env: Env): ScannerConfig {
     ...readSet(env, 'SCANNER_CONTACT_RECIPIENTS', 'zuriel.shanley@gmail.com,danielwjh04@gmail.com'),
   ]
   const contactRatePerHour = readIntInRange(env, 'SCANNER_CONTACT_RATE_PER_HOUR', 5, 1, 100)
+  // Auth hardening tunables. The per-IP hourly auth attempt cap defaults to 20
+  // (generous for a human, throttling a brute-forcer); password complexity
+  // requires 3 of 4 character classes by default. The HIBP leaked-password check
+  // is on by default and fails open; its fetch is bounded by a short timeout.
+  const authRatePerHour = readIntInRange(env, 'SCANNER_AUTH_RATE_PER_HOUR', 20, 1, 1000)
+  const passwordMinClasses = readIntInRange(env, 'SCANNER_PASSWORD_MIN_CLASSES', 3, 1, 4)
+  const pwnedCheckEnabled = readBool(env, 'SCANNER_PWNED_CHECK_ENABLED', true)
+  const pwnedTimeoutMs = readIntInRange(env, 'SCANNER_PWNED_TIMEOUT_MS', 2500, 100, 60000)
+  // Per-scan writes default to one atomic D1 batch; flip to false to fall back to
+  // the legacy sequential path.
+  const scanWriteAtomic = readBool(env, 'SCANNER_SCAN_WRITE_ATOMIC', true)
 
   // Cross-field invariants (fail-closed).
   if (!(reviewThreshold < blockThreshold)) {
@@ -276,6 +315,11 @@ export function loadConfig(env: Env): ScannerConfig {
     otpMaxAttempts,
     contactRecipients,
     contactRatePerHour,
+    authRatePerHour,
+    passwordMinClasses,
+    pwnedCheckEnabled,
+    pwnedTimeoutMs,
+    scanWriteAtomic,
   }
 }
 
@@ -309,6 +353,27 @@ function readSet(env: Env, key: string, fallback: string): ReadonlySet<string> {
     .map((item) => item.trim().toLowerCase())
     .filter((item) => item.length > 0)
   return new Set(items)
+}
+
+/**
+ * Read a boolean var: exactly `"true"` or `"false"` (case-insensitive, trimmed),
+ * or the fallback when unset. Any other value fails closed with a
+ * {@link ConfigError} rather than silently coercing — a typo'd flag must not be
+ * read as a quiet `false`.
+ */
+function readBool(env: Env, key: string, fallback: boolean): boolean {
+  const raw = readRaw(env, key)
+  if (raw === undefined) {
+    return fallback
+  }
+  const value = raw.trim().toLowerCase()
+  if (value === 'true') {
+    return true
+  }
+  if (value === 'false') {
+    return false
+  }
+  throw new ConfigError(`${key} must be "true" or "false", got "${raw}"`)
 }
 
 function readIntInRange(

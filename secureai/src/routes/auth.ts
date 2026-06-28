@@ -54,7 +54,11 @@ import {
 } from '../db/otp'
 import { generateCode, hashCode, verifyCode } from '../auth/otp'
 import { hashPassword, verifyPassword } from '../auth/password'
+import { assessPasswordStrength } from '../auth/passwordPolicy'
+import { isPasswordBreached } from '../auth/breachCheck'
 import { authenticate } from '../middleware/auth'
+import { clientIp, withinHourlyLimit } from '../middleware/rateLimit'
+import type { RateLimitKv } from '../middleware/rateLimit'
 import {
   buildClearedSessionCookie,
   buildSessionCookie,
@@ -66,9 +70,17 @@ const STATUS_CREATED = 201
 const STATUS_UNAUTHORIZED = 401
 const STATUS_CONFLICT = 409
 const STATUS_UNPROCESSABLE = 422
+const STATUS_TOO_MANY_REQUESTS = 429
 const STATUS_SERVER_ERROR = 500
 const STATUS_BAD_GATEWAY = 502
 const STATUS_SERVICE_UNAVAILABLE = 503
+
+// Per-endpoint, versioned rate-limit key namespaces so a burst against one
+// endpoint never consumes another's budget (each gets its own per-IP bucket).
+const RATE_PREFIX_LOGIN = 'auth:login:v1:'
+const RATE_PREFIX_REGISTER = 'auth:register:v1:'
+const RATE_PREFIX_VERIFY = 'auth:verify:v1:'
+const RATE_PREFIX_RESEND = 'auth:resend:v1:'
 
 /**
  * A configured auth route's dependencies, assembled by the worker entry.
@@ -86,6 +98,11 @@ export interface AuthDeps {
   readonly sessionSecret: string | null
   readonly config: ScannerConfig
   readonly emailSender: EmailSender | null
+  /**
+   * Per-IP rate-limit store for the auth endpoints, or `null` when KV is unbound
+   * (the brute-force limit is then skipped, exactly as the contact route degrades).
+   */
+  readonly kv: RateLimitKv | null
 }
 
 /** Current UNIX time in whole seconds, stamped once per request at the edge. */
@@ -114,6 +131,39 @@ function invalidChallenge(): Response {
   return Response.json(
     { error: 'invalid_code', message: 'that code is invalid or has expired' },
     { status: STATUS_UNAUTHORIZED },
+  )
+}
+
+/**
+ * Enforce the per-IP hourly auth rate limit for `keyPrefix`, returning a 429
+ * {@link Response} when the caller is over budget or `null` when within it (or
+ * when no KV store is configured — the limit is then skipped, matching the
+ * contact route's degradation). Counts every attempt, so it throttles brute force
+ * before any password/DB/email work runs.
+ *
+ * Time complexity: O(1) (one KV read + write). Space complexity: O(1).
+ */
+async function rateLimited(
+  deps: AuthDeps,
+  request: Request,
+  keyPrefix: string,
+): Promise<Response | null> {
+  if (deps.kv === null) {
+    return null
+  }
+  const allowed = await withinHourlyLimit(
+    deps.kv,
+    keyPrefix,
+    clientIp(request),
+    deps.config.authRatePerHour,
+    nowSeconds(),
+  )
+  if (allowed) {
+    return null
+  }
+  return Response.json(
+    { error: 'rate_limited', message: 'too many attempts; please try again later' },
+    { status: STATUS_TOO_MANY_REQUESTS },
   )
 }
 
@@ -292,14 +342,42 @@ export async function handleRegister(request: Request, deps: AuthDeps): Promise<
   }
   const db = deps.db
   const sessionSecret = deps.sessionSecret
+  const limited = await rateLimited(deps, request, RATE_PREFIX_REGISTER)
+  if (limited !== null) {
+    return limited
+  }
   try {
     const body: RegisterPayload = await parseBody(request, registerSchema, 'register')
+
+    // Offline strength gate (cheap, deterministic) before any DB/network work.
+    const strength = assessPasswordStrength(body.password, deps.config.passwordMinClasses)
+    if (!strength.ok) {
+      return Response.json(
+        { error: 'weak_password', message: strength.reason },
+        { status: STATUS_UNPROCESSABLE },
+      )
+    }
 
     const existing = await findUserByEmail(db, body.email)
     if (existing !== null) {
       return Response.json(
         { error: 'email_taken', message: 'an account with this email already exists' },
         { status: STATUS_CONFLICT },
+      )
+    }
+
+    // Online leaked-password check (k-anonymity), gated by config and fail-open:
+    // only after the email is known-free, to avoid a HIBP call on a 409.
+    if (
+      deps.config.pwnedCheckEnabled &&
+      (await isPasswordBreached(body.password, deps.config.pwnedTimeoutMs))
+    ) {
+      return Response.json(
+        {
+          error: 'breached_password',
+          message: 'this password has appeared in a known data breach; choose another',
+        },
+        { status: STATUS_UNPROCESSABLE },
       )
     }
 
@@ -312,6 +390,8 @@ export async function handleRegister(request: Request, deps: AuthDeps): Promise<
       body.email,
       passwordHash,
       verifiedAtCreation,
+      body.firstName ?? null,
+      body.lastName ?? null,
     )
 
     // Verification active: the account exists but is UNVERIFIED and not usable
@@ -371,6 +451,10 @@ export async function handleLogin(request: Request, deps: AuthDeps): Promise<Res
   }
   const db = deps.db
   const sessionSecret = deps.sessionSecret
+  const limited = await rateLimited(deps, request, RATE_PREFIX_LOGIN)
+  if (limited !== null) {
+    return limited
+  }
   try {
     const body: LoginPayload = await parseBody(request, loginSchema, 'login')
 
@@ -453,6 +537,10 @@ export async function handleLoginVerify(request: Request, deps: AuthDeps): Promi
   }
   const db = deps.db
   const sessionSecret = deps.sessionSecret
+  const limited = await rateLimited(deps, request, RATE_PREFIX_VERIFY)
+  if (limited !== null) {
+    return limited
+  }
   try {
     const body: LoginVerifyPayload = await parseBody(request, loginVerifySchema, 'login verify')
 
@@ -534,6 +622,10 @@ export async function handleLoginResend(request: Request, deps: AuthDeps): Promi
   }
   const db = deps.db
   const emailSender = deps.emailSender
+  const limited = await rateLimited(deps, request, RATE_PREFIX_RESEND)
+  if (limited !== null) {
+    return limited
+  }
   try {
     const body: LoginResendPayload = await parseBody(request, loginResendSchema, 'login resend')
 
@@ -586,7 +678,9 @@ export function handleLogout(): Response {
 /**
  * Handle `GET /api/me`. Authenticates via Bearer key OR session cookie; an
  * unauthenticated caller is 401. Returns `200 { email, tier, createdAt,
- * apiKeyPrefix, role, isAdmin, isOwner }`, where `apiKeyPrefix` is the non-secret
+ * apiKeyPrefix, firstName, lastName, role, isAdmin, isOwner }`, where `firstName`
+ * / `lastName` are `null` for a nameless (legacy / API-key) account and
+ * `apiKeyPrefix` is the non-secret
  * brand prefix when an active key exists, else `null`. `role` is the EFFECTIVE
  * role (`owner` for an allowlisted email, else the stored role, fail-closed to
  * `member`); `isAdmin` is whether that role may VIEW the admin surface
@@ -624,6 +718,8 @@ export async function handleMe(request: Request, deps: AuthDeps): Promise<Respon
         tier: profile.tier,
         createdAt: profile.createdAt,
         apiKeyPrefix: profile.apiKeyPrefix,
+        firstName: profile.firstName,
+        lastName: profile.lastName,
         role,
         isAdmin: canViewAdmin(role),
         isOwner: canManageRoles(role),

@@ -144,7 +144,7 @@ describe('worker.fetch routing', () => {
 
   it('routes POST /api/register and returns 503 when DB is unconfigured', async () => {
     const res = await worker.fetch(
-      req('/api/register', 'POST', { email: 'r@example.com', password: 'password123' }),
+      req('/api/register', 'POST', { email: 'r@example.com', password: 'Sapphire92' }),
       baseEnv,
     )
     expect(res.status).toBe(503)
@@ -152,10 +152,14 @@ describe('worker.fetch routing', () => {
 
   it('registers + logs in + reads /api/me through the worker with DB and a session secret', async () => {
     const d1 = new MemoryD1(new MemoryStore()) as unknown as D1Database
-    const env: Env = { DB: d1, SESSION_SECRET: 'router-session-secret' }
+    const env: Env = {
+      DB: d1,
+      SESSION_SECRET: 'router-session-secret',
+      SCANNER_PWNED_CHECK_ENABLED: 'false',
+    }
 
     const reg = await worker.fetch(
-      req('/api/register', 'POST', { email: 'router-auth@example.com', password: 'password123' }),
+      req('/api/register', 'POST', { email: 'router-auth@example.com', password: 'Sapphire92' }),
       env,
     )
     expect(reg.status).toBe(201)
@@ -198,11 +202,16 @@ describe('worker.fetch routing', () => {
 
   it('routes POST /api/login to a twoFactor challenge when RESEND_API_KEY is set', async () => {
     const d1 = new MemoryD1(new MemoryStore()) as unknown as D1Database
-    const env: Env = { DB: d1, SESSION_SECRET: 'router-2fa-secret', RESEND_API_KEY: 're_test' }
+    const env: Env = {
+      DB: d1,
+      SESSION_SECRET: 'router-2fa-secret',
+      RESEND_API_KEY: 're_test',
+      SCANNER_PWNED_CHECK_ENABLED: 'false',
+    }
     // Register defers verification to login: it sends no code and issues no
     // session (201 { registered: true }). The first login below sends the code.
     await worker.fetch(
-      req('/api/register', 'POST', { email: 'router-2fa@example.com', password: 'password123' }),
+      req('/api/register', 'POST', { email: 'router-2fa@example.com', password: 'Sapphire92' }),
       env,
     )
     // A separate fetch with a stubbed global fetch so the Resend call is captured.
@@ -217,7 +226,7 @@ describe('worker.fetch routing', () => {
     }) as typeof fetch
     try {
       const res = await worker.fetch(
-        req('/api/login', 'POST', { email: 'router-2fa@example.com', password: 'password123' }),
+        req('/api/login', 'POST', { email: 'router-2fa@example.com', password: 'Sapphire92' }),
         env,
       )
       expect(res.status).toBe(200)
@@ -269,9 +278,13 @@ describe('worker.fetch routing', () => {
   it('returns 403 from /api/admin/overview for an authenticated non-admin', async () => {
     const store = new MemoryStore()
     const d1 = new MemoryD1(store) as unknown as D1Database
-    const env: Env = { DB: d1, SESSION_SECRET: 'admin-router-secret' }
+    const env: Env = {
+      DB: d1,
+      SESSION_SECRET: 'admin-router-secret',
+      SCANNER_PWNED_CHECK_ENABLED: 'false',
+    }
     const reg = await worker.fetch(
-      req('/api/register', 'POST', { email: 'router-nonadmin@example.com', password: 'password123' }),
+      req('/api/register', 'POST', { email: 'router-nonadmin@example.com', password: 'Sapphire92' }),
       env,
     )
     const cookie = reg.headers.get('Set-Cookie')?.split(';')[0] ?? ''

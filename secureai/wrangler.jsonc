@@ -107,6 +107,23 @@
     // is the per-client-IP hourly cap, enforced via KV (default 5, range 1..100);
     // when KV is unbound the limit is skipped.
     "SCANNER_CONTACT_RECIPIENTS": "zuriel.shanley@gmail.com,danielwjh04@gmail.com",
-    "SCANNER_CONTACT_RATE_PER_HOUR": "5"
+    "SCANNER_CONTACT_RATE_PER_HOUR": "5",
+    // Auth hardening (non-secret). SCANNER_AUTH_RATE_PER_HOUR is the per-client-IP
+    // hourly attempt cap on login / register / OTP verify+resend (each endpoint
+    // its own bucket), enforced via KV; when KV is unbound the limit is skipped
+    // (default 20, range 1..1000). SCANNER_PASSWORD_MIN_CLASSES is how many of
+    // {lowercase, uppercase, digit, symbol} a new password must mix (default 3,
+    // range 1..4); length is enforced by the register schema. SCANNER_PWNED_CHECK_ENABLED
+    // toggles the online HIBP k-anonymity leaked-password check at registration
+    // (default true; it fails OPEN, and the offline common-password denylist runs
+    // regardless). SCANNER_PWNED_TIMEOUT_MS bounds that HIBP fetch (default 2500,
+    // range 100..60000).
+    "SCANNER_AUTH_RATE_PER_HOUR": "20",
+    "SCANNER_PASSWORD_MIN_CLASSES": "3",
+    "SCANNER_PWNED_CHECK_ENABLED": "true",
+    "SCANNER_PWNED_TIMEOUT_MS": "2500",
+    // Per-scan writes (metering + history + detail) run as one atomic D1 batch by
+    // default; set to "false" to fall back to the legacy sequential writes.
+    "SCANNER_SCAN_WRITE_ATOMIC": "true"
   }
 }
