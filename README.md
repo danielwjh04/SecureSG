@@ -43,6 +43,16 @@ Both run the same engine and produce the same artifact: a **SHA-256 hash-chained
 
 ---
 
+## ⚡ Built for the edge — low latency by design
+
+The whole product runs on Cloudflare's edge, and the pipeline is ordered so the common path is the cheap path:
+
+- **Deterministic-first, AI-last-and-paid-only.** Most scans never touch a model — link tracing, structural rules, and indicator lookups settle the verdict in the cheap layers, so the typical request stays sub-millisecond-ish at the worker.
+- **Verdict cache.** Each scan is keyed by a content hash; an identical scan within a short TTL returns the cached result from KV in **O(1)** — no redirect re-trace, no AI call. The window is tunable via `SCANNER_VERDICT_CACHE_TTL_S` (default 300s; `0` disables it). Auth, caps, metering, and history still run for every caller, so a cache hit never skips accounting.
+- **O(1) hot paths.** Indicator lookups are hash-set/indexed, not list scans; the proof chain appends against a tail pointer.
+
+---
+
 ## 🔬 How a scan works
 
 Cheapest and most certain checks first; the AI model is last and rarest (and paid-only):
@@ -74,7 +84,15 @@ Two invariants hold everywhere: **fail closed** (anything that can't be judged s
 - **Pro — S$9.90/mo** (Stripe) — adds AI injection detection, private scans, a higher quota, history, and the dashboard.
 - **Enterprise** — SSO, self-host, custom policies, SLA (contact).
 
-Sign in with **email + password** to a dashboard showing real protection stats: **scans run**, **threats blocked**, **malicious IOCs/URLs caught**, the verdict breakdown (Allow / Review / Block), and a 30-day trend. Manage your **API key** (used for programmatic scans and the Guard) and upgrade to Pro inline.
+**Sign up with email + password.** Sessions are carried in an **HMAC-signed cookie**; your **API key** is stored only as a SHA-256 hash (and is **rotatable** from the dashboard). Daily caps are enforced per tier. A pricing page lays out Free / Pro / Enterprise, and the whole UI is mobile-responsive.
+
+**Email 2FA.** When two-factor is enabled, login is a two-step flow: password first, then a one-time **6-digit code emailed via Resend**. 2FA is gated on the `RESEND_API_KEY` secret — with it unset, login stays single-step.
+
+**Your dashboard** shows real protection stats: **scans run**, **threats blocked**, **malicious IOCs/URLs caught**, the verdict breakdown (Allow / Review / Block), and a 30-day trend — plus your **last 3 scans** and a copy-able **API key** (used for programmatic scans and the Guard). Upgrade to Pro or open the Stripe billing portal inline.
+
+### Admin analytics + role-based access
+
+Accounts whose email is in `SCANNER_ADMIN_EMAILS` unlock an **admin analytics dashboard**: sitewide signups, tier mix, and usage, plus a **members directory**. Access is **role-based** — `owner` / `admin` / `member` — with promote/demote and **member removal**. This is the safety layer's own control plane: who can see the data, and who can change roles, is itself governed.
 
 ---
 
@@ -84,15 +102,33 @@ A zero-dependency **PreToolUse hook** (see [`integrations/claude-code/`](integra
 
 ---
 
+## 🛰️ API
+
+One Worker, one origin, all under `/api/*`:
+
+| Area | Endpoints |
+|---|---|
+| Scan & proof | `POST /api/scan`, `POST /api/verify`, `POST /api/guard` |
+| Accounts | `POST /api/register`, `POST /api/login`, `POST /api/logout`, `GET /api/me`, `POST /api/key/rotate` |
+| Login 2FA | `POST /api/login/verify`, `POST /api/login/resend` |
+| Billing (Stripe) | `POST /api/checkout`, `POST /api/webhook`, `POST /api/portal` |
+| Dashboard | `GET /api/stats`, `GET /api/scans/recent` |
+| Admin (gated) | `GET /api/admin/overview`, `GET /api/admin/members`, `POST /api/admin/members/role`, `POST /api/admin/members/remove` |
+
+`/api/scan` and `/api/guard` accept either a session cookie or an `Authorization: Bearer <api-key>` header. Anything that can't be judged safely fails closed.
+
+---
+
 ## 🧰 Tech stack
 
 Built entirely on Cloudflare's serverless platform — **no OpenAI, no Exa**:
 
 - **TypeScript on Cloudflare Workers** — one Worker serves the SPA (Static Assets) and the API on one origin.
 - **Workers AI** — a small open-weight model for injection detection (no per-request key; gated to Pro and to remaining budget).
-- **D1** (edge SQLite) — accounts, API keys, usage/verdict metering, billing, and the proof rows. **KV** — hot indicator cache.
-- **Stripe** — Checkout, idempotent webhooks, customer portal.
-- **Web Crypto (`crypto.subtle`)** — the SHA-256 proof chain and PBKDF2 password hashing, re-verifiable client-side.
+- **D1** (edge SQLite) — accounts, roles, API keys, usage/verdict metering, billing, scan history, and the proof rows. **KV** — hot indicator cache and the short-TTL verdict cache.
+- **Stripe** — Checkout, idempotent webhooks, customer portal (Pro at S$9.90/mo).
+- **Resend** — the one-time 6-digit codes for email 2FA at login (gated on `RESEND_API_KEY`).
+- **Web Crypto (`crypto.subtle`)** — the SHA-256 proof chain, PBKDF2 password hashing, HMAC-signed session cookies, and SHA-256-hashed API keys, the proof re-verifiable client-side.
 - **React 19 + Vite + Tailwind v4 + recharts** — the dark/glass SPA, scanner UI, pricing, and dashboard.
 
 The Worker + API live in [`secureai/`](secureai/); the React app in [`scanner/`](scanner/). A Python 3.12 / FastAPI transparent-proxy runtime is retained in the repo as a parked enterprise / self-host option.
@@ -123,10 +159,14 @@ Deploy (Cloudflare account required): create the D1 + KV bindings, apply migrati
 ```bash
 cd secureai
 wrangler d1 create secureai && wrangler kv namespace create SECUREAI   # paste ids into wrangler.jsonc
-wrangler d1 migrations apply secureai
-wrangler secret put SESSION_SECRET           # also STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET
+wrangler d1 migrations apply secureai        # accounts, billing, auth/stats, 2FA, roles, scan history
+wrangler secret put SESSION_SECRET           # signs session cookies (without it, only Bearer API-key auth works)
+wrangler secret put STRIPE_SECRET_KEY        # + STRIPE_WEBHOOK_SECRET for billing
+wrangler secret put RESEND_API_KEY           # optional — enables email 2FA at login
 npm run deploy                               # builds the SPA + deploys the Worker
 ```
+
+Non-secret tunables (caps, thresholds, model, verdict-cache TTL, admin allowlist, Stripe price id) live in `wrangler.jsonc` vars and are read through a typed `Env`.
 
 ---
 

@@ -14,7 +14,9 @@ Two surfaces, one engine:
 
 The moat is **verifiable enforcement**. Each decision is a SHA-256 hash-chained record. A public `verify` endpoint returns `CHAIN_OK` or `CHAIN_BROKEN`. The line is "Don't trust us, verify."
 
-Stack: TypeScript on Cloudflare Workers, D1 (edge SQLite), Workers AI (small open-weight model for injection detection), Zod for schemas, Stripe for billing. Live at `secureai.zurielst.com`.
+The MVP has shipped and is live at `secureai.zurielst.com`. On top of the scanner, guard, and proof chain, the product now carries **accounts** (email + password, HMAC-signed session cookies, SHA-256-hashed rotatable API keys, per-tier daily caps), **email 2FA** at login (one-time codes via Resend, gated on `RESEND_API_KEY`), a **user dashboard** (protection stats, 30-day trend, recent scans, API key), **Stripe Pro billing** (checkout, webhooks, portal), and an **admin analytics dashboard** with **role-based access** (owner / admin / member, members directory, promote/demote, removal). A KV-backed verdict cache keeps repeat scans O(1). None of this relaxes the rules below; the pipeline order and the security rules are unchanged.
+
+Stack: TypeScript on Cloudflare Workers, D1 (edge SQLite), KV (indicator + verdict cache), Workers AI (small open-weight model for injection detection), Zod for schemas, Stripe for billing, Resend for 2FA email, React 19 SPA. Live at `secureai.zurielst.com`.
 
 Repo: https://github.com/danielwjh04/SecureSG (starts empty, fresh build). Stack is TypeScript on Cloudflare Workers per the proposal.
 
@@ -141,28 +143,38 @@ This is a security product. These rules are stricter than ordinary practice.
 ## 6. File Structure
 
 ```
-secureai/
+secureai/                # the Worker + API (TypeScript on Cloudflare Workers)
   src/
-    scanner/        # pipeline orchestration, verdict assembly
+    scanner/             # pipeline orchestration, verdict assembly
     pipeline/
-      parse.ts      # link and exec-pattern extraction
-      redirects.ts  # hop-by-hop tracer with SSRF guard
-      rules.ts      # deterministic structural rules
-      indicators.ts # known-bad feed lookup
-      inference.ts  # Workers AI injection detection
+      parse.ts           # link and exec-pattern extraction
+      redirects.ts       # hop-by-hop tracer with SSRF guard
+      rules.ts           # deterministic structural rules
+      indicators.ts      # known-bad feed lookup
+      inference.ts       # Workers AI injection detection
     audit/
-      chain.ts      # SHA-256 hash chain
-      verify.ts     # chain verifier
-    guard/          # Claude Code / Cursor hook handlers
-    routes/         # scanner API, verify endpoint, billing webhooks
-    schemas/        # Zod schemas
-    config/         # typed Env, thresholds, rule loading
+      chain.ts           # SHA-256 hash chain
+      verify.ts          # chain verifier
+    guard/               # Claude Code / Cursor hook handlers
+    auth/                # PBKDF2 passwords, HMAC sessions, OTP (2FA), roles
+    email/               # Resend sender for the 2FA one-time codes
+    billing/             # Stripe gateway (checkout, webhooks, portal)
+    db/                  # D1 access: accounts, usage, billing, otp, scans, admin
+    middleware/          # auth resolution + tier/cap gating
+    routes/              # scan, verify, guard, register/login(+2FA)/logout/me,
+                         #   key/rotate, checkout/webhook/portal, stats,
+                         #   scans/recent, admin/{overview,members,role,remove}
+    schemas/             # Zod schemas
+    config/              # typed Env, thresholds, rule loading
     errors.ts
-    index.ts        # Worker entry
-  test/
+    verdict.ts
+    index.ts             # Worker entry, route table
+  migrations/            # D1 schema migrations (accounts → billing → auth/stats
+                         #   → 2FA → roles → scan history)
   wrangler.jsonc
   CLAUDE.md
   README.md
+scanner/                 # the React 19 + Vite + Tailwind SPA (served by the Worker)
 ```
 
 ## 7. Testing
