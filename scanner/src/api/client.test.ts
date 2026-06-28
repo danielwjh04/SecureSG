@@ -10,6 +10,7 @@ import {
   rotateApiKey,
   scanSkill,
   startCheckout,
+  submitContact,
   verifyProof,
 } from './client'
 import { API } from '../config'
@@ -219,5 +220,31 @@ describe('account endpoints', () => {
       API.checkout,
     )
     expect(lastInit(checkoutFetch).credentials).toBe('include')
+  })
+})
+
+describe('submitContact', () => {
+  it('POSTs the enquiry body to API.contact and returns the result', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true }),
+    }) as Response)
+    vi.stubGlobal('fetch', fetchMock)
+
+    const body = { name: 'Ada', email: 'ada@co.com', message: 'Hi' }
+    await expect(submitContact(body)).resolves.toEqual({ ok: true })
+
+    const [path, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(path).toBe(API.contact)
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body as string)).toEqual(body)
+  })
+
+  it('surfaces a 429 as ApiError so the form can map it to inline copy', async () => {
+    mockFetch({ ok: false, status: 429, json: async () => ({}) })
+    await expect(
+      submitContact({ name: 'Ada', email: 'ada@co.com', message: 'Hi' }),
+    ).rejects.toMatchObject({ name: 'ApiError', status: 429 })
   })
 })

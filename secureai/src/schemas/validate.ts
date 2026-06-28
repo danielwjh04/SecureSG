@@ -87,6 +87,28 @@ export const signupSchema = z
 /** The validated signup payload `POST /api/signup` operates on. */
 export type SignupPayload = z.infer<typeof signupSchema>
 
+/** Bounds on a contact-sales inquiry's free-text fields. */
+const CONTACT_NAME_MAX = 100
+const CONTACT_MESSAGE_MAX = 5000
+
+/**
+ * Body of `POST /api/contact`: a public sales inquiry. `name` and `message` are
+ * trimmed and length-bounded (so neither is empty after trimming, and both are
+ * capped to bound the email payload); `email` is trimmed/lowercased/validated so
+ * a reply reaches a canonical address. `.strict()` rejects unexpected fields so
+ * a malformed payload fails closed at the boundary (a parse failure → 422).
+ */
+export const contactSchema = z
+  .object({
+    name: z.string().trim().min(1).max(CONTACT_NAME_MAX),
+    email: z.string().trim().toLowerCase().email().max(254),
+    message: z.string().trim().min(1).max(CONTACT_MESSAGE_MAX),
+  })
+  .strict()
+
+/** The validated payload `POST /api/contact` operates on. */
+export type ContactPayload = z.infer<typeof contactSchema>
+
 /** Minimum password length (characters). Mirrors the shared API contract. */
 const MIN_PASSWORD_LENGTH = 8
 /** Upper bound on password length, to bound PBKDF2 input and reject abuse. */

@@ -30,6 +30,7 @@ export const API = {
   recentScans: `${API_BASE}/api/scans/recent`,
   rotateKey: `${API_BASE}/api/key/rotate`,
   checkout: `${API_BASE}/api/checkout`,
+  contact: `${API_BASE}/api/contact`,
   adminOverview: `${API_BASE}/api/admin/overview`,
   adminMembers: `${API_BASE}/api/admin/members`,
   adminMemberRole: `${API_BASE}/api/admin/members/role`,
@@ -47,9 +48,6 @@ export const API = {
 export function adminScanDetailPath(id: string): string {
   return `${API_BASE}/api/admin/scans/${encodeURIComponent(id)}`
 }
-
-/** Where to email enterprise sales when the Pricing page Contact CTA is used. */
-export const ENTERPRISE_CONTACT_EMAIL = 'sales-secureAI@zurielst.com' as const
 
 /** How many trailing days the dashboard trend chart covers (zero-filled). */
 export const STATS_TREND_DAYS = 30

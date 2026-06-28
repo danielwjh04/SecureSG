@@ -119,6 +119,21 @@ export interface ScannerConfig {
   readonly otpTtlSeconds: number
   /** Max verify attempts per 2FA challenge before it is spent (brute-force cap). */
   readonly otpMaxAttempts: number
+  /**
+   * Recipients (lowercased, deduped) of a contact-sales inquiry submitted via
+   * `POST /api/contact`. These live SERVER-SIDE only — the public form never
+   * carries them — so the inbox set can be retuned via the
+   * `SCANNER_CONTACT_RECIPIENTS` var without a code edit and without exposing the
+   * addresses to the browser. At least one recipient is required (an empty set
+   * fails config load closed).
+   */
+  readonly contactRecipients: readonly string[]
+  /**
+   * Max contact-sales inquiries accepted per rolling hour per client IP, the
+   * abuse bound on the public `POST /api/contact` endpoint. Enforced via KV; when
+   * KV is unbound the limit is skipped (the endpoint still functions).
+   */
+  readonly contactRatePerHour: number
 }
 
 /**
@@ -199,6 +214,14 @@ export function loadConfig(env: Env): ScannerConfig {
   const emailFrom = readString(env, 'SCANNER_EMAIL_FROM', 'SecureAI <noreply@zurielst.com>')
   const otpTtlSeconds = readIntInRange(env, 'SCANNER_OTP_TTL_SECONDS', 600, 60, 3600)
   const otpMaxAttempts = readIntInRange(env, 'SCANNER_OTP_MAX_ATTEMPTS', 5, 1, 20)
+  // Contact-sales recipients (server-side only; never sent to the browser). The
+  // comma var is trimmed/lowercased/deduped by readSet; an array preserves the
+  // configured inbox set for the Resend `to` field. The default seeds the two
+  // sales addresses. Per-IP hourly rate limit defaults to 5, range 1..100.
+  const contactRecipients = [
+    ...readSet(env, 'SCANNER_CONTACT_RECIPIENTS', 'zuriel.shanley@gmail.com,danielwjh04@gmail.com'),
+  ]
+  const contactRatePerHour = readIntInRange(env, 'SCANNER_CONTACT_RATE_PER_HOUR', 5, 1, 100)
 
   // Cross-field invariants (fail-closed).
   if (!(reviewThreshold < blockThreshold)) {
@@ -208,6 +231,9 @@ export function loadConfig(env: Env): ScannerConfig {
   }
   if (allowedSchemes.size === 0) {
     throw new ConfigError('SCANNER_ALLOWED_SCHEMES must list at least one scheme')
+  }
+  if (contactRecipients.length === 0) {
+    throw new ConfigError('SCANNER_CONTACT_RECIPIENTS must list at least one recipient')
   }
   // Worst-case subrequest budget: one fetch per redirect hop per URL, plus the
   // source fetch and the inference call.
@@ -248,6 +274,8 @@ export function loadConfig(env: Env): ScannerConfig {
     emailFrom,
     otpTtlSeconds,
     otpMaxAttempts,
+    contactRecipients,
+    contactRatePerHour,
   }
 }
 

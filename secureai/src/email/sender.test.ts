@@ -25,14 +25,43 @@ describe('ResendEmailSender', () => {
     expect(init.method).toBe('POST')
     const headers = init.headers as Record<string, string>
     expect(headers.Authorization).toBe('Bearer re_test_key')
-    const body = JSON.parse(init.body as string) as Record<string, string>
+    const body = JSON.parse(init.body as string) as Record<string, unknown>
+    // A single recipient is normalized to Resend's array `to`.
     expect(body).toMatchObject({
       from: 'SecureAI <noreply@zurielst.com>',
-      to: 'a@b.com',
+      to: ['a@b.com'],
       subject: 'Subj',
       html: '<p>h</p>',
       text: 't',
     })
+  })
+
+  it('normalizes a single string recipient to an array and omits reply_to', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const sender = new ResendEmailSender('re_test_key', 'from@x.com')
+    await sender.send({ to: 'one@b.com', subject: 's', html: 'h', text: 't' })
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    const body = JSON.parse(init.body as string) as Record<string, unknown>
+    expect(body.to).toEqual(['one@b.com'])
+    expect('reply_to' in body).toBe(false)
+  })
+
+  it('passes MULTIPLE recipients through as an array and forwards replyTo as reply_to', async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+    const sender = new ResendEmailSender('re_test_key', 'from@x.com')
+    await sender.send({
+      to: ['a@b.com', 'c@d.com'],
+      replyTo: 'visitor@x.com',
+      subject: 's',
+      html: 'h',
+      text: 't',
+    })
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    const body = JSON.parse(init.body as string) as Record<string, unknown>
+    expect(body.to).toEqual(['a@b.com', 'c@d.com'])
+    expect(body.reply_to).toBe('visitor@x.com')
   })
 
   it('throws EmailError on a non-2xx response (and never logs the body)', async () => {

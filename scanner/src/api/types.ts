@@ -181,6 +181,22 @@ export interface CheckoutResponse {
   url: string
 }
 
+/**
+ * Request body for `POST /api/contact`: an enterprise sales enquiry from the
+ * pricing page's contact form. The recipient addresses live server-side; this
+ * body carries only what the visitor typed. The worker re-validates every field.
+ */
+export interface ContactRequest {
+  name: string
+  email: string
+  message: string
+}
+
+/** Response body for `POST /api/contact`: the enquiry was accepted and sent. */
+export interface ContactResponse {
+  ok: true
+}
+
 /** Per-tier account counts in the admin overview. */
 export interface AdminTierCounts {
   free: number

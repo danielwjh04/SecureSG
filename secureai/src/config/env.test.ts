@@ -132,4 +132,31 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ SCANNER_OTP_MAX_ATTEMPTS: '0' })).toThrow()
     expect(() => loadConfig({ SCANNER_OTP_MAX_ATTEMPTS: '50' })).toThrow()
   })
+
+  it('defaults the contact recipients + rate, trimmed/lowercased/deduped', () => {
+    const defaults = loadConfig({})
+    expect(defaults.contactRecipients).toEqual([
+      'zuriel.shanley@gmail.com',
+      'danielwjh04@gmail.com',
+    ])
+    expect(defaults.contactRatePerHour).toBe(5)
+
+    const overridden = loadConfig({
+      SCANNER_CONTACT_RECIPIENTS: ' One@Example.com , two@example.com , one@example.com ',
+      SCANNER_CONTACT_RATE_PER_HOUR: '20',
+    })
+    // Lowercased, trimmed, and deduped (the repeat is collapsed by the set).
+    expect(overridden.contactRecipients).toEqual(['one@example.com', 'two@example.com'])
+    expect(overridden.contactRatePerHour).toBe(20)
+  })
+
+  it('rejects an empty contact-recipients list (fail-closed at load)', () => {
+    expect(() => loadConfig({ SCANNER_CONTACT_RECIPIENTS: '' })).toThrow(ConfigError)
+    expect(() => loadConfig({ SCANNER_CONTACT_RECIPIENTS: '  ,  ' })).toThrow(ConfigError)
+  })
+
+  it('rejects an out-of-range contact rate (fail-closed at load)', () => {
+    expect(() => loadConfig({ SCANNER_CONTACT_RATE_PER_HOUR: '0' })).toThrow(ConfigError)
+    expect(() => loadConfig({ SCANNER_CONTACT_RATE_PER_HOUR: '101' })).toThrow(ConfigError)
+  })
 })

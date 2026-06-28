@@ -9,6 +9,8 @@ import type {
   AuthCredentials,
   AuthResponse,
   CheckoutResponse,
+  ContactRequest,
+  ContactResponse,
   LoginResponse,
   MeResponse,
   Proof,
@@ -342,5 +344,25 @@ export async function startCheckout(): Promise<CheckoutResponse> {
   return request<CheckoutResponse>(API.checkout, {
     method: 'POST',
     ...WITH_CREDENTIALS,
+  })
+}
+
+/**
+ * Submit an enterprise sales enquiry from the pricing page's contact form. POSTs
+ * the visitor's name, email, and message to {@link API.contact}; the recipient
+ * addresses are server-side, so the body never carries them. This is a public,
+ * unauthenticated endpoint (no session cookie is sent).
+ *
+ * Throws {@link ApiError} with the worker's status so the form maps it to inline
+ * copy: 422 (a field failed re-validation), 429 (rate-limited), 502/503 (the
+ * send path is unavailable), or 0 (the backend is unreachable).
+ */
+export async function submitContact(
+  req: ContactRequest,
+): Promise<ContactResponse> {
+  return request<ContactResponse>(API.contact, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(req),
   })
 }

@@ -5,8 +5,9 @@
  * video and the solid lower band with the plan cards.
  *
  * The Pro CTA is session-aware: a signed-in visitor goes straight to Stripe
- * checkout; an anonymous one is routed to `#register` first. Enterprise opens a
- * mailto so a real conversation can start. Nothing here is mocked.
+ * checkout; an anonymous one is routed to `#register` first. Enterprise opens an
+ * on-brand contact form that POSTs to `/api/contact` so a real conversation can
+ * start. Nothing here is mocked.
  */
 
 import { useState } from 'react'
@@ -20,7 +21,7 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { startCheckout } from '../api/client'
-import { ENTERPRISE_CONTACT_EMAIL } from '../config'
+import { ContactModal } from './ContactModal'
 import type { AuthState } from '../hooks/useAuth'
 
 /** Shared entrance transition, matching the Enterprise page's easing. */
@@ -35,6 +36,7 @@ const RISE = {
 type PlanAction =
   | { kind: 'subscribe' }
   | { kind: 'link'; href: string }
+  | { kind: 'contact' }
 
 /** One pricing plan descriptor. */
 interface Plan {
@@ -101,10 +103,7 @@ const PLANS: Plan[] = [
       'Audit export & retention',
     ],
     cta: 'Contact sales',
-    action: {
-      kind: 'link',
-      href: `mailto:${ENTERPRISE_CONTACT_EMAIL}?subject=SecureAI%20Enterprise`,
-    },
+    action: { kind: 'contact' },
     featured: false,
   },
 ]
@@ -116,6 +115,8 @@ interface PricingProps {
 export function Pricing({ auth }: PricingProps) {
   const [checkoutError, setCheckoutError] = useState<string | null>(null)
   const [checkoutBusy, setCheckoutBusy] = useState(false)
+  // Whether the enterprise "Contact sales" form modal is open.
+  const [contactOpen, setContactOpen] = useState(false)
 
   /**
    * Drive the Pro CTA. A signed-in visitor goes to Stripe checkout; an anonymous
@@ -189,6 +190,7 @@ export function Pricing({ auth }: PricingProps) {
                 plan={plan}
                 busy={plan.id === 'pro' && checkoutBusy}
                 onSubscribe={handleSubscribe}
+                onContact={() => setContactOpen(true)}
               />
             ))}
           </motion.div>
@@ -205,6 +207,8 @@ export function Pricing({ auth }: PricingProps) {
           </p>
         </div>
       </div>
+
+      {contactOpen && <ContactModal onClose={() => setContactOpen(false)} />}
     </>
   )
 }
@@ -213,10 +217,11 @@ interface PlanCardProps {
   plan: Plan
   busy: boolean
   onSubscribe: () => void
+  onContact: () => void
 }
 
 /** One pricing plan rendered as a glass card with a feature list and CTA. */
-function PlanCard({ plan, busy, onSubscribe }: PlanCardProps) {
+function PlanCard({ plan, busy, onSubscribe, onContact }: PlanCardProps) {
   const { Icon, name, price, cadence, tagline, features, cta, action, featured } =
     plan
   return (
@@ -262,7 +267,14 @@ function PlanCard({ plan, busy, onSubscribe }: PlanCardProps) {
         ))}
       </ul>
 
-      <PlanCta cta={cta} action={action} featured={featured} busy={busy} onSubscribe={onSubscribe} />
+      <PlanCta
+        cta={cta}
+        action={action}
+        featured={featured}
+        busy={busy}
+        onSubscribe={onSubscribe}
+        onContact={onContact}
+      />
     </div>
   )
 }
@@ -273,10 +285,14 @@ interface PlanCtaProps {
   featured: boolean
   busy: boolean
   onSubscribe: () => void
+  onContact: () => void
 }
 
-/** The plan CTA: a subscribe button for Pro, a link for the other plans. */
-function PlanCta({ cta, action, featured, busy, onSubscribe }: PlanCtaProps) {
+/**
+ * The plan CTA: a subscribe button for Pro, a button that opens the contact form
+ * for Enterprise, and a link for the rest.
+ */
+function PlanCta({ cta, action, featured, busy, onSubscribe, onContact }: PlanCtaProps) {
   const solid =
     'inline-flex items-center justify-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-black hover:bg-white/90 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
   const ghost =
@@ -292,6 +308,14 @@ function PlanCta({ cta, action, featured, busy, onSubscribe }: PlanCtaProps) {
       >
         {busy ? 'Starting…' : cta}
         {!busy && <ArrowRight className="w-4 h-4" />}
+      </button>
+    )
+  }
+  if (action.kind === 'contact') {
+    return (
+      <button type="button" onClick={onContact} className={featured ? solid : ghost}>
+        {cta}
+        <ArrowRight className="w-4 h-4" />
       </button>
     )
   }

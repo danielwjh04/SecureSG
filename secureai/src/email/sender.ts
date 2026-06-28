@@ -21,14 +21,23 @@ import { EmailError } from '../errors'
 
 /** A single transactional email to deliver. */
 export interface EmailMessage {
-  /** Recipient address. */
-  readonly to: string
+  /**
+   * Recipient address, or several. A single string (the OTP path) and a list
+   * (the contact-sales path, which fans out to every configured inbox) are both
+   * accepted; either is normalized to Resend's array `to` at send time.
+   */
+  readonly to: string | readonly string[]
   /** Subject line. */
   readonly subject: string
   /** HTML body. */
   readonly html: string
   /** Plain-text fallback body. */
   readonly text: string
+  /**
+   * Optional `Reply-To` address. When set, a reply goes here rather than to the
+   * `From` address — used by the contact form so a reply reaches the visitor.
+   */
+  readonly replyTo?: string
 }
 
 /** The narrow email-delivery capability the auth routes depend on. */
@@ -63,16 +72,36 @@ export class ResendEmailSender implements EmailSender {
   ) {}
 
   /**
-   * POST the message to Resend with bearer auth. A non-2xx response or a
+   * POST the message to Resend with bearer auth. The recipient(s) are normalized
+   * to Resend's array `to` (a single string becomes a one-element array) and an
+   * optional `replyTo` is forwarded as `reply_to`. A non-2xx response or a
    * transport failure throws {@link EmailError}; the thrown message carries only
    * the status / error class, never the email's contents.
    *
-   * Time complexity: O(1) (one HTTP round trip). Space complexity: O(n) in the
-   * body size.
+   * Time complexity: O(r) in the recipient count (one HTTP round trip). Space
+   * complexity: O(n) in the body size.
    *
    * @throws {EmailError} On a non-2xx response or an unreachable provider.
    */
   public async send(message: EmailMessage): Promise<void> {
+    const to = Array.isArray(message.to) ? [...message.to] : [message.to]
+    const payload: {
+      from: string
+      to: string[]
+      subject: string
+      html: string
+      text: string
+      reply_to?: string
+    } = {
+      from: this.from,
+      to,
+      subject: message.subject,
+      html: message.html,
+      text: message.text,
+    }
+    if (message.replyTo !== undefined) {
+      payload.reply_to = message.replyTo
+    }
     let response: Response
     try {
       response = await fetch(RESEND_ENDPOINT, {
@@ -81,13 +110,7 @@ export class ResendEmailSender implements EmailSender {
           Authorization: `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          from: this.from,
-          to: message.to,
-          subject: message.subject,
-          html: message.html,
-          text: message.text,
-        }),
+        body: JSON.stringify(payload),
       })
     } catch (error: unknown) {
       const name = error instanceof Error ? error.constructor.name : typeof error

@@ -60,6 +60,43 @@ describe('worker.fetch routing', () => {
     expect(res.status).toBe(405)
   })
 
+  it('routes POST /api/contact and returns 503 when no email provider is configured', async () => {
+    const res = await worker.fetch(
+      req('/api/contact', 'POST', { name: 'A', email: 'a@b.com', message: 'hi' }),
+      baseEnv,
+    )
+    expect(res.status).toBe(503)
+  })
+
+  it('routes POST /api/contact to a 200 when RESEND_API_KEY is set (sender stubbed)', async () => {
+    const env: Env = { RESEND_API_KEY: 're_test' }
+    const originalFetch = globalThis.fetch
+    const sentTo: unknown[] = []
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('api.resend.com')) {
+        sentTo.push((JSON.parse(String(init?.body)) as { to: unknown }).to)
+        return new Response(null, { status: 200 })
+      }
+      return originalFetch(input, init)
+    }) as typeof fetch
+    try {
+      const res = await worker.fetch(
+        req('/api/contact', 'POST', { name: 'Ada', email: 'ada@b.com', message: 'quote please' }),
+        env,
+      )
+      expect(res.status).toBe(200)
+      // The configured recipients (defaults) are used server-side.
+      expect(sentTo[0]).toEqual(['zuriel.shanley@gmail.com', 'danielwjh04@gmail.com'])
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  it('rejects a non-POST /api/contact with 405', async () => {
+    const res = await worker.fetch(req('/api/contact', 'GET'), baseEnv)
+    expect(res.status).toBe(405)
+  })
+
   it('routes POST /api/verify and maps a malformed proof to 422', async () => {
     const res = await worker.fetch(req('/api/verify', 'POST', { nope: true }), baseEnv)
     expect(res.status).toBe(422)

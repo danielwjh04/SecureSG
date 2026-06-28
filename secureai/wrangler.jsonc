@@ -98,6 +98,15 @@
     // tries before a code is spent (default 5, range 1..20).
     "SCANNER_EMAIL_FROM": "SecureAI <SecureAI-noreply@zurielst.com>",
     "SCANNER_OTP_TTL_SECONDS": "600",
-    "SCANNER_OTP_MAX_ATTEMPTS": "5"
+    "SCANNER_OTP_MAX_ATTEMPTS": "5",
+    // Contact-sales inquiry routing (server-side only; the public form never
+    // carries these). SCANNER_CONTACT_RECIPIENTS is the comma list of inboxes a
+    // POST /api/contact inquiry is emailed to (trimmed/lowercased/deduped; at
+    // least one required). It reuses the RESEND_API_KEY secret + SCANNER_EMAIL_FROM
+    // sender, so without the key the endpoint returns 503. SCANNER_CONTACT_RATE_PER_HOUR
+    // is the per-client-IP hourly cap, enforced via KV (default 5, range 1..100);
+    // when KV is unbound the limit is skipped.
+    "SCANNER_CONTACT_RECIPIENTS": "zuriel.shanley@gmail.com,danielwjh04@gmail.com",
+    "SCANNER_CONTACT_RATE_PER_HOUR": "5"
   }
 }

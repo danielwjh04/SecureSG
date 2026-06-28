@@ -10,6 +10,7 @@ import type { Env, ScannerConfig } from './config/env'
 import type { Database } from './db/database'
 import type { BillingGateway } from './billing/stripe'
 import type { AuthDeps } from './routes/auth'
+import type { ContactDeps, ContactRateLimitKv } from './routes/contact'
 import type { StatsDeps } from './routes/stats'
 import type { RecentScansDeps } from './routes/recentScans'
 import type { AdminDeps } from './routes/admin'
@@ -30,6 +31,7 @@ import {
   handleMe,
   handleRegister,
 } from './routes/auth'
+import { handleContact } from './routes/contact'
 import { handleStats } from './routes/stats'
 import { handleRecentScans } from './routes/recentScans'
 import {
@@ -50,6 +52,7 @@ const ROUTE_SCAN = '/api/scan'
 const ROUTE_VERIFY = '/api/verify'
 const ROUTE_GUARD = '/api/guard'
 const ROUTE_SIGNUP = '/api/signup'
+const ROUTE_CONTACT = '/api/contact'
 const ROUTE_CHECKOUT = '/api/checkout'
 const ROUTE_PORTAL = '/api/portal'
 const ROUTE_WEBHOOK = '/api/webhook'
@@ -109,6 +112,14 @@ export default {
       }
       // handleSignup owns its own error→status mapping and never throws.
       return await handleSignup(request, env)
+    }
+
+    if (url.pathname === ROUTE_CONTACT) {
+      if (request.method !== 'POST') {
+        return jsonError('method not allowed', 405)
+      }
+      // handleContact owns its own error→status mapping and never throws.
+      return await handleContact(request, contactDeps(env, config))
     }
 
     if (url.pathname === ROUTE_VERIFY) {
@@ -316,6 +327,17 @@ function authDeps(env: Env, config: ScannerConfig): AuthDeps {
     config,
     emailSender: buildEmailSender(env, config),
   }
+}
+
+/**
+ * Assemble the contact route's dependencies: the Resend sender (gated on
+ * `RESEND_API_KEY`, `null` → 503), the KV rate-limit store (`null` → limit
+ * skipped), and config (recipients, from address, rate cap). The recipients stay
+ * here, server-side — they are never sent to the browser.
+ */
+function contactDeps(env: Env, config: ScannerConfig): ContactDeps {
+  const kv = env.KV !== undefined && env.KV !== null ? (env.KV as ContactRateLimitKv) : null
+  return { emailSender: buildEmailSender(env, config), kv, config }
 }
 
 /** Assemble the stats route's dependencies (DB seam, session secret, config). */

@@ -67,6 +67,16 @@ describe('Pricing', () => {
     expect(checkout).not.toHaveBeenCalled()
   })
 
+  it('opens the contact form when the Enterprise CTA is clicked', () => {
+    render(<Pricing auth={authState()} />)
+
+    expect(screen.queryByRole('dialog', { name: 'Contact sales' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /Contact sales/ }))
+
+    expect(screen.getByRole('dialog', { name: 'Contact sales' })).toBeInTheDocument()
+  })
+
   it('starts Stripe checkout for a signed-in visitor and redirects to the URL', async () => {
     const { calls } = stubAssign()
     vi.spyOn(client, 'startCheckout').mockResolvedValue({
