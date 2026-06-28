@@ -277,13 +277,14 @@ function App(): ReactNode {
   }
 
   // Landing (idle / scanning): the cinematic hero over the video, then the
-  // solid-black content sections that scroll up over it.
+  // translucent-black content sections that scroll up over it (the background
+  // video stays faintly visible through them, matching the Enterprise page).
   return (
     <main id="top" className={SHELL}>
       <BackgroundVideo />
       <Navbar onHome={controller.reset} auth={auth} />
       <Hero state={state} onScan={controller.scan} />
-      <div className="relative z-10 bg-black">
+      <div className="relative z-10 bg-black/60">
         <HowItWorks />
         <EaseOfUse />
         <VerifyIt />
