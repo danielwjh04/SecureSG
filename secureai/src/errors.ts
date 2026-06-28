@@ -56,3 +56,10 @@ export class QuotaExceededError extends ScannerError {}
  * used to signal an unverified webhook signature, which is a fail-closed 400.
  */
 export class BillingError extends ScannerError {}
+
+/**
+ * A failure in the admin analytics aggregation layer: a database error while
+ * computing sitewide counts/sums. Wraps the underlying store fault so the admin
+ * route fails closed (HTTP 500) rather than leaking an internal error.
+ */
+export class AdminError extends ScannerError {}

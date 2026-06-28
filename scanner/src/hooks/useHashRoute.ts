@@ -1,9 +1,9 @@
 /**
  * Minimal hash-based routing for the single-page scanner: no router dependency,
  * just the top-level surfaces. The hash selects the surface — `#enterprise`,
- * `#pricing`, `#login`, `#register`, `#dashboard` — and anything else is the
- * scanner. Hash routing keeps the URL shareable and the back button working
- * without a history library.
+ * `#pricing`, `#login`, `#register`, `#dashboard`, `#admin` — and anything else
+ * is the scanner. Hash routing keeps the URL shareable and the back button
+ * working without a history library.
  */
 
 import { useEffect, useState } from 'react'
@@ -15,6 +15,7 @@ export type Route =
   | 'login'
   | 'register'
   | 'dashboard'
+  | 'admin'
 export type RouteTarget = 'top' | 'how'
 
 export interface HashRoute {
@@ -34,6 +35,7 @@ const HASH_ROUTES: Record<string, HashRoute> = {
   login: { route: 'login', target: 'top' },
   register: { route: 'register', target: 'top' },
   dashboard: { route: 'dashboard', target: 'top' },
+  admin: { route: 'admin', target: 'top' },
   how: { route: 'scanner', target: 'how' },
 }
 

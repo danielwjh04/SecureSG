@@ -19,6 +19,8 @@ export interface AuthState {
   status: AuthStatus
   /** The signed-in account, or `null` while loading or when logged out. */
   user: MeResponse | null
+  /** Whether the signed-in account is an admin (false while loading / logged out). */
+  isAdmin: boolean
   /** Re-read `GET /api/me`; call after a login, register, or logout. */
   refresh: () => Promise<void>
 }
@@ -52,5 +54,5 @@ export function useAuth(): AuthState {
     void refresh()
   }, [refresh])
 
-  return { status, user, refresh }
+  return { status, user, isAdmin: user?.isAdmin ?? false, refresh }
 }

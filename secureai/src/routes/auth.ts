@@ -250,8 +250,9 @@ export function handleLogout(): Response {
 /**
  * Handle `GET /api/me`. Authenticates via Bearer key OR session cookie; an
  * unauthenticated caller is 401. Returns `200 { email, tier, createdAt,
- * apiKeyPrefix }`, where `apiKeyPrefix` is the non-secret brand prefix when an
- * active key exists, else `null`. Requires `env.DB` (503 otherwise).
+ * apiKeyPrefix, isAdmin }`, where `apiKeyPrefix` is the non-secret brand prefix
+ * when an active key exists, else `null`, and `isAdmin` is whether the profile
+ * email is in `config.adminEmails`. Requires `env.DB` (503 otherwise).
  *
  * Time complexity: O(1). Space complexity: O(1).
  */
@@ -282,6 +283,7 @@ export async function handleMe(request: Request, deps: AuthDeps): Promise<Respon
         tier: profile.tier,
         createdAt: profile.createdAt,
         apiKeyPrefix: profile.apiKeyPrefix,
+        isAdmin: deps.config.adminEmails.has(profile.email.toLowerCase()),
       },
       { status: STATUS_OK },
     )

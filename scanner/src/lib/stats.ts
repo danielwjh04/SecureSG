@@ -4,7 +4,7 @@
  * plot without gaps.
  */
 
-import type { StatsDay } from '../api/types'
+import type { AdminSignupDay, StatsDay } from '../api/types'
 
 /** Format a Date as an ISO calendar day (`YYYY-MM-DD`) in UTC. */
 function isoDay(date: Date): string {
@@ -47,6 +47,38 @@ export function zeroFillDaily(
     date.setUTCDate(start.getUTCDate() + offset)
     const key = isoDay(date)
     filled.push(byDay.get(key) ?? emptyDay(key))
+  }
+  return filled
+}
+
+/**
+ * Expand a sparse admin signup series into a dense `days`-long window ending
+ * today (inclusive), in chronological order, zero-filling any missing day. Days
+ * outside the window are dropped. Mirrors {@link zeroFillDaily} for the
+ * signup-count shape used by the admin dashboard's sign-ups trend.
+ *
+ * Time complexity: O(days + n). Space complexity: O(days + n).
+ *
+ * @param signups The server's (possibly sparse) per-day signup rows.
+ * @param days The window length in days, ending today.
+ * @param now The reference "today"; injectable so the result is deterministic.
+ */
+export function zeroFillSignups(
+  signups: readonly AdminSignupDay[],
+  days: number,
+  now: Date = new Date(),
+): AdminSignupDay[] {
+  const byDay = new Map<string, AdminSignupDay>()
+  for (const row of signups) byDay.set(row.day, row)
+
+  const filled: AdminSignupDay[] = []
+  const start = new Date(now)
+  start.setUTCDate(start.getUTCDate() - (days - 1))
+  for (let offset = 0; offset < days; offset += 1) {
+    const date = new Date(start)
+    date.setUTCDate(start.getUTCDate() + offset)
+    const key = isoDay(date)
+    filled.push(byDay.get(key) ?? { day: key, count: 0 })
   }
   return filled
 }

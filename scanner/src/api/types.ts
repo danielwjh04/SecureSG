@@ -49,6 +49,8 @@ export interface MeResponse {
   createdAt: string
   /** The non-secret prefix of the account's API key, safe to display. */
   apiKeyPrefix: string
+  /** Whether this account's email is in the server's admin allowlist. */
+  isAdmin: boolean
 }
 
 /** The credentials body for register/login. */
@@ -92,4 +94,37 @@ export interface RotateKeyResponse {
 /** Response body for `POST /api/checkout`: the Stripe checkout URL. */
 export interface CheckoutResponse {
   url: string
+}
+
+/** Per-tier account counts in the admin overview. */
+export interface AdminTierCounts {
+  free: number
+  pro: number
+  enterprise: number
+}
+
+/** One day's signup count in the admin signup series, `day` an ISO `YYYY-MM-DD`. */
+export interface AdminSignupDay {
+  day: string
+  count: number
+}
+
+/** Sitewide verdict + indicator totals in the admin overview. */
+export interface AdminUsageTotals {
+  scans: number
+  allows: number
+  reviews: number
+  blocks: number
+  flagged: number
+}
+
+/** Response body for `GET /api/admin/overview`: sitewide analytics. */
+export interface AdminOverview {
+  totalUsers: number
+  usersByTier: AdminTierCounts
+  signupsDaily: AdminSignupDay[]
+  usageTotals: AdminUsageTotals
+  activeSubscriptions: number
+  /** ISO timestamp the edge stamped the response. */
+  generatedAt: string
 }

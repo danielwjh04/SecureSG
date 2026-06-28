@@ -34,6 +34,7 @@ describe('useHashRoute', () => {
     ['#login', 'login'],
     ['#register', 'register'],
     ['#dashboard', 'dashboard'],
+    ['#admin', 'admin'],
   ])('maps %s to the %s route at the top target', (hash, route) => {
     replaceHash('')
     const { result } = renderHook(() => useHashRoute())

@@ -11,6 +11,7 @@ import type { Database } from './db/database'
 import type { BillingGateway } from './billing/stripe'
 import type { AuthDeps } from './routes/auth'
 import type { StatsDeps } from './routes/stats'
+import type { AdminDeps } from './routes/admin'
 import { loadConfig } from './config/env'
 import { handleGuard } from './routes/guard'
 import { handleScan } from './routes/scan'
@@ -27,6 +28,7 @@ import {
   handleRegister,
 } from './routes/auth'
 import { handleStats } from './routes/stats'
+import { handleAdminOverview } from './routes/admin'
 import { d1Database } from './db/database'
 import { buildStripe, StripeBillingGateway } from './billing/stripe'
 import { ParseError, ScannerError } from './errors'
@@ -43,6 +45,7 @@ const ROUTE_LOGIN = '/api/login'
 const ROUTE_LOGOUT = '/api/logout'
 const ROUTE_ME = '/api/me'
 const ROUTE_STATS = '/api/stats'
+const ROUTE_ADMIN_OVERVIEW = '/api/admin/overview'
 const ROUTE_KEY_ROTATE = '/api/key/rotate'
 
 export default {
@@ -169,6 +172,13 @@ export default {
       return await handleStats(request, statsDeps(env, config))
     }
 
+    if (url.pathname === ROUTE_ADMIN_OVERVIEW) {
+      if (request.method !== 'GET') {
+        return jsonError('method not allowed', 405)
+      }
+      return await handleAdminOverview(request, adminDeps(env, config))
+    }
+
     if (url.pathname === ROUTE_KEY_ROTATE) {
       if (request.method !== 'POST') {
         return jsonError('method not allowed', 405)
@@ -205,6 +215,11 @@ function authDeps(env: Env, config: ScannerConfig): AuthDeps {
 
 /** Assemble the stats route's dependencies (DB seam, session secret, config). */
 function statsDeps(env: Env, config: ScannerConfig): StatsDeps {
+  return { db: billingDatabase(env), sessionSecret: sessionSecretOf(env), config }
+}
+
+/** Assemble the admin route's dependencies (DB seam, session secret, config). */
+function adminDeps(env: Env, config: ScannerConfig): AdminDeps {
   return { db: billingDatabase(env), sessionSecret: sessionSecretOf(env), config }
 }
 

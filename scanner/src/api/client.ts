@@ -1,5 +1,6 @@
 import { API } from '../config'
 import type {
+  AdminOverview,
   AuthCredentials,
   AuthResponse,
   CheckoutResponse,
@@ -137,6 +138,14 @@ export async function fetchMe(): Promise<MeResponse> {
 /** Fetch the account's protection statistics. */
 export async function fetchStats(): Promise<StatsResponse> {
   return request<StatsResponse>(API.stats, { ...WITH_CREDENTIALS })
+}
+
+/**
+ * Fetch the sitewide admin analytics overview. Throws {@link ApiError}(403) when
+ * the signed-in account is not an admin, or (401) when logged out.
+ */
+export async function fetchAdminOverview(): Promise<AdminOverview> {
+  return request<AdminOverview>(API.adminOverview, { ...WITH_CREDENTIALS })
 }
 
 /** Rotate the account's API key. The new key is returned once and not stored. */

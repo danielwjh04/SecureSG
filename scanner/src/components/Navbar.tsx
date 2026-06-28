@@ -7,7 +7,7 @@
  */
 
 import { motion } from 'motion/react'
-import { LayoutDashboard, ShieldCheck } from 'lucide-react'
+import { BarChart3, LayoutDashboard, ShieldCheck } from 'lucide-react'
 import { REPO_URL } from '../config'
 import { useHashRoute } from '../hooks/useHashRoute'
 import type { AuthState } from '../hooks/useAuth'
@@ -70,17 +70,30 @@ export function Navbar({ onHome, auth }: NavbarProps) {
             </div>
           </div>
 
-          <div className="flex items-center text-sm font-medium">
+          <div className="flex items-center gap-2 text-sm font-medium">
             {auth.status === 'authenticated' ? (
-              <a
-                href="#dashboard"
-                className={`glass-pill inline-flex items-center gap-1.5 px-4 py-1.5 ${
-                  route === 'dashboard' ? 'text-white' : 'text-white/70 hover:text-white'
-                } transition-colors`}
-              >
-                <LayoutDashboard className="w-4 h-4" />
-                Dashboard
-              </a>
+              <>
+                {auth.isAdmin && (
+                  <a
+                    href="#admin"
+                    className={`glass-pill inline-flex items-center gap-1.5 px-4 py-1.5 ${
+                      route === 'admin' ? 'text-white' : 'text-white/70 hover:text-white'
+                    } transition-colors`}
+                  >
+                    <BarChart3 className="w-4 h-4" />
+                    Admin
+                  </a>
+                )}
+                <a
+                  href="#dashboard"
+                  className={`glass-pill inline-flex items-center gap-1.5 px-4 py-1.5 ${
+                    route === 'dashboard' ? 'text-white' : 'text-white/70 hover:text-white'
+                  } transition-colors`}
+                >
+                  <LayoutDashboard className="w-4 h-4" />
+                  Dashboard
+                </a>
+              </>
             ) : auth.status === 'anonymous' ? (
               <a
                 href="#login"

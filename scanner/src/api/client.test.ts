@@ -134,6 +134,7 @@ describe('account endpoints', () => {
       tier: 'free',
       createdAt: '2026-06-01T00:00:00.000Z',
       apiKeyPrefix: 'sk_live_ab',
+      isAdmin: false,
     }
     const fetchMock = captureFetch(me)
     await expect(fetchMe()).resolves.toEqual(me)

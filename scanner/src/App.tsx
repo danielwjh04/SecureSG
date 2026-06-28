@@ -23,9 +23,11 @@ import { Enterprise } from './components/Enterprise'
 import { Pricing } from './components/Pricing'
 import { Auth } from './components/Auth'
 import { Dashboard } from './components/Dashboard'
+import { AdminDashboard } from './components/AdminDashboard'
 import { useScan } from './scan/useScan'
 import { useHashRoute } from './hooks/useHashRoute'
 import { useAuth } from './hooks/useAuth'
+import { guardRedirect } from './lib/routeGuard'
 import { REPO_URL } from './config'
 import type { ScanState } from './scan/scanMachine'
 
@@ -129,14 +131,16 @@ function App(): ReactNode {
   const { state } = controller
   const previousRouteRef = useRef(route)
 
-  // The dashboard is gated: a logged-out visitor is bounced to the login screen
-  // as soon as the session resolves to anonymous. The redirect runs in an effect
-  // (not during render) so it never fires mid-commit.
+  // The dashboard and admin surfaces are gated. The redirect decision is a pure
+  // function (testable in isolation): an anonymous visitor is bounced to login,
+  // and a non-admin reaching #admin is bounced to their own dashboard. The
+  // redirect runs in an effect (not during render) so it never fires mid-commit.
   useEffect(() => {
-    if (route === 'dashboard' && auth.status === 'anonymous') {
-      window.location.assign('#login')
+    const target = guardRedirect(route, auth.status, auth.isAdmin)
+    if (target !== null) {
+      window.location.assign(target)
     }
-  }, [route, auth.status])
+  }, [route, auth.status, auth.isAdmin])
 
   useEffect(() => {
     const sameRoute = previousRouteRef.current === route
@@ -208,6 +212,26 @@ function App(): ReactNode {
         ) : (
           <section className="relative z-10 flex-1 flex items-center justify-center px-6 py-20">
             <p className="text-white/45 font-mono text-sm">Loading your dashboard…</p>
+          </section>
+        )}
+        <Footer />
+      </main>
+    )
+  }
+
+  // Admin surface. Guarded by the effect above: a non-admin (or anonymous)
+  // visitor is redirected away, so the analytics only render for an admin.
+  if (route === 'admin') {
+    return (
+      <main id="top" className={SHELL}>
+        <BackgroundVideo />
+        <div className="fixed inset-0 bg-black/80" aria-hidden="true" />
+        <Navbar onHome={controller.reset} auth={auth} />
+        {auth.status === 'authenticated' && auth.isAdmin ? (
+          <AdminDashboard />
+        ) : (
+          <section className="relative z-10 flex-1 flex items-center justify-center px-6 py-20">
+            <p className="text-white/45 font-mono text-sm">Loading admin analytics…</p>
           </section>
         )}
         <Footer />

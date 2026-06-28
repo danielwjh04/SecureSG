@@ -5,7 +5,7 @@ import type { AuthState } from '../hooks/useAuth'
 import * as client from '../api/client'
 
 function authState(overrides: Partial<AuthState> = {}): AuthState {
-  return { status: 'anonymous', user: null, refresh: vi.fn(), ...overrides }
+  return { status: 'anonymous', user: null, isAdmin: false, refresh: vi.fn(), ...overrides }
 }
 
 /**
@@ -74,6 +74,7 @@ describe('Pricing', () => {
             tier: 'free',
             createdAt: '2026-06-01T00:00:00.000Z',
             apiKeyPrefix: 'sk_live_ab',
+            isAdmin: false,
           },
         })}
       />,

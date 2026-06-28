@@ -73,6 +73,10 @@
     // improves; default 210000, min 100000). SCANNER_SESSION_TTL_SECONDS is the
     // session lifetime (default 7 days).
     "SCANNER_PBKDF2_ITERATIONS": "100000",
-    "SCANNER_SESSION_TTL_SECONDS": "604800"
+    "SCANNER_SESSION_TTL_SECONDS": "604800",
+    // Admin allowlist for the analytics dashboard (comma list, lowercased). An
+    // account whose email is here sees `isAdmin: true` from /api/me and may read
+    // GET /api/admin/overview; every other caller is forbidden. Default empty.
+    "SCANNER_ADMIN_EMAILS": "zuriel.shanley@gmail.com"
   }
 }

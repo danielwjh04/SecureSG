@@ -157,6 +157,32 @@ describe('worker.fetch routing', () => {
     expect(res.status).toBe(405)
   })
 
+  it('routes GET /api/admin/overview and returns 503 when DB is unconfigured', async () => {
+    const res = await worker.fetch(req('/api/admin/overview', 'GET'), baseEnv)
+    expect(res.status).toBe(503)
+  })
+
+  it('rejects a non-GET /api/admin/overview with 405', async () => {
+    const res = await worker.fetch(req('/api/admin/overview', 'POST', {}), baseEnv)
+    expect(res.status).toBe(405)
+  })
+
+  it('returns 403 from /api/admin/overview for an authenticated non-admin', async () => {
+    const store = new MemoryStore()
+    const d1 = new MemoryD1(store) as unknown as D1Database
+    const env: Env = { DB: d1, SESSION_SECRET: 'admin-router-secret' }
+    const reg = await worker.fetch(
+      req('/api/register', 'POST', { email: 'router-nonadmin@example.com', password: 'password123' }),
+      env,
+    )
+    const cookie = reg.headers.get('Set-Cookie')?.split(';')[0] ?? ''
+    const res = await worker.fetch(
+      new Request('https://secureai.test/api/admin/overview', { headers: { Cookie: cookie } }),
+      env,
+    )
+    expect(res.status).toBe(403)
+  })
+
   it('routes POST /api/key/rotate and returns 503 when DB is unconfigured', async () => {
     const res = await worker.fetch(req('/api/key/rotate', 'POST', {}), baseEnv)
     expect(res.status).toBe(503)

@@ -27,6 +27,7 @@ export const API = {
   stats: `${API_BASE}/api/stats`,
   rotateKey: `${API_BASE}/api/key/rotate`,
   checkout: `${API_BASE}/api/checkout`,
+  adminOverview: `${API_BASE}/api/admin/overview`,
 } as const
 
 /** Where to email enterprise sales when the Pricing page Contact CTA is used. */

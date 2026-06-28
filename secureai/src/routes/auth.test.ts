@@ -279,6 +279,35 @@ describe('handleMe', () => {
     expect(body.email).toBe('bearer-me@example.com')
   })
 
+  it('returns isAdmin: false for a non-admin email', async () => {
+    const { db } = memoryDatabase()
+    const { apiKey } = await createFreeUser(db, 'plain@example.com')
+    const res = await handleMe(
+      new Request('https://secureai.test/api/me', {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      }),
+      deps(db),
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { isAdmin: boolean }
+    expect(body.isAdmin).toBe(false)
+  })
+
+  it('returns isAdmin: true when the email is in config.adminEmails', async () => {
+    const { db } = memoryDatabase()
+    const adminConfig = loadConfig({ SCANNER_ADMIN_EMAILS: 'boss@example.com' })
+    const { apiKey } = await createFreeUser(db, 'boss@example.com')
+    const res = await handleMe(
+      new Request('https://secureai.test/api/me', {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      }),
+      { db, sessionSecret: SECRET, config: adminConfig },
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { isAdmin: boolean }
+    expect(body.isAdmin).toBe(true)
+  })
+
   it('returns 401 when unauthenticated', async () => {
     const { db } = memoryDatabase()
     const res = await handleMe(new Request('https://secureai.test/api/me'), deps(db))

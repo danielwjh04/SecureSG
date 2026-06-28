@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { zeroFillDaily } from './stats'
+import { zeroFillDaily, zeroFillSignups } from './stats'
 import type { StatsDay } from '../api/types'
 
 function day(day: string, scans: number, blocks: number): StatsDay {
@@ -48,5 +48,25 @@ describe('zeroFillDaily', () => {
     const days = filled.map((row) => row.day)
 
     expect(days).toEqual([...days].sort())
+  })
+})
+
+describe('zeroFillSignups', () => {
+  const now = new Date('2026-06-28T00:00:00.000Z')
+
+  it('produces a dense window ending today, zero-filling gaps', () => {
+    const filled = zeroFillSignups([{ day: '2026-06-27', count: 5 }], 30, now)
+
+    expect(filled).toHaveLength(30)
+    expect(filled[0].day).toBe('2026-05-30')
+    expect(filled[filled.length - 1].day).toBe('2026-06-28')
+    expect(filled.find((row) => row.day === '2026-06-27')).toEqual({ day: '2026-06-27', count: 5 })
+    expect(filled.find((row) => row.day === '2026-06-26')).toEqual({ day: '2026-06-26', count: 0 })
+  })
+
+  it('drops signup rows outside the trailing window', () => {
+    const filled = zeroFillSignups([{ day: '2026-01-01', count: 9 }], 30, now)
+    expect(filled.some((row) => row.day === '2026-01-01')).toBe(false)
+    expect(filled).toHaveLength(30)
   })
 })

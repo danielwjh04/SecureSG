@@ -76,6 +76,14 @@ export interface ScannerConfig {
   readonly pbkdf2Iterations: number
   /** Lifetime, in seconds, of a minted session cookie (signed token + cookie Max-Age). */
   readonly sessionTtlSeconds: number
+  /**
+   * Emails (lowercased) granted access to the admin analytics endpoint. An
+   * account whose email is in this set sees `isAdmin: true` from `/api/me` and
+   * may read `/api/admin/overview`; every other caller is forbidden. Default
+   * empty (no admins) so the surface is closed unless explicitly opened via the
+   * `SCANNER_ADMIN_EMAILS` var. The email is NEVER hardcoded in source.
+   */
+  readonly adminEmails: ReadonlySet<string>
 }
 
 /**
@@ -129,6 +137,10 @@ export function loadConfig(env: Env): ScannerConfig {
   // Session TTL defaults to 7 days (604800s), matching the cookie the frontend expects.
   const pbkdf2Iterations = readIntInRange(env, 'SCANNER_PBKDF2_ITERATIONS', 100000, 10000, 100000)
   const sessionTtlSeconds = readIntInRange(env, 'SCANNER_SESSION_TTL_SECONDS', 604800, 60, 31536000)
+  // Admin allowlist (lowercased emails). Default empty: no admins until the var
+  // is set, so the analytics surface is closed by default. The email is supplied
+  // by SCANNER_ADMIN_EMAILS in wrangler.jsonc, never hardcoded here.
+  const adminEmails = readSet(env, 'SCANNER_ADMIN_EMAILS', '')
 
   // Cross-field invariants (fail-closed).
   if (!(reviewThreshold < blockThreshold)) {
@@ -172,6 +184,7 @@ export function loadConfig(env: Env): ScannerConfig {
     appBaseUrl,
     pbkdf2Iterations,
     sessionTtlSeconds,
+    adminEmails,
   }
 }
 

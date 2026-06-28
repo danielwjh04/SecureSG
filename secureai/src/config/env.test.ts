@@ -78,4 +78,13 @@ describe('loadConfig', () => {
     expect(overridden.stripePricePro).toBe('price_live_123')
     expect(overridden.appBaseUrl).toBe('https://app.example.com')
   })
+
+  it('parses the admin allowlist (lowercased, default empty)', () => {
+    expect(loadConfig({}).adminEmails.size).toBe(0)
+
+    const config = loadConfig({ SCANNER_ADMIN_EMAILS: 'Owner@Example.com, two@example.com' })
+    expect(config.adminEmails.has('owner@example.com')).toBe(true)
+    expect(config.adminEmails.has('two@example.com')).toBe(true)
+    expect(config.adminEmails.size).toBe(2)
+  })
 })

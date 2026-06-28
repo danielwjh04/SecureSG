@@ -153,6 +153,39 @@ export class MemoryStore {
       }
       return null
     }
+    // Admin aggregates (queryOne).
+    if (sql.includes('COUNT(*) AS total FROM users')) {
+      return { total: this.users.size }
+    }
+    if (sql.includes('SUM(scans)') && sql.includes('FROM usage')) {
+      // usageTotals: SUM over the whole usage table. An empty table yields null
+      // (mirroring SQL's SUM-over-zero-rows), which the repo coerces to 0.
+      if (this.usage.size === 0) {
+        return { scans: null, allows: null, reviews: null, blocks: null, flagged: null }
+      }
+      let scans = 0
+      let allows = 0
+      let reviews = 0
+      let blocks = 0
+      let flagged = 0
+      for (const record of this.usage.values()) {
+        scans += record.scans
+        allows += record.allows
+        reviews += record.reviews
+        blocks += record.blocks
+        flagged += record.flagged
+      }
+      return { scans, allows, reviews, blocks, flagged }
+    }
+    if (sql.includes('COUNT(*) AS count FROM subscriptions')) {
+      let count = 0
+      for (const sub of this.subscriptions.values()) {
+        if (sub.status === 'active' || sub.status === 'trialing') {
+          count += 1
+        }
+      }
+      return { count }
+    }
     throw new Error(`MemoryStore: unrecognized queryOne SQL: ${sql}`)
   }
 
@@ -176,6 +209,37 @@ export class MemoryStore {
         }
       }
       // ORDER BY day ASC.
+      rows.sort((a, b) => String(a['day']).localeCompare(String(b['day'])))
+      return rows
+    }
+    // Admin: accounts grouped by tier.
+    if (sql.includes('COUNT(*) AS count FROM users GROUP BY tier')) {
+      const byTier = new Map<string, number>()
+      for (const user of this.users.values()) {
+        byTier.set(user.tier, (byTier.get(user.tier) ?? 0) + 1)
+      }
+      const rows: Record<string, unknown>[] = []
+      for (const [tier, count] of byTier) {
+        rows.push({ tier, count })
+      }
+      return rows
+    }
+    // Admin: daily signups from sinceDay onward. `date(created_at)` is the UTC
+    // calendar day, which for an ISO timestamp is its first 10 chars.
+    if (sql.includes('date(created_at)') && sql.includes('FROM users')) {
+      const sinceDay = String(params[0])
+      const counts = new Map<string, number>()
+      for (const user of this.users.values()) {
+        const day = user.created_at.slice(0, 10)
+        if (day >= sinceDay) {
+          counts.set(day, (counts.get(day) ?? 0) + 1)
+        }
+      }
+      const rows: Record<string, unknown>[] = []
+      for (const [day, count] of counts) {
+        rows.push({ day, count })
+      }
+      // GROUP BY day ORDER BY day ASC.
       rows.sort((a, b) => String(a['day']).localeCompare(String(b['day'])))
       return rows
     }
