@@ -1,16 +1,16 @@
 import type { ReactNode } from 'react'
-import type { ExaReport } from '../api/types'
+import type { ReputationReport } from '../api/types'
 import type { ApiResource } from '../hooks/useApiResource'
 import { hostname } from '../lib/format'
 import { Panel } from './Panel'
 
 /**
- * Clamp a stringified Exa score to a 0–100% bar width.
+ * Clamp a stringified reputation score to a 0–100% bar width.
  *
- * `ExaReport.score` is a stringified float (the contract keeps floats out of the
- * hashed proof), so it is parsed here only for display. A score outside [0, 1]
- * or one that fails to parse collapses to 0% rather than producing an invalid
- * width, so the bar always renders.
+ * `ReputationReport.score` is a stringified float (the contract keeps floats out
+ * of the hashed proof), so it is parsed here only for display. A score outside
+ * [0, 1] or one that fails to parse collapses to 0% rather than producing an
+ * invalid width, so the bar always renders.
  *
  * Time complexity: O(n) in the string length. Space complexity: O(1).
  */
@@ -22,10 +22,10 @@ function scoreWidth(score: string): string {
 }
 
 /**
- * Exa (sponsor tech) reputation panel. Renders one row per assessed final
- * destination: hostname, the reputation score as a bar, the status text, and a
- * block-tinted flagged badge when Exa flagged the URL. The empty state is owned
- * by {@link Panel} via `isEmpty`.
+ * Reputation panel. Renders one row per assessed final destination: hostname,
+ * the reputation score as a bar, the status text, and a block-tinted flagged
+ * badge when the URL is flagged. The empty state is owned by {@link Panel} via
+ * `isEmpty`.
  *
  * The incoming `reports` array rides on an already-resolved `ScanResult`, so it
  * is wrapped in a settled {@link ApiResource} to reuse Panel's head and
@@ -33,16 +33,16 @@ function scoreWidth(score: string): string {
  *
  * Time complexity: O(r) where r = reports.length. Space complexity: O(r).
  */
-export function ExaReputation({ reports }: { reports: ExaReport[] }): ReactNode {
-  const resource: ApiResource<ExaReport[]> = {
+export function Reputation({ reports }: { reports: ReputationReport[] }): ReactNode {
+  const resource: ApiResource<ReputationReport[]> = {
     data: reports,
     error: null,
     loading: false,
     reload: () => {},
   }
   return (
-    <Panel<ExaReport[]>
-      title="Exa Reputation"
+    <Panel<ReputationReport[]>
+      title="Reputation"
       count={reports.length}
       resource={resource}
       emptyText="No destinations assessed."

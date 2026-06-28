@@ -1,0 +1,30 @@
+{
+  "name": "secureai",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "SecureAI: antivirus for AI coding agents. Scanner Worker + Guard.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build:web": "npm --prefix ../scanner run build",
+    "predeploy": "npm run build:web",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "coverage": "vitest run --coverage",
+    "lint": "oxlint"
+  },
+  "dependencies": {
+    "stripe": "^22.3.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260101.0",
+    "@vitest/coverage-v8": "^4.1.9",
+    "oxlint": "^1.69.0",
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.9",
+    "wrangler": "^4.42.0"
+  }
+}

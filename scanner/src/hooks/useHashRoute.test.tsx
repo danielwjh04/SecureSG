@@ -29,6 +29,41 @@ describe('useHashRoute', () => {
     expect(result.current).toEqual({ route: 'scanner', target: 'how' })
   })
 
+  it.each([
+    ['#pricing', 'pricing'],
+    ['#login', 'login'],
+    ['#register', 'register'],
+    ['#dashboard', 'dashboard'],
+    ['#admin', 'admin'],
+  ])('maps %s to the %s route at the top target', (hash, route) => {
+    replaceHash('')
+    const { result } = renderHook(() => useHashRoute())
+
+    act(() => dispatchHash(hash))
+
+    expect(result.current).toEqual({ route, target: 'top' })
+  })
+
+  it('falls back to the scanner route for an unknown hash', () => {
+    replaceHash('')
+    const { result } = renderHook(() => useHashRoute())
+
+    act(() => dispatchHash('#nope'))
+
+    expect(result.current).toEqual({ route: 'scanner', target: 'top' })
+  })
+
+  it('no longer treats #guard as a deep-link target (falls back to the scanner top)', () => {
+    replaceHash('')
+    const { result } = renderHook(() => useHashRoute())
+
+    act(() => dispatchHash('#guard'))
+
+    // The Guard section was removed from the landing; #guard is now just an
+    // unknown hash and must not resolve to a `guard` target.
+    expect(result.current).toEqual({ route: 'scanner', target: 'top' })
+  })
+
   it('uses manual scroll restoration while mounted', () => {
     replaceHash('')
     const previousScrollRestoration = window.history.scrollRestoration

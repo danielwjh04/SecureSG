@@ -13,6 +13,30 @@ if (globalThis.crypto?.subtle === undefined) {
   })
 }
 
+// motion's `whileInView` registers an IntersectionObserver, which jsdom does not
+// implement. Polyfill a no-op observer so components that animate on scroll
+// (e.g. the Pricing plan grid) render in tests; the elements simply never enter
+// the "in view" state, which is correct for a zero-size jsdom viewport.
+if (typeof globalThis.IntersectionObserver === 'undefined') {
+  class NoopIntersectionObserver implements IntersectionObserver {
+    readonly root = null
+    readonly rootMargin = ''
+    readonly scrollMargin = ''
+    readonly thresholds: ReadonlyArray<number> = []
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+    takeRecords(): IntersectionObserverEntry[] {
+      return []
+    }
+  }
+  Object.defineProperty(globalThis, 'IntersectionObserver', {
+    value: NoopIntersectionObserver,
+    configurable: true,
+    writable: true,
+  })
+}
+
 afterEach(() => {
   cleanup()
 })

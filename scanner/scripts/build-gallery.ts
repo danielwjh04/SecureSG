@@ -10,8 +10,8 @@
  *
  * Why recorded clients (CLAUDE.md §1 "no mocked demos" vs. "hermetic build"):
  * the gallery is pre-scanned, frozen evidence — the scan LOGIC is the real
- * production code path, only the external I/O (redirect HTTP, Exa reputation,
- * OpenAI judge) is replaced with recordings captured per fixture. The proof is
+ * production code path, only the external I/O (redirect HTTP, reputation,
+ * AI inference) is replaced with recordings captured per fixture. The proof is
  * computed by the same `ProofBuilder`/SHA-256 core, so the in-browser tamper
  * viewer re-verifies it with no special-casing.
  *
@@ -28,11 +28,11 @@ import { readFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type {
-  ExaClient,
-  ExaReport,
+  ReputationClient,
+  ReputationReport,
   InjectionFinding,
-  JudgeClient,
-  JudgeResult,
+  InferenceClient,
+  InjectionResult,
   ScanResult,
   Verdict,
 } from '../shared/contract'
@@ -70,10 +70,10 @@ interface RecordedResponse {
 interface Recording {
   /** URL → recorded response, consumed by the recorded `fetch`. */
   routes: Record<string, RecordedResponse>
-  /** Final-URL → recorded Exa report, consumed by the recorded Exa client. */
-  exaByUrl: Record<string, ExaReport>
-  /** The recorded judge result for this fixture. */
-  judge: JudgeResult
+  /** Final-URL → recorded reputation report, consumed by the recorded client. */
+  exaByUrl: Record<string, ReputationReport>
+  /** The recorded inference result for this fixture. */
+  judge: InjectionResult
 }
 
 /**
@@ -101,22 +101,22 @@ function recordedFetch(routes: Record<string, RecordedResponse>): typeof fetch {
 }
 
 /**
- * A recorded Exa client: returns the recorded report for each requested final
- * URL, in request order. A URL with no recording yields a neutral, unflagged
- * report so the recording stays explicit about what is dangerous (only the
- * URLs deliberately marked `flagged` escalate the verdict).
+ * A recorded reputation client: returns the recorded report for each requested
+ * final URL, in request order. A URL with no recording yields a neutral,
+ * unflagged report so the recording stays explicit about what is dangerous (only
+ * the URLs deliberately marked `flagged` escalate the verdict).
  *
- * Implements {@link ExaClient}; fields are declared then assigned in the
+ * Implements {@link ReputationClient}; fields are declared then assigned in the
  * constructor (no parameter properties — `erasableSyntaxOnly`).
  */
-class RecordedExaClient implements ExaClient {
-  private readonly reportByUrl: Record<string, ExaReport>
+class RecordedExaClient implements ReputationClient {
+  private readonly reportByUrl: Record<string, ReputationReport>
 
-  public constructor(reportByUrl: Record<string, ExaReport>) {
+  public constructor(reportByUrl: Record<string, ReputationReport>) {
     this.reportByUrl = reportByUrl
   }
 
-  public async assessFinalUrls(urls: string[]): Promise<ExaReport[]> {
+  public async assessFinalUrls(urls: string[]): Promise<ReputationReport[]> {
     return urls.map(
       (url) =>
         this.reportByUrl[url] ?? {
@@ -132,31 +132,31 @@ class RecordedExaClient implements ExaClient {
 }
 
 /**
- * A recorded OpenAI judge: returns a fixed {@link JudgeResult} for the fixture.
- * Because `runScan` folds the judge tighten-only, a benign clean result cannot
- * lower a BLOCK baseline, and an injection result raises a clean baseline to
- * BLOCK — exactly the production semantics, replayed from a recording.
+ * A recorded AI inference client: returns a fixed {@link InjectionResult} for the
+ * fixture. Because `runScan` folds the inference tighten-only, a benign clean
+ * result cannot lower a BLOCK baseline, and an injection result raises a clean
+ * baseline to BLOCK — exactly the production semantics, replayed from a recording.
  *
- * Implements {@link JudgeClient}; no parameter properties (`erasableSyntaxOnly`).
+ * Implements {@link InferenceClient}; no parameter properties (`erasableSyntaxOnly`).
  */
-class RecordedJudgeClient implements JudgeClient {
-  private readonly result: JudgeResult
+class RecordedJudgeClient implements InferenceClient {
+  private readonly result: InjectionResult
 
-  public constructor(result: JudgeResult) {
+  public constructor(result: InjectionResult) {
     this.result = result
   }
 
-  public async judge(
+  public async detect(
     _skillText: string,
-    _exaReports: ExaReport[],
+    _reputation: ReputationReport[],
     _baseline: Verdict,
-  ): Promise<JudgeResult> {
+  ): Promise<InjectionResult> {
     return this.result
   }
 }
 
-/** A clean judge verdict for benign skills (no injection signal). */
-const CLEAN_JUDGE: JudgeResult = {
+/** A clean inference verdict for benign skills (no injection signal). */
+const CLEAN_JUDGE: InjectionResult = {
   pInjection: 0.02,
   verdict: 'ALLOW',
   findings: [],
@@ -183,7 +183,7 @@ const INJECTION_FINDINGS: InjectionFinding[] = [
 ]
 
 /** A high-confidence injection judgment for the prompt-injection fixture. */
-const INJECTION_JUDGE: JudgeResult = {
+const INJECTION_JUDGE: InjectionResult = {
   pInjection: 0.97,
   verdict: 'BLOCK',
   findings: INJECTION_FINDINGS,
@@ -191,8 +191,8 @@ const INJECTION_JUDGE: JudgeResult = {
     'Document contains a concealed instruction-override and a credential-exfiltration directive.',
 }
 
-/** A clean Exa report for a benign destination host. */
-function benignReport(url: string, title: string): ExaReport {
+/** A clean reputation report for a benign destination host. */
+function benignReport(url: string, title: string): ReputationReport {
   return {
     url,
     score: '0.04',
@@ -339,8 +339,8 @@ async function scanSeedItem(item: SeedItem): Promise<ScanResult> {
 
   const deps: ScanDeps = {
     config: CONFIG,
-    exa: new RecordedExaClient(recording.exaByUrl),
-    judge: new RecordedJudgeClient(recording.judge),
+    reputation: new RecordedExaClient(recording.exaByUrl),
+    inference: new RecordedJudgeClient(recording.judge),
     fetchImpl: recordedFetch(recording.routes),
     scannedAt: FIXED_SCANNED_AT,
   }

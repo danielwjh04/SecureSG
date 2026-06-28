@@ -1,0 +1,35 @@
+# SecureAI local secrets. Copy to .dev.vars (gitignored) for `wrangler dev`.
+# Non-secret tunables live in wrangler.jsonc `vars`, not here.
+# Set real secrets in deploys with `wrangler secret put <NAME>`.
+
+# Stripe (billing). Both secrets are REQUIRED for the /api/checkout,
+# /api/portal, and /api/webhook routes; without them those routes return 503.
+# Set them in production with `wrangler secret put STRIPE_SECRET_KEY` etc.
+#   STRIPE_SECRET_KEY      — your Stripe secret API key (test or live mode).
+#   STRIPE_WEBHOOK_SECRET  — the signing secret of the /api/webhook endpoint,
+#                            shown when you create the endpoint in the dashboard.
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+# STRIPE_PRICE_PRO is a non-secret var (lives in wrangler.jsonc); override it
+# here only to point local dev at a different Price. It is the $12/mo recurring
+# Price id created in the Stripe dashboard.
+# STRIPE_PRICE_PRO=price_...
+
+# Session signing secret (email/password auth). REQUIRED for the /api/register
+# and /api/login routes; without it they return 503 and cookie auth is disabled
+# (Bearer API-key auth still works). Set it in production with
+#   wrangler secret put SESSION_SECRET
+# Use a long, random value (e.g. `openssl rand -base64 48`). Never commit it.
+SESSION_SECRET=dev-only-change-me-to-a-long-random-string
+
+# Email two-factor (2FA) provider key (Resend). OPTIONAL: when set, a successful
+# password login starts an emailed 6-digit code challenge and the session is
+# issued only after POST /api/login/verify. When UNSET, login behaves exactly as
+# before — password success issues the session cookie immediately. The From
+# address (SCANNER_EMAIL_FROM, a non-secret var in wrangler.jsonc) must be on a
+# domain you have VERIFIED in Resend, or sends fail. Set it in production with
+#   wrangler secret put RESEND_API_KEY
+# RESEND_API_KEY=re_...
+
+# Threat-intel feed credentials, if a feed requires one (Spamhaus DROP does not).
+# Workers AI needs no key — it uses the account `AI` binding.

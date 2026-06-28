@@ -1,0 +1,41 @@
+{
+  "$comment": "Code-graph index for SecureAI, read first per CLAUDE.md 'Graphify First'. Phase 1 captures the proven scanner/ worker+shared modules being ported into secureai/src/, plus the secureai/src modules built so far. Update this as secureai/src grows. Location is referenced by config (graphPath in wrangler vars), never hardcoded in source.",
+  "portSource": {
+    "from": "scanner/worker/** + scanner/shared/**",
+    "to": "secureai/src/**",
+    "drops": ["openai", "exa-js"],
+    "adds": ["Workers AI inference (env.AI)", "indicator feeds (Spamhaus DROP, D1/KV cache)", "accounts/auth/metering (D1)", "Stripe billing", "Claude Code guard"],
+    "renames": {
+      "ExaReport": "ReputationReport",
+      "ExaClient": "ReputationClient",
+      "JudgeResult": "InjectionResult",
+      "JudgeClient": "InferenceClient",
+      "JudgeError": "InferenceError",
+      "ProofStepKind.EXA_REPUTATION": "REPUTATION",
+      "ProofStepKind.JUDGE_FINDING": "INJECTION"
+    }
+  },
+  "verdictLabels": { "internal": ["ALLOW", "HUMAN_APPROVAL_REQUIRED", "BLOCK"], "displayMiddleAs": "REVIEW" },
+  "modules": [
+    { "path": "src/errors.ts", "purpose": "Typed error hierarchy rooted at ScannerError.", "exports": ["ScannerError", "ConfigError", "CanonicalizationError", "ProofError", "ParseError", "SourceResolutionError", "RedirectResolutionError", "ReputationError", "InferenceError"], "imports": [], "externalDeps": [], "notes": "Constructor sets this.name = new.target.name so subclass name survives transpilation." },
+    { "path": "src/schemas/contract.ts", "purpose": "Single source of truth for cross-boundary TYPES.", "exports": ["Verdict", "RuleFinding", "RedirectHop", "LinkChain", "ReputationReport", "InjectionFinding", "ProofStepKind", "ProofStep", "Proof", "ScanRequest", "ScanResult", "VerifyResult", "ReputationClient", "InjectionResult", "InferenceClient"], "imports": [], "externalDeps": [], "notes": "Pure types, zero runtime. ProofStep.payload is float-free (string|number|boolean). ReputationReport.score is a string." },
+    { "path": "src/schemas/validate.ts", "purpose": "Zod schemas for inbound bodies + external responses (parse at the edge).", "exports": ["verifyRequestSchema", "scanRequestSchema"], "imports": [{ "from": "zod", "names": ["z"] }], "externalDeps": ["zod"], "notes": "A parse failure becomes a structured error/BLOCK, never an unhandled throw." },
+    { "path": "src/verdict.ts", "purpose": "Verdict severity ordering + escalate (tighten-only) + mapProbabilityToVerdict.", "exports": ["SEVERITY", "escalate", "mapProbabilityToVerdict"], "imports": [{ "from": "./schemas/contract", "names": ["Verdict (type)"] }], "externalDeps": [], "notes": "ALLOW=0 < HUMAN_APPROVAL_REQUIRED=1 < BLOCK=2; escalate keeps baseline on ties." },
+    { "path": "src/config/env.ts", "purpose": "Typed Env (bindings) + loadConfig: validates SCANNER_* vars, fail-closed.", "exports": ["Env", "ScannerConfig", "loadConfig"], "imports": [{ "from": "../errors", "names": ["ConfigError"] }], "externalDeps": [], "notes": "No openai/exa fields. aiModel + thresholds + hop caps from SCANNER_* vars with defaults. Cross-field invariants enforced." },
+    { "path": "src/audit/chain.ts", "purpose": "SHA-256 chain primitives + canonical JSON + ProofBuilder.", "exports": ["hexEncode", "computeLinkHash", "deriveGenesisHash", "canonicalJson", "canonicalPayload", "ProofBuilder"], "imports": [{ "from": "../schemas/contract", "names": ["Proof", "ProofStep", "ProofStepKind"] }, { "from": "../errors", "names": ["CanonicalizationError", "ProofError"] }], "externalDeps": [], "notes": "Port of scanner shared/{hash,canonical,proof}. computeLinkHash = sha256(utf8(prevHash) ++ payload). canonicalPayload hashes only {index,kind,payload}." },
+    { "path": "src/audit/verify.ts", "purpose": "Single forward-pass chain verifier.", "exports": ["verifyChain", "ChainVerification"], "imports": [{ "from": "../schemas/contract", "names": ["Proof"] }, { "from": "./chain", "names": ["computeLinkHash", "canonicalPayload"] }], "externalDeps": [], "notes": "Returns { ok, firstBrokenIndex }; starts from proof.genesisHash." },
+    { "path": "src/routes/verify.ts", "purpose": "POST /api/verify: pure recompute of a submitted proof chain (zero subrequests).", "exports": ["handleVerify"], "imports": [{ "from": "../config/env", "names": ["ScannerConfig"] }, { "from": "../audit/chain", "names": ["deriveGenesisHash"] }, { "from": "../audit/verify", "names": ["verifyChain"] }, { "from": "../schemas/validate", "names": ["verifyRequestSchema"] }, { "from": "../errors", "names": ["ParseError"] }], "externalDeps": [], "notes": "genesisHash mismatch vs config.genesisSeed -> CHAIN_BROKEN at index 0 (fail-closed against forged genesis)." },
+    { "path": "src/index.ts", "purpose": "Worker entry; routes /api/verify, fail-closed config load.", "exports": ["default (ExportedHandler<Env>)"], "imports": [{ "from": "./config/env", "names": ["Env", "loadConfig"] }, { "from": "./routes/verify", "names": ["handleVerify"] }, { "from": "./errors", "names": ["ParseError", "ScannerError"] }], "externalDeps": [], "notes": "loadConfig per API request, fail-closed (bad config -> 500, never enters handler). POST-only; unknown /api/* -> 404." }
+  ],
+  "plannedModules": [
+    "src/pipeline/parse.ts (port parser.ts)",
+    "src/pipeline/redirects.ts (port redirect.ts + ssrf.ts, SSRF guard every hop)",
+    "src/pipeline/rules.ts (port verdict/rules.ts)",
+    "src/pipeline/indicators.ts (NEW: Spamhaus DROP + D1/KV cache, replaces exa.ts)",
+    "src/pipeline/inference.ts (NEW: Workers AI injection detection via env.AI, replaces judge.ts)",
+    "src/scanner/runScan.ts (port runScan.ts)",
+    "src/scanner/github.ts (port github.ts)",
+    "src/routes/scan.ts (port handlers/scan.ts)",
+    "src/middleware/auth.ts, src/billing/stripe.ts, src/guard/* (NEW)"
+  ]
+}

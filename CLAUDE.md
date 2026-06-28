@@ -1,57 +1,42 @@
-# CLAUDE.md — SecureSG
+# CLAUDE.md: SecureAI
 
 ## What This File Is
 
-This file is the single source of truth for how code is written, reasoned about, and reviewed in this repository. Every session starts here. Read it fully before touching anything.
-
----
+Single source of truth for how code is written, reasoned about, and reviewed in this repo. Every session starts here. Read it fully before touching anything.
 
 ## Project Identity
 
-**SecureSG** is a runtime control layer and governance engine that sits as a bidirectional transparent proxy between an LLM agent and its MCP server environment. The core value proposition is **Verifiable Enforcement**: cryptographic audit trails that prove the guard was correct, rather than asking users to trust the vendor.
+**SecureAI** is an antivirus, a "VirusTotal," for AI coding agents. It inspects the skills, tools, and links an agent is about to trust, returns an **ALLOW / REVIEW / BLOCK** verdict in milliseconds, blocks dangerous actions inline and fail-closed, and seals every decision in a tamper-evident cryptographic proof anyone can re-verify.
 
-Two subsystems:
-- **Guard**: inline interceptor that evaluates tool calls (ALLOW / BLOCK / HUMAN_APPROVAL_REQUIRED)
-- **Warden**: governance engine that performs risk discovery, scope reduction, and intent-to-action drift detection
+Two surfaces, one engine:
+- **Scanner**: hosted web app plus API. Submit a skill, tool, or link, get a verdict with findings and a proof.
+- **Guard**: a single config file the developer drops into their agent (Claude Code first, Cursor next). It routes the agent's actions through SecureAI before they execute. Known-bad destinations or injection payloads are blocked automatically. Fail-closed: if the check cannot run, the action is denied.
 
-Stack: Python 3.12+, FastAPI, Uvicorn, the OpenAI API (semantic guard judge + embeddings), Pydantic, SQLite, WebSockets/HTTP, with an optional offline embedding backend (sentence-transformers on PyTorch).
+The moat is **verifiable enforcement**. Each decision is a SHA-256 hash-chained record. A public `verify` endpoint returns `CHAIN_OK` or `CHAIN_BROKEN`. The line is "Don't trust us, verify."
 
-This is the official github repo: https://github.com/danielwjh04/SecureSG.git
+The MVP has shipped and is live at `secureai.zurielst.com`. On top of the scanner, guard, and proof chain, the product now carries **accounts** (email + password, HMAC-signed session cookies, SHA-256-hashed rotatable API keys, per-tier daily caps), **email 2FA** at login (one-time codes via Resend, gated on `RESEND_API_KEY`), a **user dashboard** (protection stats, 30-day trend, recent scans, API key), **Stripe Pro billing** (checkout, webhooks, portal), and an **admin analytics dashboard** with **role-based access** (owner / admin / member, members directory, promote/demote, removal). A KV-backed verdict cache keeps repeat scans O(1). None of this relaxes the rules below; the pipeline order and the security rules are unchanged.
 
----
+Stack: TypeScript on Cloudflare Workers, D1 (edge SQLite), KV (indicator + verdict cache), Workers AI (small open-weight model for injection detection), Zod for schemas, Stripe for billing, Resend for 2FA email, React 19 SPA. Live at `secureai.zurielst.com`.
 
-## Hackathon Context & Build Targets
+Repo: https://github.com/danielwjh04/SecureSG (starts empty, fresh build). Stack is TypeScript on Cloudflare Workers per the proposal.
 
-SecureSG is a **build2026 / PetaniAI** hackathon submission. Weigh every feature decision against the rubric below — ship demonstrable value, not infrastructure for its own sake. The engineering rules in the rest of this file still hold; this section sets *what to build toward*.
+## Build Context & MVP Targets
 
-### Challenge fit
-- **Primary — #3 Security, Resilience & Defense:** SecureSG hardens organizations and individuals against the new attack surface of autonomous AI agents (prompt injection, secret exfiltration, unsafe tool use).
-- **Secondary — #4 AI-Native Organizations:** it is the safety layer that lets a business adopt agent-driven operations without losing control.
+SecureAI ships as a product, not a research demo. Weigh every feature against shipping demonstrable, sellable value. The engineering rules below still hold; this section sets what to build toward.
 
-### Judging criteria → how to win each
-| Criterion | Weight | What to optimize |
-|---|---|---|
-| Proof of Work — Functionality | 25% | A real, live build. The agent-hook demo must block a *real* agent on stage with the dashboard reacting live. No mocked demos. |
-| Problem fit & Market Value | 25% | Real user = any dev or org running coding/agent tools. Lead with the concrete threat and who pays to stop it. |
-| Design, Craft & Taste | 20% | The dashboard is the product's face. Intuitive, purposeful, tasteful — every panel earns its place. |
-| Innovation & Sponsor Tech | 30% | **Highest weight.** A sponsor tool (OpenAI/Codex, Exa, Cursor, Zo) must be *central and inventive*, not bolted on. The core idea must read as genuinely fresh. |
+**MVP (about 3 weeks):** public scanner plus Claude Code guard live, free tier open, Stripe wired for Pro at S$9.90/mo. Success is a real agent action blocked live plus the first paying subscriber.
 
-### Strategic priority — the 30% lever
-The single biggest scoring lever is **sponsor-tech centrality (30%)**. SecureSG now centers its semantic layer on **OpenAI**, a listed sponsor: the guard judge, policy authoring, and the default embedding backend all run on the OpenAI API. Keep that sponsor tech load-bearing in the demo, e.g.:
-- **OpenAI / Codex** — guard a Codex agent via its PreToolUse hooks (same mechanism as the existing Claude Code integration). Most natural fit; closes the sponsor gap directly.
-- **Exa** — power *dynamic* URL/content reputation in the Warden, replacing the static blocklist with live search-based risk discovery.
-- **Cursor / Zo** — protect the agent operating inside those environments.
+Priorities, in order:
+- **Real inline blocking, not advisory.** The Claude Code guard must use PreToolUse hooks to return a real `deny` and fail closed. A flagged-but-allowed action is a failed build.
+- **Verifiable proof.** The hash chain and `verify` endpoint are the differentiator. They ship in the MVP, not later.
+- **The self-serve wedge.** A developer signs up and is protected in five minutes. Protect that flow above feature breadth.
+- **Cost discipline.** Free tier uses no AI: link-tracing, structural rules, and indicator lookups only. AI injection detection runs only when earlier layers are ambiguous, and only for paid usage.
 
-Do not bolt a sponsor on as an afterthought. Pick one and make the demo *depend* on it.
+## Codebase Navigation: Graphify First
 
-### Submission checklist (all required)
-1. Pitch deck link
-2. Public repo link (https://github.com/danielwjh04/SecureSG.git)
-3. Demo video link
-4. Live website URL
-5. Social post (X / Instagram / LinkedIn) tagging **#supcareer #build2026 #hackathon #PetaniAI**
+Read the graphify output before reading source files. It is the generated code-graph of this repo: modules, exported symbols, and call edges. Treat it as the index. Resolve a function, class, or module through the graph, then open only the specific files the task touches. Do not crawl the tree file by file when the graph already answers the question. This saves tokens and keeps context on the task.
 
----
+If the graphify output is missing or stale, stop and ask the user to regenerate or download it before proceeding. Do not silently fall back to reading the whole repo. Its location is read from config, never hardcoded inline.
 
 ## 0. Think Before Coding
 
@@ -61,443 +46,174 @@ Before implementing:
 - State assumptions explicitly. If uncertain, ask in the session rather than guessing.
 - If multiple interpretations exist, present them. Never pick one silently.
 - If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what is confusing. Ask.
+- If something is unclear, stop, name what is confusing, ask.
 
 This rule sits above all others. In a security product, a wrong primitive built confidently is worse than a missing one flagged early.
 
----
-
 ## 1. Core Engineering Philosophy
 
-These rules are non-negotiable. They apply to every file, every function, every PR.
+Non-negotiable. Every file, every function, every PR.
 
-### No Shortcuts. Ever.
+**No shortcuts, ever.** If there is a correct way and a shortcut that approximates it, take the correct way. This is a security system, so approximations are vulnerabilities. Never stub a validation step with a TODO in a live path. Never use a regex where a real parser is required. Never skip a hash verification because it probably has not changed. Never trust input from any external source without passing it through schema validation.
 
-If there is a correct way to implement something and a shortcut that approximates it, the correct way is always chosen. This is a security system. Approximations in security systems are vulnerabilities.
+**Zero placeholders, full completeness.** Deliver the finished product, not a plan. No dangling endpoints, stubbed returns, or "implement later" in a delivered path. Edge cases, docs, and tests ship with the feature. Time pressure is never a reason to compromise depth.
 
-- Never stub out a validation step with `pass` or a TODO in production paths.
-- Never use a regex where a proper parser is required.
-- Never skip a hash verification step because it probably has not changed.
-- Never trust input from any external source without passing it through the schema validator.
-
-### Zero Placeholders, Full Completeness
-
-Deliver the finished product, not a plan or a blueprint.
-
-- Never leave `// TODO: implement later`, dangling endpoints, or stubbed returns in a delivered path.
-- Never offer a workaround when a permanent fix is reachable.
-- Scope completeness means edge cases, documentation, and tests ship together with the feature.
-- Complexity or time pressure is never a reason to compromise on depth.
-
-### No Hardcoding
-
-Zero hardcoded values anywhere in the codebase. Every configurable value lives in one of three places:
+**No hardcoding.** Zero hardcoded values. Every configurable value lives in one of three places:
 
 | Type | Location |
-|------|----------|
-| Runtime config (ports, paths, timeouts) | `config/settings.py` via Pydantic `BaseSettings` |
-| Policy rules | `policies/` directory, loaded at startup |
-| Secrets / API keys | Environment variables only, never in code |
+|---|---|
+| Runtime config (thresholds, limits, model name, hop caps) | `wrangler.jsonc` vars, read via a typed `Env` |
+| Structural and policy rules | `rules/` module, loaded at startup |
+| Secrets (Stripe, feed API keys) | Cloudflare secrets and `.dev.vars`, never in code |
 
-If you find yourself typing a literal like `"localhost"`, `8080`, `"sha256"`, or a model name inline, stop. It belongs in `settings.py`.
+If you type a literal like a port, a verdict threshold, a model name, or `"169.254.169.254"` inline, stop. It belongs in config.
 
-### Simplicity First
+**Code dynamically. No static code.** Values are configured, derived, or discovered at runtime, never baked into the source. A magic number, a fixed path, a hardcoded model name, an inline threshold, a pinned URL, or a static list that should be loaded data are all defects. Rules, indicators, and policies load from their source at startup so they change without a code edit. If a value could differ across environments, inputs, or runs, it is config or it is computed. The test: a non-code person can retune behavior by editing config and rule files alone, touching no `.ts`.
 
-Minimum code that solves the problem. Nothing speculative.
+**Simplicity first.** Minimum code that solves the problem, nothing speculative. No features beyond what was asked, no abstractions for single-use code, no error handling for impossible cases. If 200 lines could be 50, rewrite it. Would a senior engineer call this overcomplicated? If yes, simplify.
 
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No flexibility or configurability that was not requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
+**Explicit over implicit.** No hidden side effects. If a function mutates state, the name and signature make that obvious. Prefer descriptive names over short ambiguous ones. No wildcard re-exports.
 
-The test: would a senior engineer call this overcomplicated? If yes, simplify. Speculative abstraction is itself a shortcut.
-
-### OOP and Coding Discipline
-
-Use object-oriented structure where it models the domain (Guard, Warden, AuditChain, Verdict are objects, not loose functions). Keep behavior and the state it owns together. Favor composition over deep inheritance.
-
-### Explicit Over Implicit
-
-- No magic. No hidden side effects.
-- If a function modifies state, the name and signature make that obvious.
-- Prefer longer, descriptive names over short ambiguous ones.
-- No wildcard imports.
-
-### Fail Loudly, Not Silently
-
-- Raise a typed exception with a descriptive message instead of returning `None` or `-1` on error.
-- Never swallow exceptions with a bare `except:` or `except Exception: pass`.
-- On I/O or provider APIs (Anthropic / OpenAI / model inference), never swallow the exception. Log a warning with the exact exception class.
-- High-risk tools are fail-closed by default. If a verdict cannot be computed, the action is blocked.
-
----
+**Fail loudly, then fail closed.** Raise a typed error with a clear message instead of returning `null` on failure. Never swallow errors with an empty `catch`. On any I/O or AI-inference error, log the exact error class. High-risk actions are fail-closed: if a verdict cannot be computed, the action is BLOCK.
 
 ## 2. Algorithmic Standards
 
-Every data structure and algorithm choice must be justified against these criteria.
+**Correctness before cleverness.** Implement correctly per spec first, document time and space complexity in the doc comment, optimize only if a profile shows a bottleneck. Suboptimal-but-correct beats clever-but-wrong.
 
-### Correctness Before Cleverness
+**Idempotency.** Scanning, verdict, and audit append must be idempotent. Replaying the same scan request or the same chain append must not corrupt state or double-write the chain.
 
-Every non-trivial algorithm must:
-1. Be implemented correctly per its specification first.
-2. Have its time and space complexity documented in the docstring.
-3. Only then be optimized, if a profile shows it is a bottleneck.
-
-Suboptimal-but-correct always beats clever-but-wrong. Premature optimization is not permitted.
-
-### Vectorization
-
-All data pipelines and ML feature work must be strictly vectorized. Zero `for` loops over pandas Series or numpy arrays. Use vectorized ops, broadcasting, or `np.vectorize` only as a last resort with a documented reason.
-
-### Idempotency
-
-Execution, routing, and state changes must be strictly idempotent. Replaying the same intercepted tool call, the same audit append, or the same policy load must not corrupt state or double-write the chain.
-
-### Time Complexity Targets
-
-Runtime operations target O(1) or O(log n). The table below is the contract.
+**Complexity targets.** Runtime operations target O(1) or O(log n). This table is the contract.
 
 | Operation | Target | Notes |
-|-----------|--------|-------|
-| Denylist lookup | O(1) | `frozenset` or hash set, never a list scan |
-| Policy rule matching (deterministic) | O(1) to O(k) | k = rule count; compiled trie or hash map |
-| Taint label propagation | O(n) | n = fields in the call graph; no nested full rescans |
+|---|---|---|
+| Known-bad indicator lookup | O(1) | hash set or indexed table, never a list scan |
+| Structural rule matching | O(1) to O(k) | k = rule count |
+| Redirect trace | O(h) bounded | h capped by `MAX_REDIRECT_HOPS`, no unbounded chains |
+| Hash chain append | O(1) | append-only, pointer to tail |
 | Hash chain verification | O(n) | single forward pass |
-| Embedding similarity (intent drift) | O(d) per comparison | d = embedding dim; cache the session intent vector |
-| Session trajectory lookup | O(log n) or O(1) | ordered dict or indexed ring buffer, never full scan |
-| Audit log append | O(1) amortized | append-only with WAL mode in SQLite |
+| Verdict cache lookup | O(1) | cache repeat scans of identical content |
 
-### Space Complexity
+**Space.** Never buffer a full fetched page in memory. Stream and process in chunks, with a hard byte cap. Audit chain reads are bounded per query window. Keep only the content hash and findings in the proof, never the full payload.
 
-- Do not buffer full scraped page content in memory. Use streaming reads with chunked processing.
-- Session trajectory state is bounded. Define `MAX_TRAJECTORY_DEPTH` (default 50) and evict oldest entries.
-- Taint labels propagate lazily. Copy provenance metadata only, never full data blobs.
-
-### Prohibited Patterns
-
-```python
-# NEVER: O(n) list scan for membership test
-if tool_name in ["read_file", "list_dir", "get_secret"]:
-    ...
-# CORRECT: O(1) set lookup
-if tool_name in DENYLIST_TOOLS:  # frozenset in settings
-    ...
-
-# NEVER: recompute embedding on every call
-similarity = cosine(embed(user_prompt), embed(tool_arg))
-# CORRECT: cache the session intent vector at session start
-similarity = cosine(session.intent_vector, embed(tool_arg))
-
-# NEVER: full audit log scan to get latest hash
-prev_hash = db.query("SELECT curr_hash FROM audit_log ORDER BY created_at DESC LIMIT 1")
-# CORRECT: keep a pointer to the tail
-prev_hash = db.get_chain_tail()
-
-# NEVER: a for loop over a numpy array
-risk = [score(x) for x in arr]
-# CORRECT: vectorized
-risk = score_vectorized(arr)
-```
-
----
-
-## 3. Goal-Driven Execution
-
-Define success criteria. Loop until verified.
-
-Transform tasks into verifiable goals before writing code:
-- "Add validation" becomes "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" becomes "Write a test that reproduces it, then make it pass"
-- "Refactor X" becomes "Ensure tests pass before and after"
-
-For multi-step tasks, state a brief plan:
-
-```
-1. [Step] -> verify: [check]
-2. [Step] -> verify: [check]
-3. [Step] -> verify: [check]
-```
-
-Strong success criteria let Claude Code loop independently. Weak criteria like "make it work" force constant clarification, so define the check up front.
-
-### Search and Test First
-
-Thoroughly understand the existing codebase before modifying or building. Write comprehensive tests and verify execution before presenting the final changes.
-
----
-
-## 4. Surgical Changes
+## 3. Surgical Changes
 
 Touch only what you must. Clean up only your own mess.
 
-When editing existing code:
 - Do not improve adjacent code, comments, or formatting.
-- Do not refactor things that are not broken.
-- Match existing style even where you would do it differently.
-- If you notice unrelated dead code, mention it. Do not delete it.
+- Do not refactor what is not broken. Match existing style even where you would do it differently.
+- If you notice unrelated dead code, mention it, do not delete it.
+- Remove imports or symbols your own change orphaned. Never rename or reformat in the same commit as a logic change.
 
-When your changes create orphans:
-- Remove imports, variables, or functions that your changes made unused.
-- Do not remove pre-existing dead code unless asked.
-- Never rename variables or reformat in the same commit as a logic change.
+The test: every changed line traces to the request.
 
-The test: every changed line traces directly to the request.
+**Git attribution.** Do not add AI attribution to commits. No `Co-authored-by` trailer, no "Generated with" line, no attribution in commit bodies or PR descriptions.
 
-### Git Attribution
+## 4. Code Style
 
-Do not add AI attribution trailers to commits. No `Co-authored-by: Claude`, no "Generated with Claude Code" lines, no attribution in commit bodies or PR descriptions.
+**TypeScript, strict.** `strict: true`, `noUncheckedIndexedAccess: true`. No `any` except where genuinely unavoidable, then with a `// reason:` comment. Prefer `unknown` plus a Zod parse at every boundary.
 
----
+**Validation at the edge.** Every inbound request body, hook payload, and external response is parsed with a Zod schema before any logic runs. A parse failure is a `BLOCK` verdict, not an unhandled throw.
 
-## 5. Code Style
+**Types and docs.** Full type annotations on every exported function. A doc comment on every exported function, class, and module, with a complexity note where non-trivial.
 
-### Python Version
+**Async I/O.** All DB, fetch, and AI calls are `async`. Never block the event loop. Put an `AbortSignal` timeout on every outbound fetch.
 
-Python 3.12+. Use modern features: `match` for verdict dispatch, `TypeAlias`, `Self`, `type X = ...` syntax.
+**Typed errors.** Define error classes in `errors.ts`. Never throw a bare `Error`. Examples: `RedirectGuardError`, `ChainIntegrityError`, `InferenceError`.
 
-### Type Annotations
+## 5. Security-Specific Rules
 
-Every function has full type annotations. No `Any` except where genuinely unavoidable, and when used it carries a `# type: ignore[...]  # reason: ...` comment.
+This is a security product. These rules are stricter than ordinary practice.
 
-```python
-# WRONG
-def evaluate(call, context): ...
+**SSRF guard on redirect tracing.** The scanner follows untrusted links, so the tracer is the highest-risk surface. Before every hop: resolve the host, reject loopback, private, link-local, and reserved ranges, reject the cloud metadata address `169.254.169.254`. Re-check after each redirect, never trust the prior hop. Cap hops at `MAX_REDIRECT_HOPS`. The scanner must never be usable to reach internal infrastructure.
 
-# CORRECT
-async def evaluate(
-    call: ToolCallSchema,
-    context: SessionContext,
-) -> PolicyVerdict: ...
-```
+**Hash chain integrity.** SHA-256 only, never MD5 or SHA-1, via Web Crypto `crypto.subtle`. `curr_hash = sha256(prev_hash + canonical(payload))`. The tail pointer updates in the same D1 transaction as the log insert, never split. Verification is a single forward pass returning `CHAIN_OK` or `CHAIN_BROKEN` with the index of the first broken link.
 
-### Docstrings
+**Scan pipeline order.** Cheapest and most certain first, AI last and rarest. Never reorder to call AI before the deterministic layers.
+1. Parse content for links and download-and-run patterns (for example `curl | bash`).
+2. Trace redirects hop by hop behind the SSRF guard.
+3. Deterministic structural rules: raw-IP hosts, punycode and look-alike domains, shorteners, cross-origin hops, excessive chains, embedded execution.
+4. Known-bad indicator match against commercially-cleared feeds.
+5. AI injection detection, only when earlier layers are ambiguous and only for paid usage.
+6. Seal every step into the proof chain and return the verdict.
 
-Every public function, class, and module has a docstring with a complexity note.
+**AI inference (Workers AI).** Call the model through the `env.AI` binding, never a hardcoded endpoint. On any inference error, raise `InferenceError` so the scan fails closed. Strip identifying fields before inference. Model output is a probability of unsafe content; the ALLOW / REVIEW / BLOCK thresholds live in config, not in the inference function.
 
-```python
-def compute_hash_chain(prev_hash: str, payload: bytes) -> str:
-    """Compute the next link in the audit hash chain.
+**Fail-closed default.** If any required check cannot run, the verdict is BLOCK. High-impact agent actions (shell execution, secret reads, outbound network) default to BLOCK on uncertainty; read-only low-impact actions may default to ALLOW.
 
-    Args:
-        prev_hash: SHA-256 hex digest of the previous log entry.
-        payload: Serialized bytes of the current transaction record.
-
-    Returns:
-        SHA-256 hex digest of (prev_hash + payload).
-
-    Time complexity: O(n) where n = len(payload).
-    Space complexity: O(1).
-    """
-```
-
-### Async Rules
-
-- All I/O-bound operations (DB writes, HTTP, model inference) are `async`.
-- Never call a blocking function inside an async context. Use `asyncio.to_thread()` for CPU-bound work.
-- No `asyncio.sleep(0)` yielding hacks. Use proper task scheduling.
-
-### Error Handling
-
-Define typed exceptions in `secureSG/exceptions.py`. Never raise bare `Exception`.
-
-```python
-class PolicyViolationError(SecurityError): ...
-class ChainIntegrityError(AuditError): ...
-class TaintPropagationError(SecurityError): ...
-```
-
----
-
-## 6. Security-Specific Rules
-
-This is a security product and you are a security senior engineer working for top security firms in the world. These rules are stricter than standard Python practice. There is no room for sloppiness or your juniors will learn bad habits.
-
-### Input Validation
-
-- Every inbound JSON-RPC call is validated against a Pydantic schema before any logic runs.
-- Schema validation failures are logged as `BLOCK` verdicts, not Python exceptions that bubble to the client.
-- Never trust field names or values from external input to select execution paths. Allowlist all valid field values.
-
-### Hash Chain Integrity
-
-- SHA-256 only. Never MD5, never SHA-1.
-- `curr_hash = sha256(prev_hash.encode() + payload).hexdigest()`
-- The chain tail pointer updates atomically in the same SQLite transaction as the log insert. Never split these into two operations.
-- Chain verification runs on startup and on dashboard trigger. It is a single forward pass, O(n).
-
-### Taint Tracking
-
-- Taint labels attach at the field level, not the call level.
-- A field is labeled with its source tool and risk tier on ingestion.
-- Taint propagation follows data flow through the call graph. A derived field inherits the highest risk tier of its sources.
-- Sending any field with taint tier `HIGH` to an external communication tool is an automatic `BLOCK` before the semantic check runs.
-
-### Model Inference (OpenAI guard provider)
-
-- The OpenAI client is constructed once at startup from `OPENAI_API_KEY`. Never reconstruct it per request.
-- Inference is an `async` call to the OpenAI API. On any OpenAI error the provider raises `InferenceError` so the Screener fails closed.
-- The model does not receive raw user PII. Strip identifying fields before inference if the policy tier is `REDACT`.
-- Model output is a probability that the content is unsafe, returned via strict JSON-schema structured output. The ALLOW / HUMAN_APPROVAL_REQUIRED / BLOCK thresholds live in `settings.py`, not in the inference function.
-
-### Fail-Closed Default
-
-```python
-DEFAULT_FAIL_MODE = Verdict.BLOCK  # per-tier, in settings.py
-
-TOOL_FAIL_MODES: dict[str, Verdict] = {
-    "read_secret": Verdict.BLOCK,
-    "send_email": Verdict.BLOCK,
-    "execute_shell": Verdict.BLOCK,
-    "read_file": Verdict.ALLOW,   # read-only, low-impact
-}
-```
-
----
-
-## 7. File Structure
+## 6. File Structure
 
 ```
-secureSG/
-    guard/
-        proxy.py           # FastAPI proxy server
-        interceptor.py     # JSON-RPC capture and dispatch
-        enforcer.py        # Policy verdict engine
-        taint.py           # Field-level taint tracking
-        trajectory.py      # Session-level sequence analysis
-    warden/
-        discovery.py       # MCP tool schema risk analysis
-        scope.py           # Denylist generation
-        intent.py          # Intent-to-action drift detector
-        embeddings.py      # Embedding cache and similarity
+secureai/                # the Worker + API (TypeScript on Cloudflare Workers)
+  src/
+    scanner/             # pipeline orchestration, verdict assembly
+    pipeline/
+      parse.ts           # link and exec-pattern extraction
+      redirects.ts       # hop-by-hop tracer with SSRF guard
+      rules.ts           # deterministic structural rules
+      indicators.ts      # known-bad feed lookup
+      inference.ts       # Workers AI injection detection
     audit/
-        chain.py           # Hash chain implementation
-        logger.py          # Append-only audit log writer
-        verifier.py        # Chain integrity checker
-    models/
-        openai_provider.py # OpenAI guard provider (P(unsafe) via structured output)
-        loader.py          # One-time guard-provider construction on startup
-    schemas/
-        tool_call.py       # Pydantic schemas for JSON-RPC
-        verdict.py         # Pydantic schemas for policy verdicts
-        audit.py           # Pydantic schemas for log entries
-    policies/
-        default.yaml
-        high_risk_tools.yaml
-    config/
-        settings.py        # All config via Pydantic BaseSettings
-    dashboard/
-        api.py             # FastAPI routes
-        ws.py              # WebSocket live feed
-    exceptions.py
-    main.py
-tests/
-    unit/
-    integration/
-    e2e/
-config/
-    .env.example
-CLAUDE.md
-README.md
+      chain.ts           # SHA-256 hash chain
+      verify.ts          # chain verifier
+    guard/               # Claude Code / Cursor hook handlers
+    auth/                # PBKDF2 passwords, HMAC sessions, OTP (2FA), roles
+    email/               # Resend sender for the 2FA one-time codes
+    billing/             # Stripe gateway (checkout, webhooks, portal)
+    db/                  # D1 access: accounts, usage, billing, otp, scans, admin
+    middleware/          # auth resolution + tier/cap gating
+    routes/              # scan, verify, guard, register/login(+2FA)/logout/me,
+                         #   key/rotate, checkout/webhook/portal, stats,
+                         #   scans/recent, admin/{overview,members,role,remove}
+    schemas/             # Zod schemas
+    config/              # typed Env, thresholds, rule loading
+    errors.ts
+    verdict.ts
+    index.ts             # Worker entry, route table
+  migrations/            # D1 schema migrations (accounts → billing → auth/stats
+                         #   → 2FA → roles → scan history)
+  wrangler.jsonc
+  CLAUDE.md
+  README.md
+scanner/                 # the React 19 + Vite + Tailwind SPA (served by the Worker)
 ```
 
----
+## 7. Testing
 
-## 8. Testing Requirements
+Tests are not optional. Every PR maintains or improves coverage. Use Vitest with the Cloudflare Workers pool.
 
-Tests are not optional. Every PR maintains or improves coverage.
+- Every exported function in `pipeline/`, `audit/`, and `guard/` has a unit test.
+- Hash chain tests cover a correct chain plus a tampered first, middle, and last entry.
+- SSRF guard tests cover loopback, private ranges, link-local, the metadata IP, and a redirect that hops from a public host to a private one.
 
-### Unit Tests
-
-- Every public function in `guard/`, `warden/`, and `audit/` has a unit test.
-- Hash chain tests cover: correct chain, single tampered entry, tampered first entry, tampered last entry.
-- Taint propagation tests cover: clean data, single tainted field, multi-hop propagation, cross-tool taint.
-
-### Integration Tests
-
-- Full proxy intercept cycle: inject a call, verify verdict, verify audit entry, verify chain integrity.
-- Trajectory test: simulate `read_secret` then `send_email` in one session, verify BLOCK.
-
-### E2E Demo Scenario (must pass as a test)
-
-1. Agent scrapes a page containing a prompt injection payload.
-2. Guard detects and blocks the injection.
-3. Agent reads a secret via `read_secret`.
-4. Agent attempts to exfiltrate via `send_email` with the secret in the body.
-5. Taint tracking triggers `BLOCK` before model inference.
-6. A past log entry is tampered in SQLite.
-7. The chain verifier returns `CHAIN_BROKEN` with the index of the first invalid link.
-
-This runs as a pytest fixture, not a manual demo step.
-
-### Test Tooling
-
-```
-pytest
-pytest-asyncio
-pytest-cov
-hypothesis  # property-based tests for hash chain and taint propagation
-```
+**E2E scan scenario (runs as a test, not a manual demo):**
+1. Agent reads content carrying a prompt-injection payload.
+2. Pipeline flags it and returns BLOCK.
+3. Agent attempts a `curl | bash` install from a look-alike domain.
+4. Structural rules return BLOCK before any AI call.
+5. A past audit row is tampered in D1.
+6. The verifier returns `CHAIN_BROKEN` with the first invalid index.
 
 Coverage threshold: 85% minimum, enforced in CI.
 
----
+## 8. Development Workflow
 
-## 9. Development Workflow
+Before writing code: read the relevant section, state assumptions and a short verifiable plan, write the signature and doc comment first, write the test before the implementation, then run tests locally before committing.
 
-### Before Writing Any Code
+**Commit discipline.** One logical change per commit. Format `[component] verb: short description`, for example `[redirects] feat: reject metadata IP on every hop`. Never commit a broken test or a TODO in a critical path. No AI attribution trailers.
 
-1. Read the relevant spec section.
-2. State assumptions and a brief verifiable plan (Section 3).
-3. Write the function signature and docstring first, with complexity annotation.
-4. Write the test before the implementation.
-5. Implement, then run tests locally before committing.
+**Do not:** create helpers and leave them unused, add a dependency without recording the reason in the commit, generate mock data inside production paths, or use `console.log` for debugging in place of the structured logger.
 
-### Commit Discipline
-
-- One logical change per commit.
-- Format: `[component] verb: short description`
-  - `[guard] feat: add field-level taint propagation for HIGH risk tools`
-  - `[audit] fix: atomic chain tail update in SQLite transaction`
-- Never commit a broken test. Never commit with a `# TODO` in a critical path.
-- No AI attribution trailers (Section 4).
-
-### What Claude Code Should Not Do
-
-- Do not create helper utilities and leave them unused.
-- Do not add dependencies without updating `requirements.txt` and documenting the reason in the commit.
-- Do not generate placeholder data or mock responses inside production paths.
-- Do not add `print()` for debugging. Use the structured logger.
-
----
-
-## 10. Environment Setup
+## 9. Environment Setup
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp config/.env.example .env
-
-pytest --cov=secureSG --cov-fail-under=85
-python -m secureSG.main
+npm install
+cp .dev.vars.example .dev.vars   # local secrets, never committed
+npx wrangler dev                 # local Worker with D1 and AI bindings
+npx vitest run --coverage
 ```
 
-The semantic guard judge calls the OpenAI API; set `OPENAI_API_KEY` in `.env`. With no key, the proxy runs deterministic-only (no Screener, intent-drift disabled). API keys are never committed.
-
----
-
-## 11. Dashboard Spec Summary
-
-Four panels, served via the FastAPI dashboard routes:
-
-1. **Alert Feed**: real-time injection alerts with report generation on flag.
-2. **Monthly Summary**: counts of BLOCK / HUMAN_APPROVAL_REQUIRED / ALLOW verdicts, grouped by attack category.
-3. **Safe Content Registry**: list of verified-clean content after redaction, showing sanitized output.
-4. **LLM Status Bar**: WebSocket feed showing model state and live token stream of scraped content being processed.
-
----
+Set Stripe and feed API keys with `wrangler secret put`. With no AI binding available, the scanner runs deterministic-only: structural rules and indicators, no injection model. Secrets are never committed.
 
 ## These Guidelines Are Working If
 
-Diffs contain fewer unnecessary changes, fewer rewrites happen due to overcomplication, and clarifying questions arrive before implementation rather than after mistakes.
+Diffs carry fewer unnecessary changes, fewer rewrites happen from overcomplication, and clarifying questions arrive before implementation rather than after mistakes.

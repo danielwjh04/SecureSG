@@ -1,10 +1,10 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import type {
-  ExaClient,
-  ExaReport,
-  JudgeClient,
-  JudgeResult,
+  ReputationClient,
+  ReputationReport,
+  InferenceClient,
+  InjectionResult,
   Verdict,
 } from '../../shared/contract'
 import { verifyChain } from '../../shared/proof'
@@ -50,17 +50,17 @@ function mockFetch(
   return impl as unknown as typeof fetch
 }
 
-/** A fake Exa client returning fixed reports (or throwing, for fail-closed). */
-class FakeExaClient implements ExaClient {
-  private readonly reports: ExaReport[]
+/** A fake reputation client returning fixed reports (or throwing, fail-closed). */
+class FakeExaClient implements ReputationClient {
+  private readonly reports: ReputationReport[]
   private readonly fail: boolean
 
-  public constructor(reports: ExaReport[], fail = false) {
+  public constructor(reports: ReputationReport[], fail = false) {
     this.reports = reports
     this.fail = fail
   }
 
-  public async assessFinalUrls(_urls: string[]): Promise<ExaReport[]> {
+  public async assessFinalUrls(_urls: string[]): Promise<ReputationReport[]> {
     if (this.fail) {
       throw new Error('exa upstream 503')
     }
@@ -68,21 +68,21 @@ class FakeExaClient implements ExaClient {
   }
 }
 
-/** A fake judge returning a fixed result (or throwing, for fail-closed). */
-class FakeJudgeClient implements JudgeClient {
-  private readonly result: JudgeResult
+/** A fake inference client returning a fixed result (or throwing, fail-closed). */
+class FakeJudgeClient implements InferenceClient {
+  private readonly result: InjectionResult
   private readonly fail: boolean
 
-  public constructor(result: JudgeResult, fail = false) {
+  public constructor(result: InjectionResult, fail = false) {
     this.result = result
     this.fail = fail
   }
 
-  public async judge(
+  public async detect(
     _skillText: string,
-    _exaReports: ExaReport[],
+    _reputation: ReputationReport[],
     _baseline: Verdict,
-  ): Promise<JudgeResult> {
+  ): Promise<InjectionResult> {
     if (this.fail) {
       throw new Error('openai 500')
     }
@@ -90,8 +90,8 @@ class FakeJudgeClient implements JudgeClient {
   }
 }
 
-/** A judge that yields a clean, ALLOW-leaning result. */
-const CLEAN_JUDGE: JudgeResult = {
+/** An inference result that yields a clean, ALLOW-leaning result. */
+const CLEAN_JUDGE: InjectionResult = {
   pInjection: 0.01,
   verdict: 'ALLOW',
   findings: [],
@@ -102,8 +102,8 @@ const CLEAN_JUDGE: JudgeResult = {
 function baseDeps(fetchImpl: typeof fetch): ScanDeps {
   return {
     config: CONFIG,
-    exa: null,
-    judge: null,
+    reputation: null,
+    inference: null,
     fetchImpl,
     scannedAt: FIXED_SCANNED_AT,
   }
@@ -148,8 +148,8 @@ describe('runScan — tighten-only: the judge cannot weaken a BLOCK baseline', (
   })
 
   it('keeps BLOCK even when the judge votes ALLOW with p≈0', async () => {
-    const judge = new FakeJudgeClient(CLEAN_JUDGE)
-    const deps: ScanDeps = { ...baseDeps(FETCH), judge }
+    const inference = new FakeJudgeClient(CLEAN_JUDGE)
+    const deps: ScanDeps = { ...baseDeps(FETCH), inference }
 
     const result = await runScan({ content: SKILL }, deps)
 
@@ -181,7 +181,7 @@ describe('runScan — tighten-only: the judge cannot weaken a BLOCK baseline', (
     })
     const deps: ScanDeps = {
       ...baseDeps(benignFetch),
-      judge: blockingJudge,
+      inference: blockingJudge,
     }
 
     const result = await runScan({ content: benignSkill }, deps)
@@ -197,8 +197,8 @@ describe('runScan — fail-closed: a thrown sponsor never produces ALLOW', () =>
   const FETCH = mockFetch({ 'https://safe.example/': { status: 200 } })
 
   it('escalates to HUMAN_APPROVAL_REQUIRED when Exa throws', async () => {
-    const exa = new FakeExaClient([], true)
-    const deps: ScanDeps = { ...baseDeps(FETCH), exa }
+    const reputation = new FakeExaClient([], true)
+    const deps: ScanDeps = { ...baseDeps(FETCH), reputation }
 
     const result = await runScan({ content: SKILL }, deps)
 
@@ -209,8 +209,8 @@ describe('runScan — fail-closed: a thrown sponsor never produces ALLOW', () =>
   })
 
   it('escalates to HUMAN_APPROVAL_REQUIRED when the judge throws', async () => {
-    const judge = new FakeJudgeClient(CLEAN_JUDGE, true)
-    const deps: ScanDeps = { ...baseDeps(FETCH), judge }
+    const inference = new FakeJudgeClient(CLEAN_JUDGE, true)
+    const deps: ScanDeps = { ...baseDeps(FETCH), inference }
 
     const result = await runScan({ content: SKILL }, deps)
 
@@ -238,7 +238,7 @@ describe('runScan — idempotency: same input + same scannedAt → same head has
   }
 
   it('produces an identical proof head hash on replay', async () => {
-    const exaReports: ExaReport[] = [
+    const reputationReports: ReputationReport[] = [
       {
         url: 'https://b.example/',
         score: '0.12',
@@ -250,8 +250,8 @@ describe('runScan — idempotency: same input + same scannedAt → same head has
     ]
     const makeDeps = (): ScanDeps => ({
       config: CONFIG,
-      exa: new FakeExaClient(exaReports),
-      judge: new FakeJudgeClient(CLEAN_JUDGE),
+      reputation: new FakeExaClient(reputationReports),
+      inference: new FakeJudgeClient(CLEAN_JUDGE),
       fetchImpl: freshFetch(),
       scannedAt: FIXED_SCANNED_AT,
     })

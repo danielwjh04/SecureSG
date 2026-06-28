@@ -53,3 +53,26 @@ export function truncateHash(hex: string): string {
   if (hex.length <= head + tail + 1) return hex
   return `${hex.slice(0, head)}…${hex.slice(-tail)}`
 }
+
+/**
+ * Render an ISO timestamp as a compact relative time against `now`:
+ * "just now" (< 1 min), "Nm ago", "Nh ago", "Nd ago" up to a week, then a short
+ * absolute date. An unparseable timestamp is returned verbatim so the UI never
+ * shows "NaN ago". A future timestamp (clock skew) reads as "just now".
+ *
+ * Time complexity: O(1). Space complexity: O(1).
+ */
+export function relativeTime(iso: string, now: number = Date.now()): string {
+  const then = new Date(iso).getTime()
+  if (Number.isNaN(then)) return iso
+  const seconds = Math.max(0, Math.floor((now - then) / 1000))
+  const minutes = Math.floor(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes}m ago`
+  if (hours < 24) return `${hours}h ago`
+  if (days < 7) return `${days}d ago`
+  const date = new Date(then)
+  return date.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' })
+}

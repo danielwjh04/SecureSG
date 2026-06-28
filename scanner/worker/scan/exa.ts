@@ -12,8 +12,8 @@
  *   - Fail-closed signal: a non-success crawl status for a URL is mapped to a
  *     `flagged` report. `runScan` reads `flagged` and escalates the verdict — a
  *     destination Exa could not vet is never silently treated as clean.
- *   - Float-free at the boundary: the contract's `ExaReport.score` is a STRING
- *     so it can enter a hashed proof step without introducing float
+ *   - Float-free at the boundary: the contract's `ReputationReport.score` is a
+ *     STRING so it can enter a hashed proof step without introducing float
  *     non-determinism (see `shared/contract.ts`).
  *   - Fail-loud on total failure: a thrown SDK error (auth, network, quota)
  *     surfaces as `ReputationError` with the exact underlying class name logged,
@@ -32,7 +32,7 @@
  */
 
 import Exa from 'exa-js'
-import type { ExaClient, ExaReport } from '../../shared/contract'
+import type { ReputationClient, ReputationReport } from '../../shared/contract'
 import { ReputationError } from '../errors'
 
 /**
@@ -109,7 +109,7 @@ const REPUTATION_QUERY =
   'reputation, safety, phishing, malware of this site' as const
 
 /**
- * Construct an {@link ExaClient} over the real `exa-js` SDK.
+ * Construct a {@link ReputationClient} over the real `exa-js` SDK.
  *
  * This is the stable factory name the scan handler imports (`buildExaClient`);
  * keep it in sync with `handlers/scan.ts`. The full `ScannerConfig` structurally
@@ -125,7 +125,7 @@ const REPUTATION_QUERY =
 export function buildExaClient(
   apiKey: string,
   config: ExaReputationConfig,
-): ExaClient {
+): ReputationClient {
   return new ExaReputationClient(apiKey, config)
 }
 
@@ -137,7 +137,7 @@ export function buildExaClient(
  * URL count, keeping the scan inside the Cloudflare free-plan subrequest budget
  * (`config.ts` reserves one subrequest for this call).
  */
-export class ExaReputationClient implements ExaClient {
+export class ExaReputationClient implements ReputationClient {
   private readonly client: ExaContentsSdk
   private readonly config: ExaReputationConfig
 
@@ -164,7 +164,7 @@ export class ExaReputationClient implements ExaClient {
 
   /**
    * Assess every final destination URL in a single batched Exa call and map the
-   * response to `ExaReport[]` aligned 1:1 with the input order.
+   * response to `ReputationReport[]` aligned 1:1 with the input order.
    *
    * Mapping rules:
    *   - A URL whose status entry is missing or non-`OK` (a crawl failure) yields
@@ -188,7 +188,7 @@ export class ExaReputationClient implements ExaClient {
    * @returns Reports aligned 1:1 with `urls`.
    * @throws {ReputationError} On total SDK failure (auth, network, quota, …).
    */
-  public async assessFinalUrls(urls: string[]): Promise<ExaReport[]> {
+  public async assessFinalUrls(urls: string[]): Promise<ReputationReport[]> {
     if (urls.length === 0) {
       return []
     }
@@ -266,7 +266,7 @@ function indexStatusByUrl(
 }
 
 /**
- * Build one `ExaReport` for a URL from its (optional) result and status entries.
+ * Build one `ReputationReport` for a URL from its (optional) result and status entries.
  *
  * A missing or non-success status is the fail-closed branch: the crawl could
  * not be completed, so the destination is unvetted and is flagged with the
@@ -284,7 +284,7 @@ function buildReport(
   url: string,
   result: ExaContentsResult | undefined,
   status: ExaContentsStatus | undefined,
-): ExaReport {
+): ReputationReport {
   const crawlOk = isCrawlSuccessful(status)
 
   if (!crawlOk) {

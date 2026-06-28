@@ -47,7 +47,7 @@ describe('OpenAIJudge', () => {
       }),
     )
     const judge = new OpenAIJudge('k', config)
-    const r = await judge.judge('text', [], 'ALLOW')
+    const r = await judge.detect('text', [], 'ALLOW')
     expect(r.verdict).toBe('BLOCK')
     expect(r.pInjection).toBe(0.9)
     expect(r.findings).toHaveLength(1)
@@ -58,20 +58,20 @@ describe('OpenAIJudge', () => {
       responseWith({ pInjection: 0, verdict: 'ALLOW', findings: [], rationale: 'looks fine' }),
     )
     const judge = new OpenAIJudge('k', config)
-    const r = await judge.judge('text', [], 'BLOCK')
+    const r = await judge.detect('text', [], 'BLOCK')
     expect(r.verdict).toBe('BLOCK')
   })
 
   it('throws JudgeError on malformed JSON output', async () => {
     createMock.mockResolvedValue({ output_text: 'not json at all' })
     const judge = new OpenAIJudge('k', config)
-    await expect(judge.judge('t', [], 'ALLOW')).rejects.toBeInstanceOf(JudgeError)
+    await expect(judge.detect('t', [], 'ALLOW')).rejects.toBeInstanceOf(JudgeError)
   })
 
   it('throws JudgeError when the response carries no output text', async () => {
     createMock.mockResolvedValue({ output: [] })
     const judge = new OpenAIJudge('k', config)
-    await expect(judge.judge('t', [], 'ALLOW')).rejects.toBeInstanceOf(JudgeError)
+    await expect(judge.detect('t', [], 'ALLOW')).rejects.toBeInstanceOf(JudgeError)
   })
 
   it('throws JudgeError on a verdict outside the allowlist', async () => {
@@ -79,7 +79,7 @@ describe('OpenAIJudge', () => {
       responseWith({ pInjection: 0.5, verdict: 'MAYBE', findings: [], rationale: 'x' }),
     )
     const judge = new OpenAIJudge('k', config)
-    await expect(judge.judge('t', [], 'ALLOW')).rejects.toBeInstanceOf(JudgeError)
+    await expect(judge.detect('t', [], 'ALLOW')).rejects.toBeInstanceOf(JudgeError)
   })
 
   it('throws JudgeError on an out-of-range pInjection', async () => {
@@ -87,12 +87,12 @@ describe('OpenAIJudge', () => {
       responseWith({ pInjection: 2, verdict: 'BLOCK', findings: [], rationale: 'x' }),
     )
     const judge = new OpenAIJudge('k', config)
-    await expect(judge.judge('t', [], 'ALLOW')).rejects.toBeInstanceOf(JudgeError)
+    await expect(judge.detect('t', [], 'ALLOW')).rejects.toBeInstanceOf(JudgeError)
   })
 
   it('fails closed (JudgeError) when the API call rejects', async () => {
     createMock.mockRejectedValue(new Error('500 upstream'))
     const judge = new OpenAIJudge('k', config)
-    await expect(judge.judge('t', [], 'ALLOW')).rejects.toBeInstanceOf(JudgeError)
+    await expect(judge.detect('t', [], 'ALLOW')).rejects.toBeInstanceOf(JudgeError)
   })
 })

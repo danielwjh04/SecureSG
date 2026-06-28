@@ -1,5 +1,27 @@
-import { API } from '../config'
-import type { Proof, ScanRequest, ScanResult, VerifyResult } from './types'
+import { adminScanDetailPath, API } from '../config'
+import type {
+  AdminMembersPage,
+  AdminOverview,
+  AdminScanDetail,
+  AdminThreatsPage,
+  AssignableRole,
+  AuthCredentials,
+  AuthResponse,
+  CheckoutResponse,
+  LoginResponse,
+  MeResponse,
+  Proof,
+  RecentScansResponse,
+  RemoveMemberResponse,
+  ResendResponse,
+  RotateKeyResponse,
+  ScanRequest,
+  ScanResult,
+  SetRoleResponse,
+  StatsResponse,
+  VerifyLoginResponse,
+  VerifyResult,
+} from './types'
 
 const JSON_HEADERS = { 'content-type': 'application/json' }
 
@@ -78,3 +100,228 @@ export interface ScanClient {
 
 /** The production scan client, backed by the live API. */
 export const defaultScanClient: ScanClient = { scanSkill }
+
+/**
+ * Send the session cookie on every account call. The Worker serves the SPA and
+ * the API from one origin; `include` keeps the httpOnly session cookie flowing
+ * even when a remote {@link API_BASE} is configured.
+ */
+const WITH_CREDENTIALS = { credentials: 'include' } as const
+
+/**
+ * Register a new account. 409 if the email exists.
+ *
+ * The response is a union: when no email verification is configured server-side,
+ * it returns `{ user }` and the session cookie is already set. When verification
+ * IS active, it returns `{ registered: true }` and NO cookie and NO code —
+ * verification is deferred to login, so the caller must immediately {@link login}
+ * with the same credentials and handle the {@link TwoFactorChallenge} that login
+ * returns (collect the emailed code and complete via {@link loginVerify}).
+ * Discriminate on the `user`/`registered` field.
+ */
+export async function register(
+  credentials: AuthCredentials,
+): Promise<AuthResponse> {
+  return request<AuthResponse>(API.register, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(credentials),
+    ...WITH_CREDENTIALS,
+  })
+}
+
+/**
+ * Sign in to an existing account. 401 on bad creds.
+ *
+ * The response is a union: when email 2FA is NOT configured server-side, it
+ * returns `{ user }` and the session cookie is already set. When 2FA IS
+ * configured, it returns `{ twoFactor: true, challengeId, email }` and NO cookie
+ * — the caller must then collect the emailed code and call {@link loginVerify}.
+ * Discriminate on the `twoFactor` field.
+ */
+export async function login(
+  credentials: AuthCredentials,
+): Promise<LoginResponse> {
+  return request<LoginResponse>(API.login, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify(credentials),
+    ...WITH_CREDENTIALS,
+  })
+}
+
+/**
+ * Complete a 2FA login by submitting the emailed code for a challenge. On
+ * success sets the session cookie and returns `{ user }`. Throws
+ * {@link ApiError}(401) on a wrong/expired/exhausted code, (422) on a malformed
+ * code.
+ */
+export async function loginVerify(
+  challengeId: string,
+  code: string,
+): Promise<VerifyLoginResponse> {
+  return request<VerifyLoginResponse>(API.loginVerify, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ challengeId, code }),
+    ...WITH_CREDENTIALS,
+  })
+}
+
+/**
+ * Request a fresh 2FA code for a pending challenge. Returns the (possibly new)
+ * challenge id to use for the next {@link loginVerify}. Throws
+ * {@link ApiError}(401) when the challenge is gone/expired.
+ */
+export async function loginResend(challengeId: string): Promise<ResendResponse> {
+  return request<ResendResponse>(API.loginResend, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ challengeId }),
+    ...WITH_CREDENTIALS,
+  })
+}
+
+/** Sign out, clearing the session cookie. */
+export async function logout(): Promise<void> {
+  await request<unknown>(API.logout, {
+    method: 'POST',
+    ...WITH_CREDENTIALS,
+  })
+}
+
+/** Fetch the signed-in account. Throws {@link ApiError}(401) when logged out. */
+export async function fetchMe(): Promise<MeResponse> {
+  return request<MeResponse>(API.me, { ...WITH_CREDENTIALS })
+}
+
+/** Fetch the account's protection statistics. */
+export async function fetchStats(): Promise<StatsResponse> {
+  return request<StatsResponse>(API.stats, { ...WITH_CREDENTIALS })
+}
+
+/**
+ * Fetch the account's most recent scans, newest first. `limit` (display-only)
+ * is clamped server-side; omitting it returns the server default. Throws
+ * {@link ApiError}(401) when logged out.
+ */
+export async function fetchRecentScans(limit?: number): Promise<RecentScansResponse> {
+  const path =
+    limit !== undefined ? `${API.recentScans}?limit=${limit}` : API.recentScans
+  return request<RecentScansResponse>(path, { ...WITH_CREDENTIALS })
+}
+
+/**
+ * Fetch the sitewide admin analytics overview. Throws {@link ApiError}(403) when
+ * the signed-in account is not an admin, or (401) when logged out.
+ */
+export async function fetchAdminOverview(): Promise<AdminOverview> {
+  return request<AdminOverview>(API.adminOverview, { ...WITH_CREDENTIALS })
+}
+
+/**
+ * Fetch a page of the members directory, optionally filtered by an email query.
+ * Throws {@link ApiError}(403) when the signed-in account may not view the admin
+ * surface, or (401) when logged out.
+ *
+ * `q` (case-insensitive email substring), `limit`, and `offset` are all
+ * display-only filter/pagination params; the worker trims `q`, lowercases the
+ * match, and clamps `limit`/`offset` server-side (default 100, cap 500), so
+ * omitting them returns the first unfiltered page.
+ */
+export async function fetchMembers(
+  q?: string,
+  limit?: number,
+  offset?: number,
+): Promise<AdminMembersPage> {
+  const params = new URLSearchParams()
+  if (q !== undefined && q.length > 0) params.set('q', q)
+  if (limit !== undefined) params.set('limit', String(limit))
+  if (offset !== undefined) params.set('offset', String(offset))
+  const query = params.toString()
+  const path = query.length > 0 ? `${API.adminMembers}?${query}` : API.adminMembers
+  return request<AdminMembersPage>(path, { ...WITH_CREDENTIALS })
+}
+
+/**
+ * Fetch a page of the blocked-threats report, optionally filtered by a query
+ * that matches the scanned URL or the owning member's email. Throws
+ * {@link ApiError}(403) when the signed-in account may not view the admin
+ * surface, or (401) when logged out.
+ *
+ * `q` (case-insensitive URL-or-email substring), `limit`, and `offset` are
+ * display-only filter/pagination params; the worker clamps them server-side, so
+ * omitting them returns the first unfiltered page (every row is a `BLOCK`).
+ */
+export async function fetchThreats(
+  q?: string,
+  limit?: number,
+  offset?: number,
+): Promise<AdminThreatsPage> {
+  const params = new URLSearchParams()
+  if (q !== undefined && q.length > 0) params.set('q', q)
+  if (limit !== undefined) params.set('limit', String(limit))
+  if (offset !== undefined) params.set('offset', String(offset))
+  const query = params.toString()
+  const path = query.length > 0 ? `${API.adminThreats}?${query}` : API.adminThreats
+  return request<AdminThreatsPage>(path, { ...WITH_CREDENTIALS })
+}
+
+/**
+ * Fetch the full detail of one scanned skill/artifact for the admin detail view,
+ * keyed by the scan id from an {@link AdminThreat} row. Throws
+ * {@link ApiError}(404) when the scan id is unknown or its detail is no longer
+ * available, (403) when the signed-in account may not view the admin surface, or
+ * (401) when logged out.
+ */
+export async function fetchScanDetail(id: string): Promise<AdminScanDetail> {
+  return request<AdminScanDetail>(adminScanDetailPath(id), { ...WITH_CREDENTIALS })
+}
+
+/**
+ * Grant a role to another account (owner-only). Throws {@link ApiError}(403)
+ * when the caller is not an owner or the target is an owner, (404) for an unknown
+ * user, (422) for an invalid role.
+ */
+export async function setMemberRole(
+  userId: string,
+  role: AssignableRole,
+): Promise<SetRoleResponse> {
+  return request<SetRoleResponse>(API.adminMemberRole, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ userId, role }),
+    ...WITH_CREDENTIALS,
+  })
+}
+
+/**
+ * Permanently remove another account (owner-only): hard-deletes the user and all
+ * of its data. Throws {@link ApiError}(403) when the caller is not an owner, the
+ * target is an owner, or the target is the caller themselves; (404) for an
+ * unknown user.
+ */
+export async function removeMember(userId: string): Promise<RemoveMemberResponse> {
+  return request<RemoveMemberResponse>(API.adminMemberRemove, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ userId }),
+    ...WITH_CREDENTIALS,
+  })
+}
+
+/** Rotate the account's API key. The new key is returned once and not stored. */
+export async function rotateApiKey(): Promise<RotateKeyResponse> {
+  return request<RotateKeyResponse>(API.rotateKey, {
+    method: 'POST',
+    ...WITH_CREDENTIALS,
+  })
+}
+
+/** Start a Stripe checkout session and return the URL to redirect to. */
+export async function startCheckout(): Promise<CheckoutResponse> {
+  return request<CheckoutResponse>(API.checkout, {
+    method: 'POST',
+    ...WITH_CREDENTIALS,
+  })
+}

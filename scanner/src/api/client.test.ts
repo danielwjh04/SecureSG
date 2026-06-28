@@ -1,8 +1,26 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ApiError, scanSkill, verifyProof } from './client'
+import {
+  ApiError,
+  fetchMe,
+  fetchRecentScans,
+  login,
+  logout,
+  removeMember,
+  rotateApiKey,
+  scanSkill,
+  startCheckout,
+  verifyProof,
+} from './client'
 import { API } from '../config'
-import type { Proof, ScanRequest, ScanResult, VerifyResult } from './types'
+import type {
+  AuthResponse,
+  MeResponse,
+  Proof,
+  ScanRequest,
+  ScanResult,
+  VerifyResult,
+} from './types'
 
 function mockFetch(response: Partial<Response> & { ok: boolean }): void {
   vi.stubGlobal('fetch', vi.fn(async () => response as Response))
@@ -80,5 +98,126 @@ describe('verifyProof', () => {
     ]
     expect(path).toBe(API.verify)
     expect(JSON.parse(init.body as string)).toEqual({ proof })
+  })
+})
+
+describe('account endpoints', () => {
+  /** Capture the single fetch call so each test asserts path/method/credentials. */
+  function captureFetch(body: unknown): ReturnType<typeof vi.fn> {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => body,
+    }) as Response)
+    vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+
+  function lastInit(fetchMock: ReturnType<typeof vi.fn>): RequestInit {
+    return (fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1]
+  }
+
+  it('login POSTs credentials to API.login with the session cookie', async () => {
+    const user: AuthResponse = { user: { email: 'a@b.com', tier: 'pro' } }
+    const fetchMock = captureFetch(user)
+
+    await expect(login({ email: 'a@b.com', password: 'pw' })).resolves.toEqual(user)
+
+    const [path, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(path).toBe(API.login)
+    expect(init.method).toBe('POST')
+    expect(init.credentials).toBe('include')
+    expect(JSON.parse(init.body as string)).toEqual({ email: 'a@b.com', password: 'pw' })
+  })
+
+  it('fetchMe GETs API.me with credentials and surfaces a 401 as ApiError', async () => {
+    const me: MeResponse = {
+      email: 'a@b.com',
+      tier: 'free',
+      createdAt: '2026-06-01T00:00:00.000Z',
+      apiKeyPrefix: 'sk_live_ab',
+      role: 'member',
+      isAdmin: false,
+      isOwner: false,
+    }
+    const fetchMock = captureFetch(me)
+    await expect(fetchMe()).resolves.toEqual(me)
+    const [path] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(path).toBe(API.me)
+    expect(lastInit(fetchMock).credentials).toBe('include')
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 401, json: async () => ({}) }) as Response),
+    )
+    await expect(fetchMe()).rejects.toMatchObject({ name: 'ApiError', status: 401 })
+  })
+
+  it('fetchRecentScans GETs the recent endpoint with the limit and credentials', async () => {
+    const body = {
+      scans: [
+        {
+          id: 's1',
+          verdict: 'BLOCK',
+          source: { kind: 'url', ref: 'https://example.com' },
+          flagged: 1,
+          headHash: 'a'.repeat(64),
+          scannedAt: '2026-06-28T00:00:00.000Z',
+        },
+      ],
+    }
+    const fetchMock = captureFetch(body)
+    await expect(fetchRecentScans(3)).resolves.toEqual(body)
+    const [path] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(path).toBe(`${API.recentScans}?limit=3`)
+    expect(lastInit(fetchMock).credentials).toBe('include')
+  })
+
+  it('fetchRecentScans omits the query when no limit is given', async () => {
+    const fetchMock = captureFetch({ scans: [] })
+    await fetchRecentScans()
+    const [path] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(path).toBe(API.recentScans)
+  })
+
+  it('removeMember POSTs the user id to the remove endpoint with credentials', async () => {
+    const fetchMock = captureFetch({ removed: 'u1' })
+    await expect(removeMember('u1')).resolves.toEqual({ removed: 'u1' })
+    const [path, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(path).toBe(API.adminMemberRemove)
+    expect(init.method).toBe('POST')
+    expect(init.credentials).toBe('include')
+    expect(JSON.parse(init.body as string)).toEqual({ userId: 'u1' })
+  })
+
+  it('removeMember surfaces a 403 as ApiError', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 403, json: async () => ({}) }) as Response),
+    )
+    await expect(removeMember('u1')).rejects.toMatchObject({ name: 'ApiError', status: 403 })
+  })
+
+  it('logout, rotateApiKey, and startCheckout POST with credentials', async () => {
+    const logoutFetch = captureFetch({})
+    await logout()
+    expect((logoutFetch.mock.calls[0] as unknown as [string, RequestInit])[0]).toBe(
+      API.logout,
+    )
+    expect(lastInit(logoutFetch).method).toBe('POST')
+    expect(lastInit(logoutFetch).credentials).toBe('include')
+
+    const rotateFetch = captureFetch({ apiKey: 'sk_live_new' })
+    await expect(rotateApiKey()).resolves.toEqual({ apiKey: 'sk_live_new' })
+    expect((rotateFetch.mock.calls[0] as unknown as [string, RequestInit])[0]).toBe(
+      API.rotateKey,
+    )
+
+    const checkoutFetch = captureFetch({ url: 'https://stripe.test/s' })
+    await expect(startCheckout()).resolves.toEqual({ url: 'https://stripe.test/s' })
+    expect((checkoutFetch.mock.calls[0] as unknown as [string, RequestInit])[0]).toBe(
+      API.checkout,
+    )
+    expect(lastInit(checkoutFetch).credentials).toBe('include')
   })
 })

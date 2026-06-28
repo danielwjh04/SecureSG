@@ -4,7 +4,7 @@ import type { ApiResource } from '../hooks/useApiResource'
 import { VerdictBanner } from './VerdictBanner'
 import { ScanDashboard } from './ScanDashboard'
 import { RedirectChain } from './RedirectChain'
-import { ExaReputation } from './ExaReputation'
+import { Reputation } from './Reputation'
 import { InjectionFindings } from './InjectionFindings'
 import { ProofViewer } from './ProofViewer'
 import { Panel } from './Panel'
@@ -24,7 +24,7 @@ function settled<T>(data: T): ApiResource<T> {
  * The full scan report, identical for a live scan and a replayed gallery pick.
  *
  * Composes the evidence in fixed order — verdict banner, the at-a-glance scan
- * dashboard, one redirect cascade per traced origin, Exa reputation, injection
+ * dashboard, one redirect cascade per traced origin, reputation, injection
  * findings, then the re-verifiable proof chain. It reads only the
  * {@link ScanResult} prop and owns no scan or network state, so the render path
  * is byte-for-byte the same regardless of where the result came from. Its sole
@@ -32,8 +32,8 @@ function settled<T>(data: T): ApiResource<T> {
  * (keyed on the proof head hash), so every report opens at the verdict and
  * dashboard instead of inheriting the page's prior scroll position.
  *
- * Time complexity: O(c + r + f + n) over chains, Exa reports, injection findings
- * and proof steps. Space complexity: O(1) beyond the rendered tree.
+ * Time complexity: O(c + r + f + n) over chains, reputation reports, injection
+ * findings and proof steps. Space complexity: O(1) beyond the rendered tree.
  */
 export function ResultView({ result }: ResultViewProps): ReactNode {
   useScrollToTopOnChange(result.proof.headHash)
@@ -59,7 +59,7 @@ export function ResultView({ result }: ResultViewProps): ReactNode {
         )}
       </Panel>
 
-      <ExaReputation reports={result.exa} />
+      <Reputation reports={result.reputation} />
 
       <InjectionFindings findings={result.injections} />
 

@@ -1,5 +1,5 @@
 /**
- * The Bastion Skill Safety Scanner SPA shell: a dark, cinematic surface with a
+ * The SecureAI Skill Safety Scanner SPA shell: a dark, cinematic surface with a
  * fullscreen background video behind a glass navbar. `useScan` owns the scan
  * lifecycle and `useHashRoute` selects the top-level surface:
  *   - #enterprise        -> the Enterprise page
@@ -17,26 +17,31 @@ import { BackgroundVideo } from './components/BackgroundVideo'
 import { Navbar } from './components/Navbar'
 import { Hero } from './components/Hero'
 import { HowItWorks } from './components/HowItWorks'
+import { EaseOfUse } from './components/EaseOfUse'
 import { Gallery } from './components/Gallery'
 import { ResultView } from './components/ResultView'
 import { Enterprise } from './components/Enterprise'
+import { Pricing } from './components/Pricing'
+import { Auth } from './components/Auth'
+import { Dashboard } from './components/Dashboard'
+import { AdminDashboard } from './components/AdminDashboard'
 import { useScan } from './scan/useScan'
 import { useHashRoute } from './hooks/useHashRoute'
-import { REPO_URL } from './config'
+import { useAuth } from './hooks/useAuth'
+import { guardRedirect } from './lib/routeGuard'
 import type { ScanState } from './scan/scanMachine'
 
 const SHELL =
   'relative bg-black w-screen min-h-screen flex flex-col selection:bg-white selection:text-black'
 
-/** The site footer: the product mark (Bastion, by the SecureSG team) + links. */
+/** The site footer: the product mark (SecureAI) + links. */
 function Footer(): ReactNode {
   return (
-    <footer className="relative z-10 bg-black border-t border-white/[0.06]">
+    <footer className="relative z-10 bg-black/40 border-t border-white/[0.06]">
       <div className="max-w-5xl mx-auto px-6 py-10 flex flex-col sm:flex-row items-center justify-between gap-4 text-[13px]">
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-white/70" />
-          <span className="text-white/80 font-semibold">Bastion</span>
-          <span className="font-mono text-white/35">by SecureSG</span>
+          <span className="text-white/80 font-semibold">SecureAI</span>
         </div>
         <div className="flex items-center gap-6 font-mono text-white/45">
           <a href="#" className="hover:text-white transition-colors">
@@ -44,14 +49,6 @@ function Footer(): ReactNode {
           </a>
           <a href="#enterprise" className="hover:text-white transition-colors">
             Enterprise
-          </a>
-          <a
-            href={REPO_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="hover:text-white transition-colors"
-          >
-            GitHub
           </a>
         </div>
       </div>
@@ -122,8 +119,20 @@ function ErrorSurface({
 function App(): ReactNode {
   const { route, target } = useHashRoute()
   const controller = useScan()
+  const auth = useAuth()
   const { state } = controller
   const previousRouteRef = useRef(route)
+
+  // The dashboard and admin surfaces are gated. The redirect decision is a pure
+  // function (testable in isolation): an anonymous visitor is bounced to login,
+  // and a non-admin reaching #admin is bounced to their own dashboard. The
+  // redirect runs in an effect (not during render) so it never fires mid-commit.
+  useEffect(() => {
+    const target = guardRedirect(route, auth.status, auth.isAdmin)
+    if (target !== null) {
+      window.location.assign(target)
+    }
+  }, [route, auth.status, auth.isAdmin])
 
   useEffect(() => {
     const sameRoute = previousRouteRef.current === route
@@ -136,7 +145,7 @@ function App(): ReactNode {
         // the section. Landing instantly puts it flush under the navbar (the
         // `:target` scroll-margin clears the navbar) with no gap.
         document
-          .getElementById('how')
+          .getElementById(target)
           ?.scrollIntoView({ block: 'start', behavior: 'instant' })
         return
       }
@@ -150,8 +159,73 @@ function App(): ReactNode {
     return (
       <main id="top" className={SHELL}>
         <BackgroundVideo />
-        <Navbar onHome={controller.reset} />
+        <Navbar onHome={controller.reset} auth={auth} />
         <Enterprise />
+        <Footer />
+      </main>
+    )
+  }
+
+  // Pricing surface.
+  if (route === 'pricing') {
+    return (
+      <main id="top" className={SHELL}>
+        <BackgroundVideo />
+        <Navbar onHome={controller.reset} auth={auth} />
+        <Pricing auth={auth} />
+        <Footer />
+      </main>
+    )
+  }
+
+  // Auth surfaces (login / register): a centered glass card over the video.
+  if (route === 'login' || route === 'register') {
+    return (
+      <main id="top" className={SHELL}>
+        <BackgroundVideo />
+        <div className="fixed inset-0 bg-black/55" aria-hidden="true" />
+        <Navbar onHome={controller.reset} auth={auth} />
+        <Auth mode={route} auth={auth} />
+        <Footer />
+      </main>
+    )
+  }
+
+  // Dashboard surface. While the session is resolving, hold a quiet loading
+  // line; an anonymous visitor is redirected by the effect above.
+  if (route === 'dashboard') {
+    return (
+      <main id="top" className={SHELL}>
+        <BackgroundVideo />
+        <div className="fixed inset-0 bg-black/55" aria-hidden="true" />
+        <Navbar onHome={controller.reset} auth={auth} />
+        {auth.status === 'authenticated' && auth.user !== null ? (
+          <Dashboard user={auth.user} auth={auth} />
+        ) : (
+          <section className="relative z-10 flex-1 flex items-center justify-center px-6 py-20">
+            <p className="text-white/45 font-mono text-sm">Loading your dashboard…</p>
+          </section>
+        )}
+        <Footer />
+      </main>
+    )
+  }
+
+  // Admin surface. Guarded by the effect above: a non-admin (or anonymous)
+  // visitor is redirected away, so the analytics only render for an admin.
+  if (route === 'admin') {
+    return (
+      <main id="top" className={SHELL}>
+        <BackgroundVideo />
+        <div className="fixed inset-0 bg-black/55" aria-hidden="true" />
+        <Navbar onHome={controller.reset} auth={auth} />
+        {auth.status === 'authenticated' && auth.isAdmin ? (
+          <AdminDashboard canManageRoles={auth.isOwner} viewerEmail={auth.user?.email ?? null} />
+        ) : (
+          <section className="relative z-10 flex-1 flex items-center justify-center px-6 py-20">
+            <p className="text-white/45 font-mono text-sm">Loading admin analytics…</p>
+          </section>
+        )}
         <Footer />
       </main>
     )
@@ -162,8 +236,8 @@ function App(): ReactNode {
     return (
       <main id="top" className={SHELL}>
         <BackgroundVideo />
-        <div className="fixed inset-0 bg-black/80" aria-hidden="true" />
-        <Navbar onHome={controller.reset} />
+        <div className="fixed inset-0 bg-black/55" aria-hidden="true" />
+        <Navbar onHome={controller.reset} auth={auth} />
         <ResultSurface state={state} onReset={controller.reset} />
         <Footer />
       </main>
@@ -175,8 +249,8 @@ function App(): ReactNode {
     return (
       <main id="top" className="relative bg-black w-screen h-screen flex flex-col overflow-hidden selection:bg-white selection:text-black">
         <BackgroundVideo />
-        <div className="fixed inset-0 bg-black/70" aria-hidden="true" />
-        <Navbar onHome={controller.reset} />
+        <div className="fixed inset-0 bg-black/55" aria-hidden="true" />
+        <Navbar onHome={controller.reset} auth={auth} />
         <ErrorSurface message={state.message} onRetry={controller.reset} />
       </main>
     )
@@ -187,10 +261,11 @@ function App(): ReactNode {
   return (
     <main id="top" className={SHELL}>
       <BackgroundVideo />
-      <Navbar onHome={controller.reset} />
+      <Navbar onHome={controller.reset} auth={auth} />
       <Hero state={state} onScan={controller.scan} />
-      <div className="relative z-10 bg-black">
+      <div className="relative z-10 bg-black/60">
         <HowItWorks />
+        <EaseOfUse />
         <section className="max-w-5xl mx-auto px-6 pb-20">
           <Gallery onPick={controller.loadResult} />
         </section>

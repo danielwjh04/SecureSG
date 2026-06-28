@@ -54,8 +54,8 @@ interface StatCard {
  * danger flag are computed from the result; nothing is hardcoded. The danger
  * tint turns on only when that metric contributes a blocking/flagged signal.
  *
- * Time complexity: O(f + c + i + e) over findings, chains, injections and Exa
- * reports. Space complexity: O(1) — a fixed set of tiles.
+ * Time complexity: O(f + c + i + e) over findings, chains, injections and
+ * reputation reports. Space complexity: O(1) — a fixed set of tiles.
  */
 function buildStatCards(result: ScanResult): StatCard[] {
   const blockingFindings = result.findings.filter(
@@ -65,7 +65,7 @@ function buildStatCards(result: ScanResult): StatCard[] {
   const highInjections = result.injections.filter(
     (injection) => injection.severity === 'BLOCK',
   ).length
-  const flaggedExa = result.exa.filter((report) => report.flagged).length
+  const flaggedReputation = result.reputation.filter((report) => report.flagged).length
 
   return [
     {
@@ -90,11 +90,11 @@ function buildStatCards(result: ScanResult): StatCard[] {
       danger: highInjections > 0,
     },
     {
-      key: 'exa',
-      label: 'Exa Reputation',
-      value: result.exa.length,
-      detail: `${flaggedExa} flagged`,
-      danger: flaggedExa > 0,
+      key: 'reputation',
+      label: 'Reputation',
+      value: result.reputation.length,
+      detail: `${flaggedReputation} flagged`,
+      danger: flaggedReputation > 0,
     },
     {
       key: 'proof',
@@ -141,7 +141,7 @@ function sourceLabel(source: ScanResult['source']): string {
  * it, so a benign scan and an attack scan render the same component with
  * different numbers and no hardcoded content.
  *
- * Time complexity: O(f + c + i + e) over the result's evidence arrays. Space
+ * Time complexity: O(f + c + i + r) over the result's evidence arrays. Space
  * complexity: O(1) beyond the rendered tree.
  */
 export function ScanDashboard({ result }: { result: ScanResult }): ReactNode {

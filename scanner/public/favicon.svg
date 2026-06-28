@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" role="img" aria-label="SecureAI">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0e1622"/>
+      <stop offset="1" stop-color="#070b12"/>
+    </linearGradient>
+    <linearGradient id="shield" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#34d399"/>
+      <stop offset="1" stop-color="#10b981"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="7" fill="url(#bg)"/>
+  <rect x="0.5" y="0.5" width="31" height="31" rx="6.5" fill="none" stroke="#34d399" stroke-opacity="0.22"/>
+  <path d="M16 4.5 L26 8 V15 C26 21.6 21.5 26.2 16 28 C10.5 26.2 6 21.6 6 15 V8 Z" fill="url(#shield)" fill-opacity="0.16" stroke="url(#shield)" stroke-width="1.7" stroke-linejoin="round"/>
+  <path d="M11.4 15.5 L14.7 18.8 L20.6 12.4" fill="none" stroke="#34d399" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -6,10 +6,9 @@ import { StatusPill } from './StatusPill'
 
 /**
  * Prompt-injection findings panel. Renders one block per signal surfaced by the
- * OpenAI injection judge: the category badge, a {@link StatusPill} for the
- * finding's severity, the flagged excerpt in a mono block, and the judge's
- * rationale. The empty state ("No injection detected") is owned by {@link Panel}
- * via `isEmpty`.
+ * AI injection check: the category badge, a {@link StatusPill} for the finding's
+ * severity, the flagged excerpt in a mono block, and the analysis rationale. The
+ * empty state ("No injection detected") is owned by {@link Panel} via `isEmpty`.
  *
  * The incoming `findings` array rides on an already-resolved `ScanResult`, so it
  * is wrapped in a settled {@link ApiResource} to reuse Panel's head and

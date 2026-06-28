@@ -1,6 +1,6 @@
 import { render } from '@testing-library/react'
 import type {
-  ExaReport,
+  ReputationReport,
   InjectionFinding,
   LinkChain,
   ProofStep,
@@ -15,7 +15,7 @@ function makeResult(overrides: Partial<ScanResult> = {}): ScanResult {
   return {
     verdict: 'ALLOW',
     chains: [],
-    exa: [],
+    reputation: [],
     injections: [],
     findings: [],
     proof: { genesisHash: '0'.repeat(64), steps: [], headHash: 'a'.repeat(64) },
@@ -33,7 +33,7 @@ function injection(severity: Verdict): InjectionFinding {
   return { excerpt: 'x', category: 'cat', severity, rationale: 'why' }
 }
 
-function exa(flagged: boolean): ExaReport {
+function reputation(flagged: boolean): ReputationReport {
   return {
     url: 'https://evil.example/x',
     score: '0.5',
@@ -86,7 +86,7 @@ describe('ScanDashboard', () => {
     expect(value(container, 'Rule Findings')).toBe('0')
     expect(value(container, 'Redirect Cascades')).toBe('0')
     expect(value(container, 'Injection Signals')).toBe('0')
-    expect(value(container, 'Exa Reputation')).toBe('0')
+    expect(value(container, 'Reputation')).toBe('0')
     expect(value(container, 'Proof Steps')).toBe('0')
 
     // No metric contributes a blocking/flagged signal, so no tile is tinted.
@@ -117,7 +117,7 @@ describe('ScanDashboard', () => {
       findings: [finding('BLOCK'), finding('ALLOW')],
       chains: [chain({ dangerousHopIndex: 1 }), chain()],
       injections: [injection('BLOCK')],
-      exa: [exa(true), exa(false)],
+      reputation: [reputation(true), reputation(false)],
       proof: { genesisHash: '0'.repeat(64), steps: [step(0), step(1)], headHash: 'b'.repeat(64) },
     })
     const { container } = render(<ScanDashboard result={result} />)
@@ -134,9 +134,9 @@ describe('ScanDashboard', () => {
     expect(detail(container, 'Injection Signals')).toBe('1 high-severity')
     expect(isDanger(container, 'Injection Signals')).toBe(true)
 
-    expect(value(container, 'Exa Reputation')).toBe('2')
-    expect(detail(container, 'Exa Reputation')).toBe('1 flagged')
-    expect(isDanger(container, 'Exa Reputation')).toBe(true)
+    expect(value(container, 'Reputation')).toBe('2')
+    expect(detail(container, 'Reputation')).toBe('1 flagged')
+    expect(isDanger(container, 'Reputation')).toBe(true)
 
     // The proof tile counts steps and never tints, even on a blocking scan.
     expect(value(container, 'Proof Steps')).toBe('2')

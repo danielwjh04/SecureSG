@@ -4,9 +4,9 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import type {
-  ExaReport,
-  JudgeClient,
-  JudgeResult,
+  ReputationReport,
+  InferenceClient,
+  InjectionResult,
   Verdict,
 } from '../../shared/contract'
 import { verifyChain } from '../../shared/proof'
@@ -40,7 +40,7 @@ const NO_NETWORK_FETCH: typeof fetch = ((input: RequestInfo | URL) => {
   return Promise.reject(new Error(`unexpected fixture network fetch: ${url}`))
 }) as typeof fetch
 
-const INJECTION_JUDGE_RESULT: JudgeResult = {
+const INJECTION_JUDGE_RESULT: InjectionResult = {
   pInjection: 0.98,
   verdict: 'BLOCK',
   findings: [
@@ -63,13 +63,13 @@ const INJECTION_JUDGE_RESULT: JudgeResult = {
     'The fixture combines hidden instruction override with local secret collection.',
 }
 
-/** A recorded judge that returns the injected malicious-fixture finding. */
-class RecordedJudgeClient implements JudgeClient {
-  public async judge(
+/** A recorded inference client that returns the injected malicious-fixture finding. */
+class RecordedJudgeClient implements InferenceClient {
+  public async detect(
     _skillText: string,
-    _exaReports: ExaReport[],
+    _reputation: ReputationReport[],
     _baseline: Verdict,
-  ): Promise<JudgeResult> {
+  ): Promise<InjectionResult> {
     return INJECTION_JUDGE_RESULT
   }
 }
@@ -78,11 +78,11 @@ function readDemoFixture(filename: string): string {
   return readFileSync(join(DEMO_DIR, filename), 'utf8')
 }
 
-function deps(fetchImpl: typeof fetch, judge: JudgeClient | null): ScanDeps {
+function deps(fetchImpl: typeof fetch, inference: InferenceClient | null): ScanDeps {
   return {
     config: CONFIG,
-    exa: null,
-    judge,
+    reputation: null,
+    inference,
     fetchImpl,
     scannedAt: FIXED_SCANNED_AT,
   }
