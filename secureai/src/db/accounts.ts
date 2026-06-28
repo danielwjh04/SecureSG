@@ -123,6 +123,21 @@ function parseTier(value: unknown): AccountTier {
   throw new AuthError(`stored account tier is not recognized: ${String(value)}`)
 }
 
+/**
+ * Validate a caller-supplied tier value against the {@link ACCOUNT_TIERS}
+ * allowlist, or `null` when it is not one of {`free`, `pro`, `enterprise`}. The
+ * non-throwing counterpart to {@link parseTier} (which is for stored columns):
+ * used by the owner-only tier-change endpoint to reject (422) anything outside
+ * the allowlist BEFORE any write, so an unrecognized tier can never be persisted.
+ *
+ * Time complexity: O(1). Space complexity: O(1).
+ */
+export function parseAccountTier(value: unknown): AccountTier | null {
+  return typeof value === 'string' && ACCOUNT_TIERS.has(value)
+    ? (value as AccountTier)
+    : null
+}
+
 /** Read a column as a non-empty string, failing closed on a malformed record. */
 function requireString(row: Row, column: string): string {
   const value = row[column]

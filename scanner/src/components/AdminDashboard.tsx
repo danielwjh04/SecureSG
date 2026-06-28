@@ -45,6 +45,7 @@ import {
   fetchThreats,
   removeMember,
   setMemberRole,
+  setMemberTier,
 } from '../api/client'
 import {
   ADMIN_SEARCH_DEBOUNCE_MS,
@@ -55,12 +56,16 @@ import { relativeTime } from '../lib/format'
 import { zeroFillSignups } from '../lib/stats'
 import { ThreatDetailModal } from './ThreatDetailModal'
 import type {
+  AccountTier,
   AdminMember,
   AdminOverview,
   AdminThreat,
   AdminTierCounts,
   AssignableRole,
 } from '../api/types'
+
+/** The plans an owner may assign from the members directory, in display order. */
+const ASSIGNABLE_TIERS: readonly AccountTier[] = ['free', 'pro', 'enterprise']
 
 /** The shared palette, so cards and charts use exact, consistent colors. */
 const COLOR = {
@@ -439,10 +444,12 @@ type MembersState =
  * Joined, Scans) loaded from `GET /api/admin/members`. A search input filters by
  * email via the server-side `q` param (debounced ~300ms so a fast typist sends
  * one request, not one per character); the heading count reflects the filtered
- * total. An owner (`canManageRoles`) gets a per-row Member/Admin select plus a
- * Remove action on non-owner rows; owners' rows show a static "Owner" badge, and
- * a non-owner viewer sees every role read-only with no Remove action. The
- * viewer's OWN row (matched by `viewerEmail`) never shows the Remove action.
+ * total. An owner (`canManageRoles`) gets a per-row free/pro/enterprise plan
+ * select, a Member/Admin role select, plus a Remove action on non-owner rows;
+ * owners' rows show a static "Owner" role badge (but their plan stays
+ * switchable), and a non-owner viewer sees every plan and role read-only with no
+ * Remove action. The viewer's OWN row (matched by `viewerEmail`) never shows the
+ * Remove action.
  */
 function MembersSection({
   canManageRoles,
@@ -490,6 +497,24 @@ function MembersSection({
       } catch (error) {
         const message =
           error instanceof ApiError ? error.message : 'Could not update the role.'
+        setState({ phase: 'error', message })
+      } finally {
+        setPendingId(null)
+      }
+    },
+    [load, debouncedQuery],
+  )
+
+  const changeTier = useCallback(
+    async (userId: string, tier: AccountTier): Promise<void> => {
+      setPendingId(userId)
+      try {
+        await setMemberTier(userId, tier)
+        // Re-read the current query so the table reflects authoritative state.
+        load(debouncedQuery)
+      } catch (error) {
+        const message =
+          error instanceof ApiError ? error.message : 'Could not update the plan.'
         setState({ phase: 'error', message })
       } finally {
         setPendingId(null)
@@ -564,6 +589,7 @@ function MembersSection({
             viewerEmail={viewerEmail}
             pendingId={pendingId}
             onChangeRole={changeRole}
+            onChangeTier={changeTier}
             onRemove={remove}
           />
         ))}
@@ -605,6 +631,7 @@ interface MembersTableProps {
   viewerEmail: string | null
   pendingId: string | null
   onChangeRole: (userId: string, role: AssignableRole) => void
+  onChangeTier: (userId: string, tier: AccountTier) => void
   onRemove: (member: AdminMember) => void
 }
 
@@ -620,6 +647,7 @@ function MembersTable({
   viewerEmail,
   pendingId,
   onChangeRole,
+  onChangeTier,
   onRemove,
 }: MembersTableProps) {
   return (
@@ -647,9 +675,12 @@ function MembersTable({
             >
               <td className="py-2.5 pr-4 font-medium text-white break-all">{member.email}</td>
               <td className="py-2.5 pr-4">
-                <span className="text-white/60 font-mono text-[11px] uppercase tracking-[0.1em]">
-                  {member.tier}
-                </span>
+                <TierCell
+                  member={member}
+                  canManageRoles={canManageRoles}
+                  pending={pendingId === member.id}
+                  onChangeTier={onChangeTier}
+                />
               </td>
               <td className="py-2.5 pr-4">
                 <RoleCell
@@ -713,6 +744,45 @@ function RemoveCell({ member, viewerEmail, pending, onRemove }: RemoveCellProps)
     >
       <Trash2 className="w-3.5 h-3.5" />
     </button>
+  )
+}
+
+interface TierCellProps {
+  member: AdminMember
+  canManageRoles: boolean
+  pending: boolean
+  onChangeTier: (userId: string, tier: AccountTier) => void
+}
+
+/**
+ * The plan/tier cell. An owner viewer (`canManageRoles`) gets a free/pro/
+ * enterprise select to switch any member's plan; everyone else sees the static
+ * tier label. Mirrors {@link RoleCell}'s control exactly (styling, pending +
+ * refetch), with no owner carve-out — an owner's own plan is switchable too,
+ * since plan is not access control.
+ */
+function TierCell({ member, canManageRoles, pending, onChangeTier }: TierCellProps) {
+  if (!canManageRoles) {
+    return (
+      <span className="text-white/60 font-mono text-[11px] uppercase tracking-[0.1em]">
+        {member.tier}
+      </span>
+    )
+  }
+  return (
+    <select
+      aria-label={`Plan for ${member.email}`}
+      value={member.tier}
+      disabled={pending}
+      onChange={(event) => onChangeTier(member.id, event.target.value as AccountTier)}
+      className="glass-pill bg-transparent text-white/80 text-[12px] font-medium px-2.5 py-1 rounded-full cursor-pointer focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed [&>option]:bg-black [&>option]:text-white"
+    >
+      {ASSIGNABLE_TIERS.map((tier) => (
+        <option key={tier} value={tier}>
+          {tier.charAt(0).toUpperCase() + tier.slice(1)}
+        </option>
+      ))}
+    </select>
   )
 }
 

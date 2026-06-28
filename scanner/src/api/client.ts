@@ -1,5 +1,6 @@
 import { adminScanDetailPath, API } from '../config'
 import type {
+  AccountTier,
   AdminMembersPage,
   AdminOverview,
   AdminScanDetail,
@@ -18,6 +19,7 @@ import type {
   ScanRequest,
   ScanResult,
   SetRoleResponse,
+  SetTierResponse,
   StatsResponse,
   VerifyLoginResponse,
   VerifyResult,
@@ -291,6 +293,23 @@ export async function setMemberRole(
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify({ userId, role }),
+    ...WITH_CREDENTIALS,
+  })
+}
+
+/**
+ * Switch another account's plan/tier (owner-only). Throws {@link ApiError}(403)
+ * when the caller is not an owner, (404) for an unknown user, (422) for an
+ * invalid tier.
+ */
+export async function setMemberTier(
+  userId: string,
+  tier: AccountTier,
+): Promise<SetTierResponse> {
+  return request<SetTierResponse>(API.adminMemberTier, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ userId, tier }),
     ...WITH_CREDENTIALS,
   })
 }

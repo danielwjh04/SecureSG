@@ -237,6 +237,12 @@ export interface SetRoleResponse {
   role: AssignableRole
 }
 
+/** Response body for `POST /api/admin/members/tier`: the updated id + tier. */
+export interface SetTierResponse {
+  id: string
+  tier: AccountTier
+}
+
 /** Response body for `POST /api/admin/members/remove`: the removed account id. */
 export interface RemoveMemberResponse {
   removed: string

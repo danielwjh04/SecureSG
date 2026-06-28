@@ -18,6 +18,7 @@ import { signSession, SESSION_COOKIE_NAME } from '../auth/session'
 import {
   handleAdminMemberRemove,
   handleAdminMemberRole,
+  handleAdminMemberTier,
   handleAdminMembers,
   handleAdminOverview,
   handleAdminScanDetail,
@@ -57,6 +58,14 @@ function threatsReq(headers: Record<string, string> = {}, query = ''): Request {
 
 function roleReq(headers: Record<string, string>, body: unknown): Request {
   return new Request('https://secureai.test/api/admin/members/role', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+  })
+}
+
+function tierReq(headers: Record<string, string>, body: unknown): Request {
+  return new Request('https://secureai.test/api/admin/members/tier', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...headers },
     body: JSON.stringify(body),
@@ -466,6 +475,88 @@ describe('handleAdminMemberRole', () => {
 
   it('returns 503 when the account store is absent', async () => {
     const res = await handleAdminMemberRole(roleReq({}, { userId: 'x', role: 'admin' }), deps(null))
+    expect(res.status).toBe(503)
+  })
+})
+
+describe('handleAdminMemberTier', () => {
+  it('lets an owner upgrade a member free → pro (200) and persists it', async () => {
+    const { db, store } = memoryDatabase()
+    const ownerKey = await adminBearer(db)
+    const { user } = await createFreeUser(db, 'upgrade@example.com')
+    const res = await handleAdminMemberTier(tierReq(bearer(ownerKey), { userId: user.id, tier: 'pro' }), deps(db))
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { id: string; tier: string }
+    expect(body).toEqual({ id: user.id, tier: 'pro' })
+    expect(store.users.get(user.id)?.tier).toBe('pro')
+  })
+
+  it('lets an owner downgrade a member pro → free (200)', async () => {
+    const { db, store } = memoryDatabase()
+    const ownerKey = await adminBearer(db)
+    const { user } = await createFreeUser(db, 'downgrade@example.com')
+    await setUserTier(db, user.id, 'pro')
+    const res = await handleAdminMemberTier(tierReq(bearer(ownerKey), { userId: user.id, tier: 'free' }), deps(db))
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { id: string; tier: string }
+    expect(body.tier).toBe('free')
+    expect(store.users.get(user.id)?.tier).toBe('free')
+  })
+
+  it('lets an owner set a member to enterprise (200)', async () => {
+    const { db, store } = memoryDatabase()
+    const ownerKey = await adminBearer(db)
+    const { user } = await createFreeUser(db, 'ent@example.com')
+    const res = await handleAdminMemberTier(tierReq(bearer(ownerKey), { userId: user.id, tier: 'enterprise' }), deps(db))
+    expect(res.status).toBe(200)
+    expect(store.users.get(user.id)?.tier).toBe('enterprise')
+  })
+
+  it('forbids a granted admin from changing tiers (403)', async () => {
+    const { db } = memoryDatabase()
+    await adminBearer(db)
+    const { user: adminUser, apiKey: adminKey } = await createFreeUser(db, 'admin-tier@example.com')
+    await setUserRole(db, adminUser.id, 'admin')
+    const { user: target } = await createFreeUser(db, 'target-tier@example.com')
+    const res = await handleAdminMemberTier(tierReq(bearer(adminKey), { userId: target.id, tier: 'pro' }), deps(db))
+    expect(res.status).toBe(403)
+  })
+
+  it('forbids a plain member from changing tiers (403)', async () => {
+    const { db } = memoryDatabase()
+    await adminBearer(db)
+    const { apiKey: memberKey } = await createFreeUser(db, 'm-tier@example.com')
+    const { user: target } = await createFreeUser(db, 't-tier@example.com')
+    const res = await handleAdminMemberTier(tierReq(bearer(memberKey), { userId: target.id, tier: 'pro' }), deps(db))
+    expect(res.status).toBe(403)
+  })
+
+  it('returns 401 for an anonymous caller', async () => {
+    const { db } = memoryDatabase()
+    const { user: target } = await createFreeUser(db, 't-tier-anon@example.com')
+    const res = await handleAdminMemberTier(tierReq({}, { userId: target.id, tier: 'pro' }), deps(db))
+    expect(res.status).toBe(401)
+  })
+
+  it('rejects an invalid tier with 422 and leaves the target untouched', async () => {
+    const { db, store } = memoryDatabase()
+    const ownerKey = await adminBearer(db)
+    const { user: target } = await createFreeUser(db, 't-tier-bad@example.com')
+    const res = await handleAdminMemberTier(tierReq(bearer(ownerKey), { userId: target.id, tier: 'platinum' }), deps(db))
+    expect(res.status).toBe(422)
+    // The unrecognized tier is rejected at the boundary: the column stays free.
+    expect(store.users.get(target.id)?.tier).toBe('free')
+  })
+
+  it('returns 404 for an unknown user id', async () => {
+    const { db } = memoryDatabase()
+    const ownerKey = await adminBearer(db)
+    const res = await handleAdminMemberTier(tierReq(bearer(ownerKey), { userId: 'ghost', tier: 'pro' }), deps(db))
+    expect(res.status).toBe(404)
+  })
+
+  it('returns 503 when the account store is absent', async () => {
+    const res = await handleAdminMemberTier(tierReq({}, { userId: 'x', tier: 'pro' }), deps(null))
     expect(res.status).toBe(503)
   })
 })

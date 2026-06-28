@@ -280,6 +280,16 @@ describe('worker.fetch routing', () => {
     expect(res.status).toBe(405)
   })
 
+  it('routes POST /api/admin/members/tier and returns 503 when DB is unconfigured', async () => {
+    const res = await worker.fetch(req('/api/admin/members/tier', 'POST', { userId: 'x', tier: 'pro' }), baseEnv)
+    expect(res.status).toBe(503)
+  })
+
+  it('rejects a non-POST /api/admin/members/tier with 405', async () => {
+    const res = await worker.fetch(req('/api/admin/members/tier', 'GET'), baseEnv)
+    expect(res.status).toBe(405)
+  })
+
   it('routes POST /api/key/rotate and returns 503 when DB is unconfigured', async () => {
     const res = await worker.fetch(req('/api/key/rotate', 'POST', {}), baseEnv)
     expect(res.status).toBe(503)

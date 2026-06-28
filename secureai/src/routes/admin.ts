@@ -15,6 +15,7 @@
  */
 
 import type { ScannerConfig } from '../config/env'
+import type { AccountTier } from '../db/accounts'
 import type { Database } from '../db/database'
 import type { MemberRow, SignupDay, ThreatRow, TierCounts, UsageTotals } from '../db/admin'
 import type { ScanDetail } from '../db/scans'
@@ -27,12 +28,13 @@ import type {
 import type { Role } from '../auth/roles'
 import { ParseError } from '../errors'
 import { authenticate } from '../middleware/auth'
-import { findRoleByUserId, getAccountProfile } from '../db/accounts'
+import { findRoleByUserId, getAccountProfile, parseAccountTier, setUserTier } from '../db/accounts'
 import { getScanDetail } from '../db/scans'
 import { canManageRoles, canViewAdmin, effectiveRole, parseAssignableRole } from '../auth/roles'
 import {
   adminSearchQuerySchema,
   memberRoleSchema,
+  memberTierSchema,
   removeMemberSchema,
   threatsLimitSchema,
   threatsOffsetSchema,
@@ -602,6 +604,81 @@ export async function handleAdminMemberRole(request: Request, deps: AdminDeps): 
       return Response.json({ error: 'invalid_role' }, { status: STATUS_UNPROCESSABLE })
     }
     return Response.json({ error: 'admin_member_role_failed' }, { status: STATUS_SERVER_ERROR })
+  }
+}
+
+/**
+ * Parse + Zod-validate the tier-change body, or throw {@link ParseError} (→ 422).
+ *
+ * Time complexity: O(b) in the body byte length. Space complexity: O(b).
+ */
+async function parseTierBody(
+  request: Request,
+): Promise<{ userId: string; tier: AccountTier }> {
+  let raw: unknown
+  try {
+    raw = await request.json()
+  } catch (error: unknown) {
+    throw new ParseError('request body is not valid JSON', { cause: error })
+  }
+  const parsed = memberTierSchema.safeParse(raw)
+  if (!parsed.success) {
+    throw new ParseError(`invalid member tier request: ${parsed.error.message}`)
+  }
+  return parsed.data
+}
+
+/**
+ * Handle `POST /api/admin/members/tier`. Authenticates the caller and requires
+ * the effective role to be OWNER ({@link canManageRoles}; an admin or member is
+ * 403, an anonymous caller is 401). Validates `{ userId, tier }` where `tier` is
+ * allowlisted to {`free`, `pro`, `enterprise`} (422 otherwise). Rejects an
+ * unknown `userId` with 404 — read BEFORE any write. On success sets the
+ * target's tier and returns `200 { id, tier }`. Requires `env.DB` (503
+ * otherwise).
+ *
+ * Unlike role, tier is not conferred by the email allowlist, so an owner-by-email
+ * target is a legitimate subject (an owner may sit on any plan); the gate is
+ * solely {@link canManageRoles}.
+ *
+ * Time complexity: O(1) — a bounded set of indexed reads + one PK update.
+ * Space complexity: O(1).
+ */
+export async function handleAdminMemberTier(request: Request, deps: AdminDeps): Promise<Response> {
+  if (deps.db === null) {
+    return unavailable()
+  }
+  const db = deps.db
+  try {
+    const viewer = await resolveViewer(request, deps, db, canManageRoles)
+    if (viewer instanceof Response) {
+      return viewer
+    }
+
+    const body = await parseTierBody(request)
+    // Defense in depth: the schema already allowlists tier, but re-validate so a
+    // value can never slip past into the write (CLAUDE.md §6).
+    const tier = parseAccountTier(body.tier)
+    if (tier === null) {
+      return Response.json({ error: 'invalid_tier' }, { status: STATUS_UNPROCESSABLE })
+    }
+
+    // The target must exist. Read its profile first so an unknown id is a 404 —
+    // BEFORE any write.
+    const target = await getAccountProfile(db, body.userId)
+    if (target === null) {
+      return Response.json({ error: 'not_found' }, { status: STATUS_NOT_FOUND })
+    }
+
+    await setUserTier(db, body.userId, tier)
+    return Response.json({ id: body.userId, tier }, { status: STATUS_OK })
+  } catch (error: unknown) {
+    const className = error instanceof Error ? error.constructor.name : typeof error
+    console.error(`[handleAdminMemberTier] ${className}`)
+    if (error instanceof ParseError) {
+      return Response.json({ error: 'invalid_tier' }, { status: STATUS_UNPROCESSABLE })
+    }
+    return Response.json({ error: 'admin_member_tier_failed' }, { status: STATUS_SERVER_ERROR })
   }
 }
 

@@ -33,6 +33,7 @@ export const API = {
   adminOverview: `${API_BASE}/api/admin/overview`,
   adminMembers: `${API_BASE}/api/admin/members`,
   adminMemberRole: `${API_BASE}/api/admin/members/role`,
+  adminMemberTier: `${API_BASE}/api/admin/members/tier`,
   adminMemberRemove: `${API_BASE}/api/admin/members/remove`,
   adminThreats: `${API_BASE}/api/admin/threats`,
 } as const
@@ -48,7 +49,7 @@ export function adminScanDetailPath(id: string): string {
 }
 
 /** Where to email enterprise sales when the Pricing page Contact CTA is used. */
-export const ENTERPRISE_CONTACT_EMAIL = 'SecureAI@zurielst.com' as const
+export const ENTERPRISE_CONTACT_EMAIL = 'sales-secureAI@zurielst.com' as const
 
 /** How many trailing days the dashboard trend chart covers (zero-filled). */
 export const STATS_TREND_DAYS = 30

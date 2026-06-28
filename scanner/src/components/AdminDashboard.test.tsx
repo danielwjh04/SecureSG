@@ -187,11 +187,12 @@ describe('AdminDashboard · members', () => {
     expect(screen.queryByRole('combobox')).toBeNull()
     view.unmount()
 
-    // Owner viewer: exactly one select (the non-owner row); the owner row stays a badge.
+    // Owner viewer: exactly one ROLE select (the non-owner row); the owner row
+    // stays a badge. (Plan selects are asserted separately.)
     render(<AdminDashboard canManageRoles={true} />)
     await waitFor(() => expect(screen.getAllByText('a@securesg.test').length).toBeGreaterThan(0))
-    const selects = screen.getAllByRole('combobox')
-    expect(selects).toHaveLength(1)
+    const roleSelects = screen.getAllByRole('combobox', { name: /^Role for / })
+    expect(roleSelects).toHaveLength(1)
     expect(screen.getByText('Owner')).toBeInTheDocument()
   })
 
@@ -205,11 +206,57 @@ describe('AdminDashboard · members', () => {
       .mockResolvedValue({ id: 'u1', role: 'admin' })
 
     render(<AdminDashboard canManageRoles={true} />)
-    await waitFor(() => expect(screen.getByRole('combobox')).toBeInTheDocument())
+    const roleSelect = await screen.findByRole('combobox', { name: 'Role for a@securesg.test' })
 
-    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'admin' } })
+    fireEvent.change(roleSelect, { target: { value: 'admin' } })
 
     await waitFor(() => expect(setSpy).toHaveBeenCalledWith('u1', 'admin'))
+    // The table is re-read after a successful change (initial load + refetch).
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2))
+  })
+
+  it('shows a plan select for an owner, but read-only tier text for a non-owner viewer', async () => {
+    stubOverview()
+    vi.spyOn(client, 'fetchMembers').mockResolvedValue(
+      membersPage([member({ id: 'u1', email: 'a@securesg.test', role: 'member', tier: 'pro' })]),
+    )
+
+    // Non-owner viewer: the tier is read-only text, no plan select.
+    const view = render(<AdminDashboard canManageRoles={false} />)
+    await waitFor(() => expect(screen.getByText('a@securesg.test')).toBeInTheDocument())
+    expect(screen.queryByRole('combobox', { name: /^Plan for / })).toBeNull()
+    expect(screen.getByText('pro')).toBeInTheDocument()
+    view.unmount()
+
+    // Owner viewer: a plan select reflecting the member's current tier.
+    render(<AdminDashboard canManageRoles={true} />)
+    const planSelect = await screen.findByRole('combobox', {
+      name: 'Plan for a@securesg.test',
+    })
+    expect(planSelect).toHaveValue('pro')
+    // It offers all three plans.
+    expect(screen.getByRole('option', { name: 'Free' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Pro' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Enterprise' })).toBeInTheDocument()
+  })
+
+  it('calls setMemberTier with the new tier and refetches when an owner changes a plan', async () => {
+    stubOverview()
+    const fetchSpy = vi
+      .spyOn(client, 'fetchMembers')
+      .mockResolvedValue(
+        membersPage([member({ id: 'u1', email: 'a@securesg.test', role: 'member', tier: 'free' })]),
+      )
+    const tierSpy = vi
+      .spyOn(client, 'setMemberTier')
+      .mockResolvedValue({ id: 'u1', tier: 'enterprise' })
+
+    render(<AdminDashboard canManageRoles={true} />)
+    const planSelect = await screen.findByRole('combobox', { name: 'Plan for a@securesg.test' })
+
+    fireEvent.change(planSelect, { target: { value: 'enterprise' } })
+
+    await waitFor(() => expect(tierSpy).toHaveBeenCalledWith('u1', 'enterprise'))
     // The table is re-read after a successful change (initial load + refetch).
     await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(2))
   })

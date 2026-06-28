@@ -35,6 +35,7 @@ import { handleRecentScans } from './routes/recentScans'
 import {
   handleAdminMemberRemove,
   handleAdminMemberRole,
+  handleAdminMemberTier,
   handleAdminMembers,
   handleAdminOverview,
   handleAdminScanDetail,
@@ -64,6 +65,7 @@ const ROUTE_ADMIN_OVERVIEW = '/api/admin/overview'
 const ROUTE_ADMIN_THREATS = '/api/admin/threats'
 const ROUTE_ADMIN_MEMBERS = '/api/admin/members'
 const ROUTE_ADMIN_MEMBER_ROLE = '/api/admin/members/role'
+const ROUTE_ADMIN_MEMBER_TIER = '/api/admin/members/tier'
 const ROUTE_ADMIN_MEMBER_REMOVE = '/api/admin/members/remove'
 /** Prefix of the caught-scan detail path; the scan id follows as `:id`. */
 const ROUTE_ADMIN_SCANS_PREFIX = '/api/admin/scans/'
@@ -250,6 +252,13 @@ export default {
         return jsonError('method not allowed', 405)
       }
       return await handleAdminMemberRole(request, adminDeps(env, config))
+    }
+
+    if (url.pathname === ROUTE_ADMIN_MEMBER_TIER) {
+      if (request.method !== 'POST') {
+        return jsonError('method not allowed', 405)
+      }
+      return await handleAdminMemberTier(request, adminDeps(env, config))
     }
 
     if (url.pathname === ROUTE_ADMIN_MEMBER_REMOVE) {

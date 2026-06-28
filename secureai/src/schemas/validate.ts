@@ -182,6 +182,24 @@ export const memberRoleSchema = z
 export type MemberRolePayload = z.infer<typeof memberRoleSchema>
 
 /**
+ * Body of `POST /api/admin/members/tier`: the target account id plus the tier to
+ * set it to. `tier` is allowlisted to exactly {`free`, `pro`, `enterprise`} at
+ * the boundary — any other value is a 422 here, never reaching the handler, so
+ * the endpoint can never write an unrecognized tier (which would fail closed on
+ * the next read). `.strict()` rejects unexpected fields so a malformed payload
+ * fails closed.
+ */
+export const memberTierSchema = z
+  .object({
+    userId: z.string().min(1).max(100),
+    tier: z.enum(['free', 'pro', 'enterprise']),
+  })
+  .strict()
+
+/** The validated payload `POST /api/admin/members/tier` operates on. */
+export type MemberTierPayload = z.infer<typeof memberTierSchema>
+
+/**
  * Body of `POST /api/admin/members/remove`: the target account id to hard-delete.
  * `.strict()` rejects unexpected fields so a malformed payload fails closed at
  * the boundary. The route enforces the owner-only gate and the
