@@ -3,7 +3,52 @@ import type { Database } from './database'
 import type { ScanHistoryRow } from './scans'
 import { memoryDatabase } from './memory.test'
 import { createFreeUser } from './accounts'
-import { getScanDetail, insertScan, insertScanDetail, listRecentScans } from './scans'
+import {
+  getScanDetail,
+  insertScan,
+  insertScanDetail,
+  listRecentScans,
+  scanDetailStatement,
+  scanHistoryStatement,
+} from './scans'
+
+describe('statement builders', () => {
+  it('scanHistoryStatement emits the scan_history insert with positional params in column order', () => {
+    const stmt = scanHistoryStatement({
+      id: 's1',
+      userId: 'u1',
+      verdict: 'BLOCK',
+      sourceKind: 'url',
+      sourceRef: 'https://evil.test',
+      flagged: 2,
+      headHash: 'h1',
+      scannedAt: '2026-06-28T00:00:00.000Z',
+    })
+    expect(stmt.sql).toContain('INSERT INTO scan_history')
+    expect(stmt.params).toEqual([
+      's1',
+      'u1',
+      'BLOCK',
+      'url',
+      'https://evil.test',
+      2,
+      'h1',
+      '2026-06-28T00:00:00.000Z',
+    ])
+  })
+
+  it('scanDetailStatement emits the idempotent (ON CONFLICT DO NOTHING) detail insert', () => {
+    const stmt = scanDetailStatement({
+      scanId: 's1',
+      content: 'malicious body',
+      resultJson: '{"findings":[]}',
+      createdAt: '2026-06-28T00:00:00.000Z',
+    })
+    expect(stmt.sql).toContain('INSERT INTO scan_details')
+    expect(stmt.sql).toContain('ON CONFLICT (scan_id) DO NOTHING')
+    expect(stmt.params).toEqual(['s1', 'malicious body', '{"findings":[]}', '2026-06-28T00:00:00.000Z'])
+  })
+})
 
 function row(userId: string, scannedAt: string, overrides: Partial<ScanHistoryRow> = {}): ScanHistoryRow {
   return {

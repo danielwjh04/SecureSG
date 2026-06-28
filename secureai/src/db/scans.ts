@@ -13,7 +13,7 @@
  * skill text never reaches this layer, so the history can never re-leak it.
  */
 
-import type { Database, Row } from './database'
+import type { BatchStatement, Database, Row } from './database'
 
 /** A row to persist into `scan_history` — one successful authenticated scan. */
 export interface ScanHistoryRow {
@@ -112,11 +112,24 @@ function readCount(row: Row, column: string): number {
  * @param row - The history row to persist.
  */
 export async function insertScan(db: Database, row: ScanHistoryRow): Promise<void> {
-  await db.execute(
-    'INSERT INTO scan_history ' +
+  const statement = scanHistoryStatement(row)
+  await db.execute(statement.sql, statement.params)
+}
+
+/**
+ * Build the `scan_history` insert {@link BatchStatement} {@link insertScan} runs,
+ * exposed so the scan write path can include it in an atomic {@link Database.batch}.
+ * Produces byte-identical SQL to the standalone insert.
+ *
+ * Time complexity: O(1). Space complexity: O(1).
+ */
+export function scanHistoryStatement(row: ScanHistoryRow): BatchStatement {
+  return {
+    sql:
+      'INSERT INTO scan_history ' +
       '(id, user_id, verdict, source_kind, source_ref, flagged, head_hash, scanned_at) ' +
       'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    [
+    params: [
       row.id,
       row.userId,
       row.verdict,
@@ -126,7 +139,7 @@ export async function insertScan(db: Database, row: ScanHistoryRow): Promise<voi
       row.headHash,
       row.scannedAt,
     ],
-  )
+  }
 }
 
 /**
@@ -183,11 +196,25 @@ export async function listRecentScans(
  * @param row - The detail row to persist (content already truncated by caller).
  */
 export async function insertScanDetail(db: Database, row: ScanDetailRow): Promise<void> {
-  await db.execute(
-    'INSERT INTO scan_details (scan_id, content, result_json, created_at) ' +
+  const statement = scanDetailStatement(row)
+  await db.execute(statement.sql, statement.params)
+}
+
+/**
+ * Build the `scan_details` insert {@link BatchStatement} {@link insertScanDetail}
+ * runs, exposed so the scan write path can include it in an atomic
+ * {@link Database.batch}. Produces byte-identical SQL (incl. the
+ * `ON CONFLICT (scan_id) DO NOTHING` idempotency guard) to the standalone insert.
+ *
+ * Time complexity: O(1). Space complexity: O(1).
+ */
+export function scanDetailStatement(row: ScanDetailRow): BatchStatement {
+  return {
+    sql:
+      'INSERT INTO scan_details (scan_id, content, result_json, created_at) ' +
       'VALUES (?, ?, ?, ?) ON CONFLICT (scan_id) DO NOTHING',
-    [row.scanId, row.content, row.resultJson, row.createdAt],
-  )
+    params: [row.scanId, row.content, row.resultJson, row.createdAt],
+  }
 }
 
 /**

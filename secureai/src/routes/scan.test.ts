@@ -319,6 +319,27 @@ describe('handleScan — caught-scan detail', () => {
     expect(evidence['findings']).toEqual(result.findings)
   })
 
+  it('returns the verdict (200) even when the atomic write batch fails', async () => {
+    const { env, db, store } = fixture()
+    const { apiKey } = await createFreeUser(db, 'writefail@example.com')
+    // Force the per-scan write batch to reject; posture B keeps the scan response
+    // a success (the verdict was already computed; the cap was already enforced).
+    ;(env.DB as unknown as { batch: () => Promise<unknown> }).batch = async () => {
+      throw new Error('injected batch failure')
+    }
+    const res = await handleScan(
+      post(malicious, undefined, { Authorization: `Bearer ${apiKey}` }),
+      env,
+      config,
+    )
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as ScanResult).verdict).toBe('BLOCK')
+    // Nothing was persisted (the batch was all-or-nothing and it failed).
+    expect(store.usage.size).toBe(0)
+    expect(store.scanHistory.size).toBe(0)
+    expect(store.scanDetails.size).toBe(0)
+  })
+
   it('does NOT store a detail row for a clean (ALLOW) authenticated scan', async () => {
     const { env, db, store } = fixture()
     const { apiKey } = await createFreeUser(db, 'clean@example.com')

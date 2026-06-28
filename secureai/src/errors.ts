@@ -17,6 +17,13 @@ export class ScannerError extends Error {
 /** Invalid or out-of-range runtime configuration (fail-closed at load). */
 export class ConfigError extends ScannerError {}
 
+/**
+ * A persistence fault raised by the {@link ../db/database.Database} seam when a
+ * batched (atomic, all-or-nothing) write rejects. Wraps the underlying D1 error
+ * so callers can distinguish a batch failure from a single-statement fault.
+ */
+export class PersistenceError extends ScannerError {}
+
 /** A value could not be canonicalized to hash-stable bytes. */
 export class CanonicalizationError extends ScannerError {}
 

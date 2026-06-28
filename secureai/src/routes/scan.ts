@@ -9,7 +9,7 @@
  */
 
 import type { Env, ScannerConfig } from '../config/env'
-import type { Database } from '../db/database'
+import type { BatchStatement, Database } from '../db/database'
 import type { ScanRequest, ScanResult } from '../schemas/contract'
 import {
   ConfigError,
@@ -28,8 +28,13 @@ import { scanRequestSchema } from '../schemas/validate'
 import { d1Database } from '../db/database'
 import { authenticate } from '../middleware/auth'
 import { aiAllowedForTier, enforceDailyCap } from '../middleware/gate'
-import { recordVerdict } from '../db/usage'
-import { insertScan, insertScanDetail } from '../db/scans'
+import { recordVerdict, verdictStatement } from '../db/usage'
+import {
+  insertScan,
+  insertScanDetail,
+  scanDetailStatement,
+  scanHistoryStatement,
+} from '../db/scans'
 import { resolveCachedScan, type VerdictCacheKv } from '../scanner/verdictCache'
 
 const STATUS_OK = 200
@@ -222,6 +227,73 @@ async function recordScanDetail(
 }
 
 /**
+ * Persist a scan's writes (metering + recent-scans history + caught-scan detail)
+ * as ONE atomic {@link Database.batch}. Builds the statement set with the SAME
+ * gates as the sequential path — metering always; history only for an
+ * AUTHENTICATED caller; detail only for an authenticated NON-clean scan — then
+ * runs them in a single transaction.
+ *
+ * Posture: the batch is best-effort for the RESPONSE — a failure is logged and
+ * the computed verdict is still returned (the daily cap was already enforced
+ * before the scan, so a rarely-dropped metering increment risks at most one extra
+ * scan on a DB blip). Atomicity means the three writes never half-apply
+ * (no "usage bumped but history missing").
+ *
+ * Time complexity: O(d) in the detail content byte length. Space complexity: O(d).
+ */
+async function writeScanAtomic(
+  db: Database,
+  subject: string,
+  day: string,
+  result: ScanResult,
+  flaggedCount: number,
+  aiUsed: boolean,
+  scannedText: string | null,
+  config: ScannerConfig,
+): Promise<void> {
+  const statements: BatchStatement[] = [
+    verdictStatement(subject, day, result.verdict, flaggedCount, { ai: aiUsed }),
+  ]
+  if (!subject.startsWith(ANON_SUBJECT_PREFIX)) {
+    const scanId = crypto.randomUUID()
+    statements.push(
+      scanHistoryStatement({
+        id: scanId,
+        userId: subject,
+        verdict: result.verdict,
+        sourceKind: result.source.kind,
+        sourceRef: result.source.ref.slice(0, SOURCE_REF_MAX_CHARS),
+        flagged: flaggedCount,
+        headHash: result.proof.headHash,
+        scannedAt: result.scannedAt,
+      }),
+    )
+    if (result.verdict !== CLEAN_VERDICT) {
+      statements.push(
+        scanDetailStatement({
+          scanId,
+          content:
+            scannedText === null ? null : truncateToBytes(scannedText, config.detailMaxBytes),
+          resultJson: JSON.stringify({
+            findings: result.findings,
+            chains: result.chains,
+            injections: result.injections,
+            reputation: result.reputation,
+          }),
+          createdAt: result.scannedAt,
+        }),
+      )
+    }
+  }
+  try {
+    await db.batch(statements)
+  } catch (error: unknown) {
+    const className = error instanceof Error ? error.constructor.name : typeof error
+    console.warn(`[handleScan] scan write batch failed (${className}); continuing`)
+  }
+}
+
+/**
  * Handle `POST /api/scan`. Authenticates the caller, enforces its per-tier daily
  * cap BEFORE scanning, gates the paid AI stage to eligible tiers, runs the scan,
  * then meters usage. `scannedAt` is stamped here, at the edge, so the
@@ -326,22 +398,31 @@ export async function handleScan(
     const flaggedCount = result.reputation.filter((report) => report.flagged).length
 
     if (db !== null) {
-      // Meter the scan: scans + the verdict column + flagged-indicator count +
-      // ai_scans, in one atomic upsert, so the protection stats stay consistent
-      // with the scan count. This runs on a cache hit too — the cache saves the
-      // compute, never the per-caller accounting.
-      await recordVerdict(db, ctx.subject, today, result.verdict, flaggedCount, {
-        ai: inference !== null,
-      })
-
-      // Recent-scans history + caught-scan detail (authenticated callers only).
-      // Both are best-effort: a failure is logged and never fails the scan
-      // response. The detail is paired to the history row by a single minted id,
-      // and is persisted ONLY for a non-clean (non-ALLOW) scan (the recorder
-      // gates on the verdict + the anonymous prefix).
-      const scanId = crypto.randomUUID()
-      await recordScanHistory(db, scanId, ctx.subject, result, flaggedCount)
-      await recordScanDetail(db, scanId, ctx.subject, result, scannedText, config)
+      // Persist metering + recent-scans history + caught-scan detail. The default
+      // path writes all three as ONE atomic batch (and is non-fatal to the
+      // response on failure); the legacy path keeps the prior behavior — metering
+      // critical (a failure 500s), history/detail best-effort — behind a config
+      // flag. Both run on a cache hit too: the cache saves the compute, never the
+      // per-caller accounting.
+      if (config.scanWriteAtomic) {
+        await writeScanAtomic(
+          db,
+          ctx.subject,
+          today,
+          result,
+          flaggedCount,
+          inference !== null,
+          scannedText,
+          config,
+        )
+      } else {
+        await recordVerdict(db, ctx.subject, today, result.verdict, flaggedCount, {
+          ai: inference !== null,
+        })
+        const scanId = crypto.randomUUID()
+        await recordScanHistory(db, scanId, ctx.subject, result, flaggedCount)
+        await recordScanDetail(db, scanId, ctx.subject, result, scannedText, config)
+      }
     }
 
     return Response.json(result, { status: STATUS_OK })

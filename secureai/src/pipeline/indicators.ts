@@ -102,11 +102,11 @@ export class DenylistReputationClient implements ReputationClient {
    *   escalates the scan rather than treating the host as clean).
    */
   public async assessFinalUrls(urls: string[]): Promise<ReputationReport[]> {
-    const reports: ReputationReport[] = []
-    for (const url of urls) {
-      reports.push(await this.assessOne(url))
-    }
-    return reports
+    // Each URL's assessment is independent (a parent-domain walk plus at most one
+    // KV read), so they run concurrently; `Promise.all` preserves input order, and
+    // a single rejection still propagates (fail-closed) exactly as the prior
+    // sequential fold did. Bounded by the caller's URL cap (`SCANNER_MAX_URLS`).
+    return Promise.all(urls.map((url) => this.assessOne(url)))
   }
 
   /**

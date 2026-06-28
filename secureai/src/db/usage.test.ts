@@ -1,6 +1,28 @@
 import { describe, expect, it } from 'vitest'
 import { memoryDatabase } from './memory.test'
-import { getStats, getUsage, incrementUsage, recordVerdict } from './usage'
+import { getStats, getUsage, incrementUsage, recordVerdict, verdictStatement } from './usage'
+
+describe('verdictStatement', () => {
+  it('selects the verdict column from a fixed allowlist (never interpolating input)', () => {
+    const block = verdictStatement('u1', '2026-06-28', 'BLOCK', 2, { ai: true })
+    expect(block.sql).toContain('blocks = blocks + 1')
+    expect(block.sql).not.toContain('allows = allows + 1')
+    const allow = verdictStatement('u1', '2026-06-28', 'ALLOW', 0, { ai: false })
+    expect(allow.sql).toContain('allows = allows + 1')
+  })
+
+  it('produces the same persisted counters as recordVerdict when executed', async () => {
+    const { db, store } = memoryDatabase()
+    const stmt = verdictStatement('u1', '2026-06-28', 'HUMAN_APPROVAL_REQUIRED', 3, { ai: true })
+    await db.execute(stmt.sql, stmt.params)
+    expect(store.usage.get('u1 2026-06-28')).toMatchObject({
+      scans: 1,
+      ai_scans: 1,
+      reviews: 1,
+      flagged: 3,
+    })
+  })
+})
 
 describe('getUsage', () => {
   it('returns zero counters for a subject with no activity', async () => {

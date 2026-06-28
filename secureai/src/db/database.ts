@@ -13,6 +13,8 @@
  * updates — composes from these primitives.
  */
 
+import { PersistenceError } from '../errors'
+
 /** A single row read back from the database, column name → value. */
 export type Row = Record<string, unknown>
 
@@ -24,6 +26,17 @@ export type Row = Record<string, unknown>
  */
 export interface WriteResult {
   readonly changes: number
+}
+
+/**
+ * One statement in a {@link Database.batch}: a parameterized SQL string plus its
+ * positionally-bound params. Mirrors the `(sql, params)` pair every other seam
+ * method takes, so a builder can return one of these and the same SQL runs either
+ * standalone (via {@link Database.execute}) or inside a batch.
+ */
+export interface BatchStatement {
+  readonly sql: string
+  readonly params: readonly unknown[]
 }
 
 /**
@@ -54,6 +67,27 @@ export interface Database {
    * without a follow-up read. Callers that do not need it simply ignore it.
    */
   execute(sql: string, params: readonly unknown[]): Promise<WriteResult>
+
+  /**
+   * Run several writes as ONE atomic batch (D1 wraps the list in a single
+   * implicit transaction: sequential, all-or-nothing). Returns one
+   * {@link WriteResult} per statement, in input order. Use this to collapse a
+   * fixed set of independent writes (e.g. the per-scan metering + history + detail
+   * inserts) into a single round trip with transactional integrity.
+   *
+   * @throws {PersistenceError} If the underlying batch rejects (nothing committed).
+   */
+  batch(statements: readonly BatchStatement[]): Promise<readonly WriteResult[]>
+}
+
+/**
+ * The D1 batch surface the {@link d1Database} adapter calls — a `batch` over
+ * prepared statements returning per-statement results. Declared structurally so
+ * the in-memory test fake need only implement `prepare` + `batch`.
+ */
+interface D1BatchCapable {
+  prepare(sql: string): { bind(...params: unknown[]): unknown }
+  batch(statements: unknown[]): Promise<{ meta?: { changes?: number } }[]>
 }
 
 /**
@@ -91,6 +125,22 @@ export function d1Database(db: D1Database): Database {
       // backend that omits it fails closed (treated as a no-op) rather than
       // falsely reporting a change.
       return { changes: result.meta.changes ?? 0 }
+    },
+    async batch(statements: readonly BatchStatement[]): Promise<readonly WriteResult[]> {
+      // D1.batch runs the prepared list as one implicit transaction (atomic,
+      // sequential). Wrap a rejection as a typed PersistenceError so callers can
+      // tell a batch fault from a single-statement one; nothing committed on throw.
+      const batchable = db as unknown as D1BatchCapable
+      const prepared = statements.map((statement) =>
+        batchable.prepare(statement.sql).bind(...statement.params),
+      )
+      let results: { meta?: { changes?: number } }[]
+      try {
+        results = await batchable.batch(prepared)
+      } catch (error: unknown) {
+        throw new PersistenceError('database batch write failed', { cause: error })
+      }
+      return results.map((result) => ({ changes: result.meta?.changes ?? 0 }))
     },
   }
 }

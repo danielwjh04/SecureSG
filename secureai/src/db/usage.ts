@@ -10,7 +10,7 @@
  * the paid AI stage, so cost can be attributed per subject.
  */
 
-import type { Database, Row } from './database'
+import type { BatchStatement, Database, Row } from './database'
 import type { Verdict } from '../schemas/contract'
 
 /** A subject's counters for a single UTC day. */
@@ -166,16 +166,37 @@ export async function recordVerdict(
   flaggedCount: number,
   options: IncrementOptions,
 ): Promise<void> {
+  const statement = verdictStatement(subject, day, verdict, flaggedCount, options)
+  await db.execute(statement.sql, statement.params)
+}
+
+/**
+ * Build the metering upsert {@link BatchStatement} {@link recordVerdict} runs,
+ * exposed so the scan write path can include it in an atomic {@link Database.batch}
+ * alongside the history/detail inserts. Produces byte-identical SQL to the
+ * standalone path (the verdict column is chosen from a fixed allowlist, never
+ * interpolated from caller input).
+ *
+ * Time complexity: O(1). Space complexity: O(1).
+ */
+export function verdictStatement(
+  subject: string,
+  day: string,
+  verdict: Verdict,
+  flaggedCount: number,
+  options: IncrementOptions,
+): BatchStatement {
   const column = columnForVerdict(verdict)
   const flagged = Number.isInteger(flaggedCount) && flaggedCount >= 0 ? flaggedCount : 0
   const aiDelta = options.ai ? 1 : 0
-  await db.execute(
-    `INSERT INTO usage (subject, day, scans, ai_scans, allows, reviews, blocks, flagged) ` +
+  return {
+    sql:
+      `INSERT INTO usage (subject, day, scans, ai_scans, allows, reviews, blocks, flagged) ` +
       `VALUES (?, ?, 1, ?, ?, ?, ?, ?) ` +
       `ON CONFLICT (subject, day) DO UPDATE SET ` +
       `scans = scans + 1, ai_scans = ai_scans + ?, ${column} = ${column} + 1, ` +
       `flagged = flagged + ?`,
-    [
+    params: [
       subject,
       day,
       aiDelta,
@@ -186,7 +207,7 @@ export async function recordVerdict(
       aiDelta,
       flagged,
     ],
-  )
+  }
 }
 
 /** Coerce a stored counter to a non-negative integer, defaulting to 0. */
