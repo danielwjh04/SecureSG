@@ -216,7 +216,7 @@ const RECORDINGS: Record<string, Recording> = {
     routes: {
       'https://pdfplumber.readthedocs.io/en/stable/': { status: 200 },
       'https://platform.openai.com/docs/guides/text': { status: 200 },
-      'https://github.com/securesg/pdf-summarizer/issues': { status: 200 },
+      'https://github.com/secureai/pdf-summarizer/issues': { status: 200 },
     },
     exaByUrl: {
       'https://pdfplumber.readthedocs.io/en/stable/': benignReport(
@@ -227,8 +227,8 @@ const RECORDINGS: Record<string, Recording> = {
         'https://platform.openai.com/docs/guides/text',
         'OpenAI text generation guide',
       ),
-      'https://github.com/securesg/pdf-summarizer/issues': benignReport(
-        'https://github.com/securesg/pdf-summarizer/issues',
+      'https://github.com/secureai/pdf-summarizer/issues': benignReport(
+        'https://github.com/secureai/pdf-summarizer/issues',
         'pdf-summarizer issues',
       ),
     },
@@ -240,7 +240,7 @@ const RECORDINGS: Record<string, Recording> = {
     routes: {
       'https://open-meteo.com/en/docs': { status: 200 },
       'https://geocoding-api.open-meteo.com/v1/search': { status: 200 },
-      'https://github.com/securesg/weather-lookup': { status: 200 },
+      'https://github.com/secureai/weather-lookup': { status: 200 },
     },
     exaByUrl: {
       'https://open-meteo.com/en/docs': benignReport(
@@ -251,8 +251,8 @@ const RECORDINGS: Record<string, Recording> = {
         'https://geocoding-api.open-meteo.com/v1/search',
         'Open-Meteo geocoding API',
       ),
-      'https://github.com/securesg/weather-lookup': benignReport(
-        'https://github.com/securesg/weather-lookup',
+      'https://github.com/secureai/weather-lookup': benignReport(
+        'https://github.com/secureai/weather-lookup',
         'weather-lookup source',
       ),
     },

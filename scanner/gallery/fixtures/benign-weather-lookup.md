@@ -19,7 +19,7 @@ three-day forecast.
 
 - Forecast API: [Open-Meteo docs](https://open-meteo.com/en/docs)
 - Geocoding API: <https://geocoding-api.open-meteo.com/v1/search>
-- Source: https://github.com/securesg/weather-lookup
+- Source: https://github.com/secureai/weather-lookup
 
 ## Notes
 

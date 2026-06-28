@@ -19,7 +19,7 @@ structured summary (TL;DR, key points, and open questions).
 
 - Library docs: [pdfplumber documentation](https://pdfplumber.readthedocs.io/en/stable/)
 - Summarization guidance: <https://platform.openai.com/docs/guides/text>
-- Issue tracker: https://github.com/securesg/pdf-summarizer/issues
+- Issue tracker: https://github.com/secureai/pdf-summarizer/issues
 
 ## Notes
 

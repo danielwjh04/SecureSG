@@ -25,9 +25,9 @@
             "loopDetected": false
           },
           {
-            "origin": "https://github.com/securesg/pdf-summarizer/issues",
+            "origin": "https://github.com/secureai/pdf-summarizer/issues",
             "hops": [],
-            "finalUrl": "https://github.com/securesg/pdf-summarizer/issues",
+            "finalUrl": "https://github.com/secureai/pdf-summarizer/issues",
             "dangerousHopIndex": null,
             "depthExceeded": false,
             "loopDetected": false
@@ -51,7 +51,7 @@
             "status": "OK"
           },
           {
-            "url": "https://github.com/securesg/pdf-summarizer/issues",
+            "url": "https://github.com/secureai/pdf-summarizer/issues",
             "score": "0.04",
             "summary": "Well-established, reputable source with no adverse signals.",
             "title": "pdf-summarizer issues",
@@ -68,12 +68,12 @@
               "index": 0,
               "kind": "SKILL_INPUT",
               "payload": {
-                "skillSha256": "b0720a97200b3adadff85af8edc9946db89e9f0935b8ccf1a17ec58b2ea9f971",
+                "skillSha256": "8100145c7f482bc1ea6789b8c9a7b12b33b274f1b2459b7e99cbcdc08d9a10ae",
                 "length": 817,
                 "source": "paste"
               },
               "prevHash": "f0b050311cf99986fc1660fabca38a5c902a77a35bd0d98997fc88fe144e95af",
-              "currHash": "b7699bda28dd40c64f786f23ecd04964980457d85e85559210ce9a6d65fce5c6"
+              "currHash": "b3b1bb83790fa77b1e432f63cb33c360a50186bbe8ebc4ddc017d3ec8a23dac4"
             },
             {
               "index": 1,
@@ -82,8 +82,8 @@
                 "ordinal": 1,
                 "url": "https://pdfplumber.readthedocs.io/en/stable/"
               },
-              "prevHash": "b7699bda28dd40c64f786f23ecd04964980457d85e85559210ce9a6d65fce5c6",
-              "currHash": "b50180e38c632fb3a912a340e5a649400ac2c88817542c367ed5e60f94a4f6a2"
+              "prevHash": "b3b1bb83790fa77b1e432f63cb33c360a50186bbe8ebc4ddc017d3ec8a23dac4",
+              "currHash": "8c90083d112dd88b53a75fc29fd6d11fb076b1520d08ebb5393b68f99ecbcdcf"
             },
             {
               "index": 2,
@@ -92,18 +92,18 @@
                 "ordinal": 2,
                 "url": "https://platform.openai.com/docs/guides/text"
               },
-              "prevHash": "b50180e38c632fb3a912a340e5a649400ac2c88817542c367ed5e60f94a4f6a2",
-              "currHash": "a803445ec4a6cdf8d1f883d37c9318ee009f0a8d5e125e818c83f7ea10d47e2b"
+              "prevHash": "8c90083d112dd88b53a75fc29fd6d11fb076b1520d08ebb5393b68f99ecbcdcf",
+              "currHash": "a6d4f97972c1a01f786b6b9d72386752db28f08fdb9e1041d0387e3c4204ed41"
             },
             {
               "index": 3,
               "kind": "URL_EXTRACTED",
               "payload": {
                 "ordinal": 3,
-                "url": "https://github.com/securesg/pdf-summarizer/issues"
+                "url": "https://github.com/secureai/pdf-summarizer/issues"
               },
-              "prevHash": "a803445ec4a6cdf8d1f883d37c9318ee009f0a8d5e125e818c83f7ea10d47e2b",
-              "currHash": "6ca9b6efe2f56201f71f8165c9a9a6bf0f2aed884863277d3e9c03c9d5b78254"
+              "prevHash": "a6d4f97972c1a01f786b6b9d72386752db28f08fdb9e1041d0387e3c4204ed41",
+              "currHash": "c17270f80065a8f44ad706236fd66de6727029f3a5ed270b052cd3c304b4fef6"
             },
             {
               "index": 4,
@@ -114,8 +114,8 @@
                 "flagged": 0,
                 "score": "0.04"
               },
-              "prevHash": "6ca9b6efe2f56201f71f8165c9a9a6bf0f2aed884863277d3e9c03c9d5b78254",
-              "currHash": "3b6ee23638aed997a1ab749481a326628b7970e60f97648016adf431bc639800"
+              "prevHash": "c17270f80065a8f44ad706236fd66de6727029f3a5ed270b052cd3c304b4fef6",
+              "currHash": "28558f6449dcfd76f7a93a916f8593235cc319e6b64c109f995d4d264659b9fb"
             },
             {
               "index": 5,
@@ -126,20 +126,20 @@
                 "flagged": 0,
                 "score": "0.04"
               },
-              "prevHash": "3b6ee23638aed997a1ab749481a326628b7970e60f97648016adf431bc639800",
-              "currHash": "00b90b451a9a709e95290a652f4e349308271225293b0ceb43c5df4cf8b0455a"
+              "prevHash": "28558f6449dcfd76f7a93a916f8593235cc319e6b64c109f995d4d264659b9fb",
+              "currHash": "d6d0a8dcecf79db175a44abad579c8f39d935e6bdd120e392793c3bd969ec1a3"
             },
             {
               "index": 6,
               "kind": "REPUTATION",
               "payload": {
-                "url": "https://github.com/securesg/pdf-summarizer/issues",
+                "url": "https://github.com/secureai/pdf-summarizer/issues",
                 "status": "OK",
                 "flagged": 0,
                 "score": "0.04"
               },
-              "prevHash": "00b90b451a9a709e95290a652f4e349308271225293b0ceb43c5df4cf8b0455a",
-              "currHash": "bdf194ee4ba82beca471f2f7dfa7cca0bbb188de5aa59b9a0025d407d8c66d50"
+              "prevHash": "d6d0a8dcecf79db175a44abad579c8f39d935e6bdd120e392793c3bd969ec1a3",
+              "currHash": "022659e94074c61a59af4508175535be8a4bd611f26235c9315347067faa443e"
             },
             {
               "index": 7,
@@ -149,8 +149,8 @@
                 "modelVerdict": "ALLOW",
                 "findingCount": 0
               },
-              "prevHash": "bdf194ee4ba82beca471f2f7dfa7cca0bbb188de5aa59b9a0025d407d8c66d50",
-              "currHash": "3798e74942aa7742d70c929bd2c87e87a41f37f3101e4a93e35c070a6ff8043b"
+              "prevHash": "022659e94074c61a59af4508175535be8a4bd611f26235c9315347067faa443e",
+              "currHash": "9ac591d4ecf681ffe3d833ff834e490e2fa574a4ba126d1b8fa03347c2ebac74"
             },
             {
               "index": 8,
@@ -158,11 +158,11 @@
               "payload": {
                 "verdict": "ALLOW"
               },
-              "prevHash": "3798e74942aa7742d70c929bd2c87e87a41f37f3101e4a93e35c070a6ff8043b",
-              "currHash": "901bddca4db18151d21d80ef90e189ab9313c2de64c76b4b3ea2121492daf37a"
+              "prevHash": "9ac591d4ecf681ffe3d833ff834e490e2fa574a4ba126d1b8fa03347c2ebac74",
+              "currHash": "6cc4b07082549a32bf520ddb6d0f49eb57dc3cf55477f2dd07c0c7b3a2f428db"
             }
           ],
-          "headHash": "901bddca4db18151d21d80ef90e189ab9313c2de64c76b4b3ea2121492daf37a"
+          "headHash": "6cc4b07082549a32bf520ddb6d0f49eb57dc3cf55477f2dd07c0c7b3a2f428db"
         },
         "scannedAt": "2026-06-01T00:00:00.000Z",
         "source": {
@@ -195,9 +195,9 @@
             "loopDetected": false
           },
           {
-            "origin": "https://github.com/securesg/weather-lookup",
+            "origin": "https://github.com/secureai/weather-lookup",
             "hops": [],
-            "finalUrl": "https://github.com/securesg/weather-lookup",
+            "finalUrl": "https://github.com/secureai/weather-lookup",
             "dangerousHopIndex": null,
             "depthExceeded": false,
             "loopDetected": false
@@ -221,7 +221,7 @@
             "status": "OK"
           },
           {
-            "url": "https://github.com/securesg/weather-lookup",
+            "url": "https://github.com/secureai/weather-lookup",
             "score": "0.04",
             "summary": "Well-established, reputable source with no adverse signals.",
             "title": "weather-lookup source",
@@ -238,12 +238,12 @@
               "index": 0,
               "kind": "SKILL_INPUT",
               "payload": {
-                "skillSha256": "65d48ba576630f0737f96f45a9638ca11ea927f06e2c67e97dff6b82460cfb34",
+                "skillSha256": "17bdd29fd66b6689f707bfc6fd5c15b40481ffe65fec1c6b7c28ce2f11c3f05d",
                 "length": 735,
                 "source": "paste"
               },
               "prevHash": "f0b050311cf99986fc1660fabca38a5c902a77a35bd0d98997fc88fe144e95af",
-              "currHash": "06505020b53d3b16966d5954cdd68a25544a57ffdec6bd7cb01f5daa8ba974ab"
+              "currHash": "7f2fb0e54b5b75cd7cf62ba63cb4b127cb562fa30988ad031740b44058314c51"
             },
             {
               "index": 1,
@@ -252,8 +252,8 @@
                 "ordinal": 1,
                 "url": "https://open-meteo.com/en/docs"
               },
-              "prevHash": "06505020b53d3b16966d5954cdd68a25544a57ffdec6bd7cb01f5daa8ba974ab",
-              "currHash": "bd6fb64903a4639e4eafaedea0b1a47d8cdc0d3e729e973f185c58eb30fda135"
+              "prevHash": "7f2fb0e54b5b75cd7cf62ba63cb4b127cb562fa30988ad031740b44058314c51",
+              "currHash": "7f32935d4fb7ff7c2f0ba30de7f04b9940e6636144dfcf59e07b44a3ff38d78a"
             },
             {
               "index": 2,
@@ -262,18 +262,18 @@
                 "ordinal": 2,
                 "url": "https://geocoding-api.open-meteo.com/v1/search"
               },
-              "prevHash": "bd6fb64903a4639e4eafaedea0b1a47d8cdc0d3e729e973f185c58eb30fda135",
-              "currHash": "a6ab733b534407d96f32e93b0ad1fbc220f453265cad1d5f69be2306bce027e9"
+              "prevHash": "7f32935d4fb7ff7c2f0ba30de7f04b9940e6636144dfcf59e07b44a3ff38d78a",
+              "currHash": "852bf783395ed15f5dc10705b11d8e3ec7a8625d77a7fff45d58a8489953b875"
             },
             {
               "index": 3,
               "kind": "URL_EXTRACTED",
               "payload": {
                 "ordinal": 3,
-                "url": "https://github.com/securesg/weather-lookup"
+                "url": "https://github.com/secureai/weather-lookup"
               },
-              "prevHash": "a6ab733b534407d96f32e93b0ad1fbc220f453265cad1d5f69be2306bce027e9",
-              "currHash": "ae199446c3b81267e155069b39b2ae647332ec13a7c5dd622110e81c1ad1bc7e"
+              "prevHash": "852bf783395ed15f5dc10705b11d8e3ec7a8625d77a7fff45d58a8489953b875",
+              "currHash": "c5440facfc9d70ab56baa5ea0ac9d676c8f932a5bbabd6676fcc092923d4c65e"
             },
             {
               "index": 4,
@@ -284,8 +284,8 @@
                 "flagged": 0,
                 "score": "0.04"
               },
-              "prevHash": "ae199446c3b81267e155069b39b2ae647332ec13a7c5dd622110e81c1ad1bc7e",
-              "currHash": "ce46fb07eaa5a76b9bb0fbdd397957c948073ff09b2a8c55c5ec509b4429b1cb"
+              "prevHash": "c5440facfc9d70ab56baa5ea0ac9d676c8f932a5bbabd6676fcc092923d4c65e",
+              "currHash": "36a7e9a22c85f40b4b0a8bde3cc58bb220352da97ebc39265d9c1132b5592fde"
             },
             {
               "index": 5,
@@ -296,20 +296,20 @@
                 "flagged": 0,
                 "score": "0.04"
               },
-              "prevHash": "ce46fb07eaa5a76b9bb0fbdd397957c948073ff09b2a8c55c5ec509b4429b1cb",
-              "currHash": "f65c25ae03eb61a6a362b4f39dc366bf313f8fd1d30419061e217bfe21ac2d32"
+              "prevHash": "36a7e9a22c85f40b4b0a8bde3cc58bb220352da97ebc39265d9c1132b5592fde",
+              "currHash": "f2dde80f8495e29717a3a6d67069ebfba1d6af57484f2eb5c7b7803a358dae92"
             },
             {
               "index": 6,
               "kind": "REPUTATION",
               "payload": {
-                "url": "https://github.com/securesg/weather-lookup",
+                "url": "https://github.com/secureai/weather-lookup",
                 "status": "OK",
                 "flagged": 0,
                 "score": "0.04"
               },
-              "prevHash": "f65c25ae03eb61a6a362b4f39dc366bf313f8fd1d30419061e217bfe21ac2d32",
-              "currHash": "2c92008e144b5faca4928264e7d43a654d553bc5cb2455789200e525c06d5296"
+              "prevHash": "f2dde80f8495e29717a3a6d67069ebfba1d6af57484f2eb5c7b7803a358dae92",
+              "currHash": "a515b9898a7476a5970f830a72581e7e3deb2070d24e26235b9a47c904de8bb5"
             },
             {
               "index": 7,
@@ -319,8 +319,8 @@
                 "modelVerdict": "ALLOW",
                 "findingCount": 0
               },
-              "prevHash": "2c92008e144b5faca4928264e7d43a654d553bc5cb2455789200e525c06d5296",
-              "currHash": "088c124e1a60896acc4c0718fb02a8aa9652f659f2541fcad6241f41db6e2537"
+              "prevHash": "a515b9898a7476a5970f830a72581e7e3deb2070d24e26235b9a47c904de8bb5",
+              "currHash": "9ea9bc5fb127755f41cfaff2bcad15d69577060fa0a4dfe333e0c53550c2afe9"
             },
             {
               "index": 8,
@@ -328,11 +328,11 @@
               "payload": {
                 "verdict": "ALLOW"
               },
-              "prevHash": "088c124e1a60896acc4c0718fb02a8aa9652f659f2541fcad6241f41db6e2537",
-              "currHash": "48870c932dd8f95d5637dccd9e0bbde6952cf31a84cd82a039b5ab9baf253ddd"
+              "prevHash": "9ea9bc5fb127755f41cfaff2bcad15d69577060fa0a4dfe333e0c53550c2afe9",
+              "currHash": "6040b796b13b8df39416871b281b676c16d711e98292f2bcd85cf39456e48cde"
             }
           ],
-          "headHash": "48870c932dd8f95d5637dccd9e0bbde6952cf31a84cd82a039b5ab9baf253ddd"
+          "headHash": "6040b796b13b8df39416871b281b676c16d711e98292f2bcd85cf39456e48cde"
         },
         "scannedAt": "2026-06-01T00:00:00.000Z",
         "source": {
