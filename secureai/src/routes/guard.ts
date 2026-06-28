@@ -19,6 +19,7 @@ import {
   ConfigError,
   InferenceError,
   ParseError,
+  QuotaExceededError,
   RedirectResolutionError,
   ReputationError,
   ScannerError,
@@ -27,10 +28,15 @@ import {
 import { guardDecision } from '../guard/claudeCode'
 import { buildInferenceClient, type AiRunner } from '../pipeline/inference'
 import { preToolUseSchema } from '../schemas/validate'
+import { d1Database } from '../db/database'
+import { authenticate } from '../middleware/auth'
+import { aiAllowedForTier, enforceDailyCap } from '../middleware/gate'
+import { incrementUsage } from '../db/usage'
 
 const STATUS_OK = 200
 const STATUS_BAD_REQUEST = 400
 const STATUS_UNPROCESSABLE = 422
+const STATUS_TOO_MANY_REQUESTS = 429
 const STATUS_SERVER_ERROR = 500
 const STATUS_BAD_GATEWAY = 502
 
@@ -69,6 +75,9 @@ function statusForError(error: unknown): number {
   if (error instanceof ParseError || error instanceof SourceResolutionError) {
     return STATUS_UNPROCESSABLE
   }
+  if (error instanceof QuotaExceededError) {
+    return STATUS_TOO_MANY_REQUESTS
+  }
   if (error instanceof ConfigError) {
     return STATUS_SERVER_ERROR
   }
@@ -86,12 +95,16 @@ function statusForError(error: unknown): number {
 }
 
 /**
- * Handle `POST /api/guard`. Builds the Workers AI inference client only when the
- * `AI` binding is present (no binding → `null`, handled fail-closed inside
- * `runScan`), exactly as `/api/scan` does. `scannedAt` is stamped here at the
- * edge so the time-varying value never enters the hashed proof. A successful
- * call returns the {@link GuardDecision} at 200 — the allow/ask/deny lives in the
- * body. Only a malformed request body or a typed fault maps to a non-200.
+ * Handle `POST /api/guard`. Authenticates the caller, enforces its per-tier
+ * daily cap BEFORE the guard scan, gates the paid AI stage to eligible tiers,
+ * runs `guardDecision`, then meters usage — mirroring `/api/scan` exactly so the
+ * two metered routes behave uniformly. `scannedAt` is stamped here at the edge
+ * so the time-varying value never enters the hashed proof.
+ *
+ * Accounts degrade gracefully: when `env.DB` is absent the route runs the guard
+ * as an unmetered anonymous caller (no cap, no usage write). A successful call
+ * returns the {@link GuardDecision} at 200 — the allow/ask/deny lives in the
+ * body. A malformed body is 422; an exhausted daily cap is 429.
  *
  * Time complexity: dominated by `guardDecision` → `runScan` (O(U·H + R + F)).
  * Space complexity: O(decision size).
@@ -104,11 +117,26 @@ export async function handleGuard(
   try {
     const payload = await parseGuardBody(request)
 
-    const inference =
-      env.AI !== undefined && env.AI !== null
-        ? // The Workers AI binding's `run` is structurally an AiRunner.
-          buildInferenceClient(env.AI as unknown as AiRunner, config)
-        : null
+    // Accounts seam: present only when D1 is bound. Without it, the caller is an
+    // unmetered anonymous (no cap, no usage write), but the guard still runs.
+    const db = env.DB !== undefined && env.DB !== null ? d1Database(env.DB) : null
+    const today = new Date().toISOString().slice(0, 10)
+
+    const ctx = db !== null
+      ? await authenticate(request, db)
+      : ({ subject: 'anon:unmetered', tier: 'anonymous' } as const)
+
+    if (db !== null) {
+      await enforceDailyCap(db, ctx.subject, ctx.tier, today, config)
+    }
+
+    // Cost-discipline gate: paid AI stage only for eligible tiers WITH a binding.
+    const aiEligible =
+      aiAllowedForTier(ctx.tier, config) && env.AI !== undefined && env.AI !== null
+    const inference = aiEligible
+      ? // The Workers AI binding's `run` is structurally an AiRunner.
+        buildInferenceClient(env.AI as unknown as AiRunner, config)
+      : null
 
     const decision: GuardDecision = await guardDecision(payload, {
       config,
@@ -118,11 +146,21 @@ export async function handleGuard(
       githubToken: typeof env.GITHUB_TOKEN === 'string' ? env.GITHUB_TOKEN : undefined,
     })
 
+    if (db !== null) {
+      await incrementUsage(db, ctx.subject, today, { ai: inference !== null })
+    }
+
     return Response.json(decision, { status: STATUS_OK })
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
     const message = error instanceof Error ? error.message : String(error)
     console.error(`[handleGuard] ${className}: ${message}`)
+    if (error instanceof QuotaExceededError) {
+      return Response.json(
+        { error: 'quota_exceeded', message },
+        { status: STATUS_TOO_MANY_REQUESTS },
+      )
+    }
     return Response.json({ error: className, message }, { status: statusForError(error) })
   }
 }

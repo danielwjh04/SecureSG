@@ -37,3 +37,14 @@ export class ReputationError extends ScannerError {}
 
 /** The Workers AI injection model failed or returned malformed output. */
 export class InferenceError extends ScannerError {}
+
+/**
+ * An account / persistence fault: a failed credential operation, a malformed
+ * stored record, or a database error in the accounts layer. Never used to
+ * signal a merely-invalid caller key — an unknown key is anonymous, not an
+ * error (see {@link ../middleware/auth.authenticate}).
+ */
+export class AuthError extends ScannerError {}
+
+/** A subject exceeded its per-tier daily cap. Mapped to HTTP 429. */
+export class QuotaExceededError extends ScannerError {}

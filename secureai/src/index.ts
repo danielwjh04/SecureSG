@@ -10,12 +10,14 @@ import type { Env } from './config/env'
 import { loadConfig } from './config/env'
 import { handleGuard } from './routes/guard'
 import { handleScan } from './routes/scan'
+import { handleSignup } from './routes/signup'
 import { handleVerify } from './routes/verify'
 import { ParseError, ScannerError } from './errors'
 
 const ROUTE_SCAN = '/api/scan'
 const ROUTE_VERIFY = '/api/verify'
 const ROUTE_GUARD = '/api/guard'
+const ROUTE_SIGNUP = '/api/signup'
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -47,6 +49,14 @@ export default {
       }
       // handleGuard owns its own error→status mapping and never throws.
       return await handleGuard(request, env, config)
+    }
+
+    if (url.pathname === ROUTE_SIGNUP) {
+      if (request.method !== 'POST') {
+        return jsonError('method not allowed', 405)
+      }
+      // handleSignup owns its own error→status mapping and never throws.
+      return await handleSignup(request, env)
     }
 
     if (url.pathname === ROUTE_VERIFY) {

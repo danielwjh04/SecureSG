@@ -66,3 +66,23 @@ export const preToolUseSchema = z.object({
 
 /** The validated PreToolUse payload `POST /api/guard` operates on. */
 export type PreToolUsePayload = z.infer<typeof preToolUseSchema>
+
+/**
+ * Body of `POST /api/signup`: a single account email. Trimmed, lowercased, and
+ * validated as an email so the stored value is canonical and the UNIQUE
+ * constraint dedupes case/whitespace variants. `.strict()` rejects unexpected
+ * fields so a malformed payload fails closed at the boundary.
+ */
+export const signupSchema = z
+  .object({
+    email: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .email()
+      .max(254),
+  })
+  .strict()
+
+/** The validated signup payload `POST /api/signup` operates on. */
+export type SignupPayload = z.infer<typeof signupSchema>

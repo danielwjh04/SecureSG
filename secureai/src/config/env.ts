@@ -40,6 +40,14 @@ export interface ScannerConfig {
   readonly blockThreshold: number
   readonly skillMaxBytes: number
   readonly subrequestCap: number
+  /** Max metered scans per UTC day for an anonymous (IP-keyed) caller. */
+  readonly capAnonymousPerDay: number
+  /** Max metered scans per UTC day for a free-tier account. */
+  readonly capFreePerDay: number
+  /** Max metered scans per UTC day for a pro-tier account. */
+  readonly capProPerDay: number
+  /** Tiers granted the paid AI stage. Lowercased tier names, e.g. `pro`. */
+  readonly aiTiers: ReadonlySet<string>
 }
 
 /**
@@ -65,6 +73,13 @@ export function loadConfig(env: Env): ScannerConfig {
   const blockThreshold = readFloatInRange(env, 'SCANNER_BLOCK_THRESHOLD', 0.7, 0, 1)
   const skillMaxBytes = readIntInRange(env, 'SCANNER_SKILL_MAX_BYTES', 262144, 1, 10485760)
   const subrequestCap = readIntInRange(env, 'SCANNER_SUBREQUEST_CAP', 50, 1, 1000)
+  // Per-tier daily caps (accounts layer). Defaults match the free-tier funnel:
+  // a small anonymous allowance, a larger free allowance, a high pro allowance.
+  const capAnonymousPerDay = readIntInRange(env, 'SCANNER_CAP_ANONYMOUS_PER_DAY', 10, 0, 1000000)
+  const capFreePerDay = readIntInRange(env, 'SCANNER_CAP_FREE_PER_DAY', 100, 0, 1000000)
+  const capProPerDay = readIntInRange(env, 'SCANNER_CAP_PRO_PER_DAY', 5000, 0, 1000000)
+  // Tiers that get the paid AI stage. Comma var, default just `pro`.
+  const aiTiers = readSet(env, 'SCANNER_AI_TIERS', 'pro')
 
   // Cross-field invariants (fail-closed).
   if (!(reviewThreshold < blockThreshold)) {
@@ -99,6 +114,10 @@ export function loadConfig(env: Env): ScannerConfig {
     blockThreshold,
     skillMaxBytes,
     subrequestCap,
+    capAnonymousPerDay,
+    capFreePerDay,
+    capProPerDay,
+    aiTiers,
   }
 }
 

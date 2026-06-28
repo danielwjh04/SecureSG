@@ -1,13 +1,27 @@
 {
-  // SecureAI scanner Worker. Bindings (AI, D1, KV, rate-limit) and the ASSETS
-  // SPA mount are added as those features land; this file currently wires the
-  // proof-verify slice. All tunables live here as vars and are read through a
-  // typed Env in src/config/env.ts — never hardcoded in source.
+  // SecureAI scanner Worker. All tunables live here as vars and are read through
+  // a typed Env in src/config/env.ts — never hardcoded in source.
+  //
+  // Infra IDs below (D1 database_id, KV id) are created during the Cloudflare
+  // setup step and must be filled before `wrangler deploy`:
+  //   wrangler d1 create secureai           -> paste database_id
+  //   wrangler kv namespace create SECUREAI  -> paste id
+  //   wrangler d1 migrations apply secureai  (applies migrations/0001_init.sql)
+  // The Worker degrades gracefully when DB is absent (anonymous, unmetered), so
+  // local `vitest` (in-memory fake) needs none of this. The AI binding needs no
+  // key — it uses the account's Workers AI.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "secureai-scanner",
   "main": "src/index.ts",
   "compatibility_date": "2026-06-01",
   "compatibility_flags": ["nodejs_compat"],
+  "ai": { "binding": "AI" },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "secureai", "database_id": "REPLACE_WITH_D1_ID" }
+  ],
+  "kv_namespaces": [
+    { "binding": "KV", "id": "REPLACE_WITH_KV_ID" }
+  ],
   "vars": {
     "SCANNER_GENESIS_SEED": "secureai-scanner-genesis-v1",
     "SCANNER_GRAPH_PATH": "./graph.json",
@@ -21,6 +35,10 @@
     "SCANNER_REVIEW_THRESHOLD": "0.30",
     "SCANNER_BLOCK_THRESHOLD": "0.70",
     "SCANNER_SKILL_MAX_BYTES": "262144",
-    "SCANNER_SUBREQUEST_CAP": "50"
+    "SCANNER_SUBREQUEST_CAP": "50",
+    "SCANNER_CAP_ANONYMOUS_PER_DAY": "10",
+    "SCANNER_CAP_FREE_PER_DAY": "100",
+    "SCANNER_CAP_PRO_PER_DAY": "5000",
+    "SCANNER_AI_TIERS": "pro"
   }
 }

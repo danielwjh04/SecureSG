@@ -14,6 +14,7 @@ import {
   ConfigError,
   InferenceError,
   ParseError,
+  QuotaExceededError,
   RedirectResolutionError,
   ReputationError,
   ScannerError,
@@ -22,10 +23,15 @@ import {
 import { runScan } from '../scanner/runScan'
 import { buildInferenceClient, type AiRunner } from '../pipeline/inference'
 import { scanRequestSchema } from '../schemas/validate'
+import { d1Database } from '../db/database'
+import { authenticate } from '../middleware/auth'
+import { aiAllowedForTier, enforceDailyCap } from '../middleware/gate'
+import { incrementUsage } from '../db/usage'
 
 const STATUS_OK = 200
 const STATUS_BAD_REQUEST = 400
 const STATUS_UNPROCESSABLE = 422
+const STATUS_TOO_MANY_REQUESTS = 429
 const STATUS_SERVER_ERROR = 500
 const STATUS_BAD_GATEWAY = 502
 
@@ -64,6 +70,9 @@ function statusForError(error: unknown): number {
   if (error instanceof ParseError || error instanceof SourceResolutionError) {
     return STATUS_UNPROCESSABLE
   }
+  if (error instanceof QuotaExceededError) {
+    return STATUS_TOO_MANY_REQUESTS
+  }
   if (error instanceof ConfigError) {
     return STATUS_SERVER_ERROR
   }
@@ -81,10 +90,19 @@ function statusForError(error: unknown): number {
 }
 
 /**
- * Handle `POST /api/scan`. Builds the Workers AI inference client only when the
- * `AI` binding is present (free tier / no binding → `null`, handled fail-closed
- * inside `runScan`). `scannedAt` is stamped here, at the edge, so the
+ * Handle `POST /api/scan`. Authenticates the caller, enforces its per-tier daily
+ * cap BEFORE scanning, gates the paid AI stage to eligible tiers, runs the scan,
+ * then meters usage. `scannedAt` is stamped here, at the edge, so the
  * time-varying value never enters the hashed proof.
+ *
+ * Accounts degrade gracefully: when `env.DB` is absent (e.g. local dev with no
+ * D1) the route runs the scan as an unmetered anonymous caller — no cap check,
+ * no usage write — rather than crashing. With `env.DB` present, the cap is
+ * enforced and usage is incremented exactly once after a successful scan.
+ *
+ * The AI cost gate: the inference client is passed to `runScan` ONLY when the
+ * caller's tier is in `config.aiTiers` AND the `AI` binding exists; otherwise it
+ * is `null` (free / anon → deterministic + indicators only).
  *
  * Time complexity: dominated by `runScan` (O(U·H + R + F)).
  * Space complexity: O(result size).
@@ -97,11 +115,27 @@ export async function handleScan(
   try {
     const body = await parseScanBody(request)
 
-    const inference =
-      env.AI !== undefined && env.AI !== null
-        ? // The Workers AI binding's `run` is structurally an AiRunner.
-          buildInferenceClient(env.AI as unknown as AiRunner, config)
-        : null
+    // Accounts seam: present only when D1 is bound. Without it, the caller is an
+    // unmetered anonymous (no cap, no usage write), but the scan still runs.
+    const db = env.DB !== undefined && env.DB !== null ? d1Database(env.DB) : null
+    const today = new Date().toISOString().slice(0, 10)
+
+    // Anonymous-by-default when there is no store to resolve a key against.
+    const ctx = db !== null
+      ? await authenticate(request, db)
+      : ({ subject: 'anon:unmetered', tier: 'anonymous' } as const)
+
+    if (db !== null) {
+      await enforceDailyCap(db, ctx.subject, ctx.tier, today, config)
+    }
+
+    // Cost-discipline gate: paid AI stage only for eligible tiers WITH a binding.
+    const aiEligible =
+      aiAllowedForTier(ctx.tier, config) && env.AI !== undefined && env.AI !== null
+    const inference = aiEligible
+      ? // The Workers AI binding's `run` is structurally an AiRunner.
+        buildInferenceClient(env.AI as unknown as AiRunner, config)
+      : null
 
     const result = await runScan(body, {
       config,
@@ -111,11 +145,21 @@ export async function handleScan(
       githubToken: typeof env.GITHUB_TOKEN === 'string' ? env.GITHUB_TOKEN : undefined,
     })
 
+    if (db !== null) {
+      await incrementUsage(db, ctx.subject, today, { ai: inference !== null })
+    }
+
     return Response.json(result, { status: STATUS_OK })
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
     const message = error instanceof Error ? error.message : String(error)
     console.error(`[handleScan] ${className}: ${message}`)
+    if (error instanceof QuotaExceededError) {
+      return Response.json(
+        { error: 'quota_exceeded', message },
+        { status: STATUS_TOO_MANY_REQUESTS },
+      )
+    }
     return Response.json({ error: className, message }, { status: statusForError(error) })
   }
 }
