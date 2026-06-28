@@ -28,12 +28,12 @@ const STEPS: Step[] = [
   {
     Icon: Radar,
     title: 'Score',
-    body: 'Exa checks what the live web says about every final destination, right now, not a stale blocklist.',
+    body: 'Reputation checks what the live web says about every final destination, right now, not a stale blocklist.',
   },
   {
     Icon: ScanLine,
-    title: 'Judge',
-    body: 'OpenAI reads the skill and resolved pages for prompt injection. It can only tighten the verdict, never weaken it.',
+    title: 'Check',
+    body: 'AI analysis reads the skill and resolved pages for prompt injection. It can only tighten the verdict, never weaken it.',
   },
   {
     Icon: Lock,

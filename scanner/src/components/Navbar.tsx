@@ -1,6 +1,6 @@
 /**
  * Glassmorphism navbar for the dark hero. Animates in from the top, carries the
- * Bastion mark, and routes between the scanner and the Enterprise page with hash
+ * SecureAI mark, and routes between the scanner and the Enterprise page with hash
  * links. The mark calls `onHome` so it always returns to a fresh scanner landing.
  */
 
@@ -37,7 +37,7 @@ export function Navbar({ onHome }: NavbarProps) {
             <a href="#" onClick={onHome} className="flex items-center gap-2">
               <ShieldCheck className="w-6 h-6 text-white" />
               <span className="text-white font-semibold text-lg tracking-tight">
-                Bastion
+                SecureAI
               </span>
             </a>
             <div className="hidden md:flex items-center gap-7 text-sm font-medium">

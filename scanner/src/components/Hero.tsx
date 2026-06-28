@@ -19,8 +19,8 @@ interface HeroProps {
 
 const TRUST = [
   { Icon: GitBranch, label: 'Redirect tracing' },
-  { Icon: Radar, label: 'Live reputation · Exa' },
-  { Icon: ScanLine, label: 'Injection judge · OpenAI' },
+  { Icon: Radar, label: 'Live reputation' },
+  { Icon: ScanLine, label: 'Injection check' },
   { Icon: Lock, label: 'SHA-256 proof' },
 ] as const
 
@@ -61,8 +61,8 @@ export function Hero({ state, onScan }: HeroProps) {
           className="text-white/75 text-[15px] md:text-base leading-relaxed max-w-xl -mt-1"
         >
           Paste a SKILL.md, drop a file, or point us at a GitHub repo. We trace
-          redirects, score reputation with Exa, judge for injection with OpenAI,
-          and seal the verdict into a proof you can re-verify yourself.
+          redirects, score reputation, check for prompt injection, and seal the
+          verdict into a proof you can re-verify yourself.
         </motion.p>
 
         <motion.div

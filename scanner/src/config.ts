@@ -5,10 +5,21 @@
  * worker contract and the UI copy stay in lockstep.
  */
 
-/** Same-origin API endpoints. The Worker serves the SPA and these routes. */
+/**
+ * API base URL. Empty string (the default) keeps the API same-origin: the
+ * Worker serves both the SPA and the routes. Set it to the SecureAI Worker's
+ * origin (e.g. `https://secureai.example`) to point the SPA at a remote
+ * backend. No remote URL is hardcoded here.
+ */
+export const API_BASE = '' as const
+
+/**
+ * API endpoints, prefixed with {@link API_BASE}. With the default empty base
+ * these resolve to same-origin relative paths.
+ */
 export const API = {
-  scan: '/api/scan',
-  verify: '/api/verify',
+  scan: `${API_BASE}/api/scan`,
+  verify: `${API_BASE}/api/verify`,
 } as const
 
 /** Static path to the prebuilt gallery dataset shipped alongside the SPA. */
@@ -32,7 +43,7 @@ export const BACKGROUND_VIDEO_SRC =
   'https://stream.mux.com/kimF2ha9zLrX64H00UgLGPflCzNtl1T0215MlAmeOztv8.m3u8' as const
 
 /** Public source repository, linked from the navbar. */
-export const REPO_URL = 'https://github.com/danielwjh04/SecureSG' as const
+export const REPO_URL = 'https://github.com/danielwjh04/SecureAI' as const
 
 /**
  * The three skill-input modes offered by the hero's segmented control. The
@@ -55,17 +66,17 @@ export const SCAN_STEP_LABELS = [
   'Parsing SKILL.md',
   'Extracting links',
   'Resolving redirect cascades',
-  'Querying Exa reputation',
-  'Running prompt-injection judge',
+  'Querying reputation',
+  'Running prompt-injection check',
   'Sealing proof chain',
 ] as const
 
 /**
  * Milliseconds between progress-step advances (decoupled from scan latency). A
- * live scan (GitHub resolve + redirect traces + Exa + OpenAI) runs ~10-15s, so
- * the stepper is paced to walk the pipeline over several seconds and then hold
- * on the judge stage (see the scan machine) rather than racing to the end in
- * under a second and sitting frozen on the final stage.
+ * live scan (GitHub resolve + redirect traces + reputation + AI analysis) runs
+ * ~10-15s, so the stepper is paced to walk the pipeline over several seconds and
+ * then hold on the injection-check stage (see the scan machine) rather than
+ * racing to the end in under a second and sitting frozen on the final stage.
  */
 export const SCAN_STEP_PACING_MS = 1500
 
@@ -86,11 +97,11 @@ export const PROOF_REHASH_DEBOUNCE_MS = 180
 /**
  * The scanner's safety caps, surfaced in the UI so users see the bounded
  * guarantees of each pass. These mirror the worker's enforced limits (redirect
- * depth, Exa fan-out, judged content size); they are display copy, not the
- * authority — the Worker enforces the real bounds.
+ * depth, reputation fan-out, analyzed content size); they are display copy, not
+ * the authority — the Worker enforces the real bounds.
  */
 export const CAPS = {
   redirectDepth: 'Redirect cascades traced up to a bounded depth',
-  exaFanOut: 'Exa reputation queried for final destinations only',
-  judgeContent: 'Prompt-injection judge runs on the parsed skill text',
+  reputationFanOut: 'Reputation queried for final destinations only',
+  injectionContent: 'Prompt-injection check runs on the parsed skill text',
 } as const

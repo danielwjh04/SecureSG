@@ -1,5 +1,5 @@
 /**
- * The Bastion Skill Safety Scanner SPA shell: a dark, cinematic surface with a
+ * The SecureAI Skill Safety Scanner SPA shell: a dark, cinematic surface with a
  * fullscreen background video behind a glass navbar. `useScan` owns the scan
  * lifecycle and `useHashRoute` selects the top-level surface:
  *   - #enterprise        -> the Enterprise page
@@ -28,15 +28,14 @@ import type { ScanState } from './scan/scanMachine'
 const SHELL =
   'relative bg-black w-screen min-h-screen flex flex-col selection:bg-white selection:text-black'
 
-/** The site footer: the product mark (Bastion, by the SecureSG team) + links. */
+/** The site footer: the product mark (SecureAI) + links. */
 function Footer(): ReactNode {
   return (
     <footer className="relative z-10 bg-black border-t border-white/[0.06]">
       <div className="max-w-5xl mx-auto px-6 py-10 flex flex-col sm:flex-row items-center justify-between gap-4 text-[13px]">
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-white/70" />
-          <span className="text-white/80 font-semibold">Bastion</span>
-          <span className="font-mono text-white/35">by SecureSG</span>
+          <span className="text-white/80 font-semibold">SecureAI</span>
         </div>
         <div className="flex items-center gap-6 font-mono text-white/45">
           <a href="#" className="hover:text-white transition-colors">

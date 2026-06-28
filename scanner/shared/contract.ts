@@ -39,10 +39,11 @@ export interface LinkChain {
 }
 
 /**
- * Exa's reputation assessment of one final destination URL. `score` is a
- * stringified float so it never enters a hashed proof payload as a float.
+ * A reputation assessment of one final destination URL/host against the
+ * known-bad indicator feeds. `score` is a stringified float so it never enters
+ * a hashed proof payload as a float.
  */
-export interface ExaReport {
+export interface ReputationReport {
   url: string
   score: string
   summary: string
@@ -51,7 +52,7 @@ export interface ExaReport {
   status: string
 }
 
-/** One injection signal surfaced by the OpenAI judge. */
+/** One injection signal surfaced by the AI inference layer. */
 export interface InjectionFinding {
   excerpt: string
   category: string
@@ -64,18 +65,19 @@ export type ProofStepKind =
   | 'SKILL_INPUT'
   | 'URL_EXTRACTED'
   | 'REDIRECT_HOP'
-  | 'EXA_REPUTATION'
-  | 'JUDGE_FINDING'
+  | 'REPUTATION'
+  | 'INJECTION'
   | 'VERDICT'
 
 /**
  * One link in the tamper-evident proof chain.
  *
  * Payload values are JSON-safe and FLOAT-FREE: only `string`, integer `number`,
- * or `boolean`. Floats (Exa scores, injection probabilities) are serialized as
- * strings so the canonical bytes — and therefore the hash — are stable across
- * the Worker and the browser. No timestamps or random values may appear here;
- * anything time-varying lives outside hashed steps (see `ScanResult.scannedAt`).
+ * or `boolean`. Floats (reputation scores, injection probabilities) are
+ * serialized as strings so the canonical bytes — and therefore the hash — are
+ * stable across the Worker and the browser. No timestamps or random values may
+ * appear here; anything time-varying lives outside hashed steps (see
+ * `ScanResult.scannedAt`).
  */
 export interface ProofStep {
   index: number
@@ -102,7 +104,7 @@ export interface ScanRequest {
 export interface ScanResult {
   verdict: Verdict
   chains: LinkChain[]
-  exa: ExaReport[]
+  reputation: ReputationReport[]
   injections: InjectionFinding[]
   findings: RuleFinding[]
   proof: Proof
@@ -118,16 +120,16 @@ export interface VerifyResult {
 }
 
 /**
- * Exa reputation client. Injected into `runScan` so the orchestrator stays a
- * pure function: Node-runnable (gallery build) and testable with a recorded or
- * mocked implementation.
+ * Known-bad reputation client. Injected into `runScan` so the orchestrator
+ * stays a pure function: Node-runnable (gallery build) and testable with a
+ * recorded or mocked implementation.
  */
-export interface ExaClient {
-  assessFinalUrls(urls: string[]): Promise<ExaReport[]>
+export interface ReputationClient {
+  assessFinalUrls(urls: string[]): Promise<ReputationReport[]>
 }
 
-/** The structured outcome of the OpenAI injection judge. */
-export interface JudgeResult {
+/** The structured outcome of the AI injection inference. */
+export interface InjectionResult {
   pInjection: number
   verdict: Verdict
   findings: InjectionFinding[]
@@ -135,14 +137,14 @@ export interface JudgeResult {
 }
 
 /**
- * OpenAI injection judge client. Injected into `runScan` for the same purity
- * and testability reasons as `ExaClient`. The `baseline` is passed in so the
- * implementation can enforce tighten-only escalation.
+ * AI injection-inference client. Injected into `runScan` for the same purity
+ * and testability reasons as `ReputationClient`. The `baseline` is passed in so
+ * the implementation can enforce tighten-only escalation.
  */
-export interface JudgeClient {
-  judge(
+export interface InferenceClient {
+  detect(
     skillText: string,
-    exaReports: ExaReport[],
+    reputation: ReputationReport[],
     baseline: Verdict,
-  ): Promise<JudgeResult>
+  ): Promise<InjectionResult>
 }

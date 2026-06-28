@@ -15,7 +15,7 @@
  * 200.
  */
 
-import type { ExaClient, JudgeClient, ScanRequest } from '../../shared/contract'
+import type { ReputationClient, InferenceClient, ScanRequest } from '../../shared/contract'
 import type { Env, ScannerConfig } from '../config'
 import {
   ConfigError,
@@ -37,7 +37,7 @@ import { OpenAIJudge } from '../scan/judge'
  *
  * Time complexity: O(1). Space complexity: O(1).
  */
-function maybeExaClient(env: Env, config: ScannerConfig): ExaClient | null {
+function maybeExaClient(env: Env, config: ScannerConfig): ReputationClient | null {
   if (typeof env.EXA_API_KEY !== 'string' || env.EXA_API_KEY.length === 0) {
     return null
   }
@@ -50,7 +50,7 @@ function maybeExaClient(env: Env, config: ScannerConfig): ExaClient | null {
  *
  * Time complexity: O(1). Space complexity: O(1).
  */
-function maybeJudgeClient(env: Env, config: ScannerConfig): JudgeClient | null {
+function maybeJudgeClient(env: Env, config: ScannerConfig): InferenceClient | null {
   if (
     typeof env.OPENAI_API_KEY !== 'string' ||
     env.OPENAI_API_KEY.length === 0
@@ -155,13 +155,13 @@ export async function handleScan(
   try {
     const body = await parseScanBody(request)
 
-    const exa: ExaClient | null = maybeExaClient(env, config)
-    const judge: JudgeClient | null = maybeJudgeClient(env, config)
+    const reputation: ReputationClient | null = maybeExaClient(env, config)
+    const inference: InferenceClient | null = maybeJudgeClient(env, config)
 
     const result = await runScan(body, {
       config,
-      exa,
-      judge,
+      reputation,
+      inference,
       scannedAt: new Date().toISOString(),
       githubToken:
         typeof env.GITHUB_TOKEN === 'string' ? env.GITHUB_TOKEN : undefined,

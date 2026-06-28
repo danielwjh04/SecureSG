@@ -41,10 +41,10 @@
 import OpenAI from 'openai'
 
 import type {
-  ExaReport,
+  ReputationReport,
   InjectionFinding,
-  JudgeClient,
-  JudgeResult,
+  InferenceClient,
+  InjectionResult,
   Verdict,
 } from '../../shared/contract'
 import type { ScannerConfig } from '../config'
@@ -142,7 +142,7 @@ const INSTRUCTIONS =
 
 /**
  * The shape we expect to parse out of the model's `output_text`, before
- * validation narrows it to a {@link JudgeResult}. Kept loose (`unknown` fields)
+ * validation narrows it to a {@link InjectionResult}. Kept loose (`unknown` fields)
  * so a malformed payload is rejected by explicit checks rather than by an
  * unchecked cast.
  */
@@ -154,7 +154,7 @@ interface RawJudgeOutput {
 }
 
 /**
- * Construct a {@link JudgeClient} over the OpenAI SDK.
+ * Construct an {@link InferenceClient} over the OpenAI SDK.
  *
  * This is the stable factory name the scan handler imports (`buildJudgeClient`);
  * keep it in sync with `handlers/scan.ts`.
@@ -163,23 +163,23 @@ interface RawJudgeOutput {
  *
  * @param apiKey - The OpenAI API key (from the `OPENAI_API_KEY` secret).
  * @param config - The resolved scanner configuration (model id, timeout).
- * @returns A judge client over the OpenAI Responses API.
+ * @returns An inference client over the OpenAI Responses API.
  */
 export function buildJudgeClient(
   apiKey: string,
   config: ScannerConfig,
-): JudgeClient {
+): InferenceClient {
   return new OpenAIJudge(apiKey, config)
 }
 
 /**
- * OpenAI Responses-API implementation of {@link JudgeClient}.
+ * OpenAI Responses-API implementation of {@link InferenceClient}.
  *
  * Construction is cheap (it only wires the SDK client and captures config); the
- * single network call happens in {@link judge}. The client is constructed once
+ * single network call happens in {@link detect}. The client is constructed once
  * per Worker invocation by `runScan`'s wiring and is safe to reuse.
  */
-export class OpenAIJudge implements JudgeClient {
+export class OpenAIJudge implements InferenceClient {
   private readonly client: OpenAI
   private readonly config: ScannerConfig
 
@@ -210,18 +210,18 @@ export class OpenAIJudge implements JudgeClient {
    * prompt, f = number of findings parsed. Space complexity: O(n + f).
    *
    * @param skillText - The candidate skill document under review.
-   * @param exaReports - Exa reputation/summary for each final destination URL.
+   * @param reputation - Reputation/summary for each final destination URL.
    * @param baseline - The verdict computed by prior stages (the floor the model
    *   may raise but never lower).
-   * @returns The validated, tighten-only {@link JudgeResult}.
+   * @returns The validated, tighten-only {@link InjectionResult}.
    * @throws {JudgeError} on timeout, API error, or malformed/unschematic output.
    */
-  public async judge(
+  public async detect(
     skillText: string,
-    exaReports: ExaReport[],
+    reputation: ReputationReport[],
     baseline: Verdict,
-  ): Promise<JudgeResult> {
-    const input = this.buildInput(skillText, exaReports)
+  ): Promise<InjectionResult> {
+    const input = this.buildInput(skillText, reputation)
     const outputText = await this.callResponses(input)
     const raw = this.parseOutput(outputText)
     const validated = this.validate(raw)
@@ -236,17 +236,17 @@ export class OpenAIJudge implements JudgeClient {
   /**
    * Compose the user-role `input` text: the untrusted skill body followed by the
    * resolved page summaries, each clearly delimited so the model treats them as
-   * data. Float scores from Exa are rendered as-is (they are already strings in
-   * `ExaReport`), keeping the prompt deterministic.
+   * data. Float scores are rendered as-is (they are already strings in
+   * `ReputationReport`), keeping the prompt deterministic.
    *
    * Time complexity: O(n + r) — n = skill length, r = combined report length.
    * Space complexity: O(n + r).
    */
-  private buildInput(skillText: string, exaReports: ExaReport[]): string {
+  private buildInput(skillText: string, reputation: ReputationReport[]): string {
     const summaries =
-      exaReports.length === 0
+      reputation.length === 0
         ? '(no external URLs resolved)'
-        : exaReports
+        : reputation
             .map(
               (report, idx) =>
                 `[${idx + 1}] url=${report.url} score=${report.score} ` +
@@ -387,7 +387,7 @@ export class OpenAIJudge implements JudgeClient {
   }
 
   /**
-   * Validate a parsed payload into a {@link JudgeResult} (verdict not yet
+   * Validate a parsed payload into a {@link InjectionResult} (verdict not yet
    * tightened — the caller applies `escalate`).
    *
    * Every field is allowlist-checked, mirroring the input-validation discipline
@@ -399,7 +399,7 @@ export class OpenAIJudge implements JudgeClient {
    *
    * @throws {JudgeError} when any field is missing, mistyped, or out of range.
    */
-  private validate(raw: RawJudgeOutput): JudgeResult {
+  private validate(raw: RawJudgeOutput): InjectionResult {
     const pInjection = raw.pInjection
     if (
       typeof pInjection !== 'number' ||

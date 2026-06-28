@@ -141,7 +141,7 @@ export async function scanOrThrow(input) {
       tab: 'agent hook',
       language: 'node',
       code: `// PreToolUse-style guard: run before an agent loads a skill or
-// calls a tool. Refuse unless Bastion returns ALLOW.
+// calls a tool. Refuse unless SecureAI returns ALLOW.
 const ORIGIN = '${origin}'
 
 export async function preToolUse({ skillUrl, skillText }) {
@@ -209,7 +209,7 @@ const RISE = {
 
 const HERO_BADGES = [
   { Icon: ScanLine, label: 'PreToolUse gate' },
-  { Icon: Radar, label: 'Live reputation · Exa' },
+  { Icon: Radar, label: 'Live reputation' },
   { Icon: ShieldCheck, label: 'Fail-closed allowlist' },
   { Icon: FileCheck, label: 'SHA-256 proof' },
 ] as const
@@ -315,7 +315,7 @@ export function Enterprise() {
             className="flex items-center gap-2 text-white/70 text-[10px] md:text-[11px] font-medium tracking-[0.22em] uppercase font-mono"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-allow live-dot" />
-            Bastion for teams
+            SecureAI for teams
           </motion.p>
           <WordRevealTitle text="Verify before your agents act." />
           <motion.p
@@ -324,7 +324,7 @@ export function Enterprise() {
             transition={{ delay: 0.55 }}
             className="text-white/75 text-[15px] md:text-base leading-relaxed max-w-2xl"
           >
-            Wire Bastion into your agent pipeline so every skill or tool a coding
+            Wire SecureAI into your agent pipeline so every skill or tool a coding
             agent is about to learn or call is scanned first. Each request must
             come back <span className="text-allow font-medium">ALLOW</span>. It is
             fail-closed, so anything we cannot judge is blocked before it runs.
@@ -450,10 +450,10 @@ export function Enterprise() {
               <span>02</span>
             </div>
             <Radar className="w-5 h-5 text-allow" />
-            <div className="text-white text-sm font-medium">Bastion scans it</div>
+            <div className="text-white text-sm font-medium">SecureAI scans it</div>
             <p className="text-white/55 text-[13px] leading-relaxed">
               One API call traces every redirect, checks each destination's
-              reputation with Exa, and judges the text for injection with OpenAI.
+              reputation, and analyzes the text for prompt injection.
             </p>
           </div>
 

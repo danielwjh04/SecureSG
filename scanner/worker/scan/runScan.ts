@@ -4,31 +4,31 @@
  *
  * `runScan` is deliberately a pure function over its injected dependencies
  * ({@link ScanDeps}): it reads no `globalThis`, no environment, no clock, and no
- * randomness directly. Every external capability — the config, the Exa
- * reputation client, the OpenAI judge, the `fetch` used by the redirect tracer,
- * and the response timestamp — arrives through `deps`. This is what lets the
+ * randomness directly. Every external capability — the config, the reputation
+ * client, the AI injection-inference client, the `fetch` used by the redirect
+ * tracer, and the response timestamp — arrives through `deps`. This is what lets the
  * exact same logic run inside the Cloudflare Worker (`/api/scan`) and inside a
  * plain Node process (the hermetic gallery build) with recorded sponsor clients,
  * and what makes every stage independently testable.
  *
  * Safety posture (CLAUDE.md §1, §6):
- *   - Tighten-only: the deterministic rules produce the `baseline`; Exa and the
- *     judge can only *raise* severity, never lower it. Every fold is through
- *     `escalate(baseline, candidate)`.
+ *   - Tighten-only: the deterministic rules produce the `baseline`; reputation
+ *     and the AI inference can only *raise* severity, never lower it. Every fold
+ *     is through `escalate(baseline, candidate)`.
  *   - Fail-closed: a missing reputation client does NOT relax the baseline, and a
  *     thrown `ReputationError` / `JudgeError` escalates toward
- *     HUMAN_APPROVAL_REQUIRED rather than silently allowing. A sponsor failure
+ *     HUMAN_APPROVAL_REQUIRED rather than silently allowing. A provider failure
  *     can never turn a risky skill into an ALLOW.
  *   - Idempotent proof: nothing time-varying enters a hashed step. `scannedAt`
  *     is supplied by the caller and lives outside the chain.
  */
 
 import type {
-  ExaClient,
-  ExaReport,
+  ReputationClient,
+  ReputationReport,
   InjectionFinding,
-  JudgeClient,
-  JudgeResult,
+  InferenceClient,
+  InjectionResult,
   LinkChain,
   Proof,
   RuleFinding,
@@ -54,10 +54,10 @@ import { escalate, mapProbabilityToVerdict } from '../verdict/verdict'
 export interface ScanDeps {
   /** Fully-resolved, validated scanner configuration. */
   config: ScannerConfig
-  /** Exa reputation client, or `null` when no key is configured. */
-  exa: ExaClient | null
-  /** OpenAI injection judge, or `null` when no key is configured. */
-  judge: JudgeClient | null
+  /** Reputation client, or `null` when no key is configured. */
+  reputation: ReputationClient | null
+  /** AI injection-inference client, or `null` when no key is configured. */
+  inference: InferenceClient | null
   /** Injected `fetch` for the redirect tracer (and source-URL load). */
   fetchImpl?: typeof fetch
   /** ISO timestamp for the response — set OUTSIDE the hashed proof. */
@@ -184,18 +184,18 @@ async function resolveSkillText(
  * @returns The reports (empty on failure) and the verdict after escalation.
  */
 async function runReputationStage(
-  exa: ExaClient | null,
+  reputation: ReputationClient | null,
   finalUrls: string[],
   baseline: Verdict,
-): Promise<{ reports: ExaReport[]; verdict: Verdict }> {
+): Promise<{ reports: ReputationReport[]; verdict: Verdict }> {
   // No client configured: do NOT treat missing reputation as evidence of
   // safety. Keep the baseline exactly — never relax it.
-  if (exa === null || finalUrls.length === 0) {
+  if (reputation === null || finalUrls.length === 0) {
     return { reports: [], verdict: baseline }
   }
 
   try {
-    const reports = await exa.assessFinalUrls(finalUrls)
+    const reports = await reputation.assessFinalUrls(finalUrls)
     let verdict = baseline
     for (const report of reports) {
       if (report.flagged) {
@@ -223,19 +223,19 @@ async function runReputationStage(
  *
  * @returns The judge findings (empty on failure) and the verdict after fold.
  */
-async function runJudgeStage(
-  judge: JudgeClient | null,
+async function runInferenceStage(
+  inference: InferenceClient | null,
   skillText: string,
-  exaReports: ExaReport[],
+  reputationReports: ReputationReport[],
   baseline: Verdict,
   config: ScannerConfig,
-): Promise<{ result: JudgeResult | null; verdict: Verdict }> {
-  if (judge === null) {
+): Promise<{ result: InjectionResult | null; verdict: Verdict }> {
+  if (inference === null) {
     return { result: null, verdict: baseline }
   }
 
   try {
-    const result = await judge.judge(skillText, exaReports, baseline)
+    const result = await inference.detect(skillText, reputationReports, baseline)
     const banded = mapProbabilityToVerdict(
       result.pInjection,
       config.judgeReviewThreshold,
@@ -246,9 +246,9 @@ async function runJudgeStage(
     const verdict = escalate(baseline, escalate(result.verdict, banded))
     return { result, verdict }
   } catch (error: unknown) {
-    // Fail-closed: a judge failure escalates toward HUMAN_APPROVAL, never
+    // Fail-closed: an inference failure escalates toward HUMAN_APPROVAL, never
     // allows. The exact error class is logged (CLAUDE.md §1).
-    logErrorClass('judge', error)
+    logErrorClass('inference', error)
     return { result: null, verdict: escalate(baseline, SPONSOR_FAILURE_FLOOR) }
   }
 }
@@ -273,18 +273,18 @@ function logErrorClass(stage: string, error: unknown): void {
  *   2. `parseSkill` → URLs + exec patterns.
  *   3. `traceRedirects` per URL → redirect cascades.
  *   4. `evaluateRules` → deterministic `baseline` verdict + findings.
- *   5. Exa reputation over the final URLs (fail-closed; null client never
+ *   5. Reputation over the final URLs (fail-closed; null client never
  *      relaxes the baseline).
- *   6. OpenAI judge (fail-closed, tighten-only).
+ *   6. AI injection inference (fail-closed, tighten-only).
  *   7. Build the proof: SKILL_INPUT, URL_EXTRACTED·n, REDIRECT_HOP·h,
- *      EXA_REPUTATION·r, JUDGE_FINDING, terminal VERDICT.
+ *      REPUTATION·r, INJECTION, terminal VERDICT.
  *
  * Determinism: the only inputs are the request and `deps`; with the same request
  * and the same recorded clients the produced proof (and `headHash`) is identical.
  * `scannedAt` is the sole time-varying field and is never hashed.
  *
- * Time complexity: O(U·H + R + F) where U = URLs, H = max hops, R = Exa reports,
- *   F = judge findings — a single pass per stage, no nested rescans.
+ * Time complexity: O(U·H + R + F) where U = URLs, H = max hops, R = reputation
+ *   reports, F = injection findings — a single pass per stage, no nested rescans.
  * Space complexity: O(U·H + R + F) for the chains, reports, findings, and proof.
  *
  * @param request - The scan request (exactly one of `content`/`sourceUrl`).
@@ -335,22 +335,22 @@ export async function runScan(
   const baseline: Verdict = ruleOutcome.verdict
   const findings: RuleFinding[] = ruleOutcome.findings
 
-  // 5. Exa reputation (fail-closed; tighten-only).
+  // 5. Reputation (fail-closed; tighten-only).
   const finalUrls = chains.map((chain) => chain.finalUrl)
-  const reputation = await runReputationStage(deps.exa, finalUrls, baseline)
-  const exaReports: ExaReport[] = reputation.reports
+  const reputation = await runReputationStage(deps.reputation, finalUrls, baseline)
+  const reputationReports: ReputationReport[] = reputation.reports
 
-  // 6. OpenAI judge (fail-closed; tighten-only). The judge sees the
+  // 6. AI injection inference (fail-closed; tighten-only). It sees the
   //    post-reputation verdict as its baseline so it can only tighten further.
-  const judgeStage = await runJudgeStage(
-    deps.judge,
+  const inferenceStage = await runInferenceStage(
+    deps.inference,
     skillText,
-    exaReports,
+    reputationReports,
     reputation.verdict,
     config,
   )
-  const injections: InjectionFinding[] = judgeStage.result?.findings ?? []
-  const verdict: Verdict = judgeStage.verdict
+  const injections: InjectionFinding[] = inferenceStage.result?.findings ?? []
+  const verdict: Verdict = inferenceStage.verdict
 
   // 7. Build the tamper-evident proof. Payloads are float-free: floats (scores,
   //    probabilities) are serialized as strings; booleans as 0/1 where a number
@@ -361,15 +361,15 @@ export async function runScan(
     source,
     urls: parsed.urls,
     chains,
-    exaReports,
-    judge: judgeStage.result,
+    reputationReports,
+    inference: inferenceStage.result,
     verdict,
   })
 
   return {
     verdict,
     chains,
-    exa: exaReports,
+    reputation: reputationReports,
     injections,
     findings,
     proof,
@@ -388,8 +388,8 @@ export async function runScan(
  *   - SKILL_INPUT   → { skillSha256, length, source }
  *   - URL_EXTRACTED → { ordinal, url } per extracted URL
  *   - REDIRECT_HOP  → { chain, hop, from, to, status, dangerous } per hop
- *   - EXA_REPUTATION→ { url, status, flagged, score } per report (score string)
- *   - JUDGE_FINDING → { pInjection (string), modelVerdict, findingCount }
+ *   - REPUTATION    → { url, status, flagged, score } per report (score string)
+ *   - INJECTION     → { pInjection (string), modelVerdict, findingCount }
  *   - VERDICT       → { verdict }
  *
  * Time complexity: O(U + H + R) appends, each O(payload). Space: O(steps).
@@ -402,8 +402,8 @@ async function buildProof(input: {
   source: ScanResult['source']
   urls: readonly string[]
   chains: readonly LinkChain[]
-  exaReports: readonly ExaReport[]
-  judge: JudgeResult | null
+  reputationReports: readonly ReputationReport[]
+  inference: InjectionResult | null
   verdict: Verdict
 }): Promise<Proof> {
   const genesis = await deriveGenesisHash(input.config.genesisSeed)
@@ -433,8 +433,8 @@ async function buildProof(input: {
     }
   }
 
-  for (const report of input.exaReports) {
-    await builder.append('EXA_REPUTATION', {
+  for (const report of input.reputationReports) {
+    await builder.append('REPUTATION', {
       url: report.url,
       status: report.status,
       flagged: report.flagged ? 1 : 0,
@@ -442,11 +442,11 @@ async function buildProof(input: {
     })
   }
 
-  if (input.judge !== null) {
-    await builder.append('JUDGE_FINDING', {
-      pInjection: input.judge.pInjection.toString(),
-      modelVerdict: input.judge.verdict,
-      findingCount: input.judge.findings.length,
+  if (input.inference !== null) {
+    await builder.append('INJECTION', {
+      pInjection: input.inference.pInjection.toString(),
+      modelVerdict: input.inference.verdict,
+      findingCount: input.inference.findings.length,
     })
   }
 

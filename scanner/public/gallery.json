@@ -33,7 +33,7 @@
             "loopDetected": false
           }
         ],
-        "exa": [
+        "reputation": [
           {
             "url": "https://pdfplumber.readthedocs.io/en/stable/",
             "score": "0.04",
@@ -107,7 +107,7 @@
             },
             {
               "index": 4,
-              "kind": "EXA_REPUTATION",
+              "kind": "REPUTATION",
               "payload": {
                 "url": "https://pdfplumber.readthedocs.io/en/stable/",
                 "status": "OK",
@@ -115,42 +115,42 @@
                 "score": "0.04"
               },
               "prevHash": "6ca9b6efe2f56201f71f8165c9a9a6bf0f2aed884863277d3e9c03c9d5b78254",
-              "currHash": "9eb5442da13800d2e752794f841fe30cba0096da321ada7281033810ef3bfbb7"
+              "currHash": "3b6ee23638aed997a1ab749481a326628b7970e60f97648016adf431bc639800"
             },
             {
               "index": 5,
-              "kind": "EXA_REPUTATION",
+              "kind": "REPUTATION",
               "payload": {
                 "url": "https://platform.openai.com/docs/guides/text",
                 "status": "OK",
                 "flagged": 0,
                 "score": "0.04"
               },
-              "prevHash": "9eb5442da13800d2e752794f841fe30cba0096da321ada7281033810ef3bfbb7",
-              "currHash": "557d01f213fce989b8644dba97bf0e403c662dc53c066c2d3d6d1d1f7a68e6f3"
+              "prevHash": "3b6ee23638aed997a1ab749481a326628b7970e60f97648016adf431bc639800",
+              "currHash": "00b90b451a9a709e95290a652f4e349308271225293b0ceb43c5df4cf8b0455a"
             },
             {
               "index": 6,
-              "kind": "EXA_REPUTATION",
+              "kind": "REPUTATION",
               "payload": {
                 "url": "https://github.com/securesg/pdf-summarizer/issues",
                 "status": "OK",
                 "flagged": 0,
                 "score": "0.04"
               },
-              "prevHash": "557d01f213fce989b8644dba97bf0e403c662dc53c066c2d3d6d1d1f7a68e6f3",
-              "currHash": "2bddfc1ee7a55d43b21b9d6825ed5c42b4f6e5a0cf0fca7a6716a3e12df2898b"
+              "prevHash": "00b90b451a9a709e95290a652f4e349308271225293b0ceb43c5df4cf8b0455a",
+              "currHash": "bdf194ee4ba82beca471f2f7dfa7cca0bbb188de5aa59b9a0025d407d8c66d50"
             },
             {
               "index": 7,
-              "kind": "JUDGE_FINDING",
+              "kind": "INJECTION",
               "payload": {
                 "pInjection": "0.02",
                 "modelVerdict": "ALLOW",
                 "findingCount": 0
               },
-              "prevHash": "2bddfc1ee7a55d43b21b9d6825ed5c42b4f6e5a0cf0fca7a6716a3e12df2898b",
-              "currHash": "2735b4245361c4af8276a1b5f3e3fd1e873ebc30f489478774588bcbd231e449"
+              "prevHash": "bdf194ee4ba82beca471f2f7dfa7cca0bbb188de5aa59b9a0025d407d8c66d50",
+              "currHash": "3798e74942aa7742d70c929bd2c87e87a41f37f3101e4a93e35c070a6ff8043b"
             },
             {
               "index": 8,
@@ -158,11 +158,11 @@
               "payload": {
                 "verdict": "ALLOW"
               },
-              "prevHash": "2735b4245361c4af8276a1b5f3e3fd1e873ebc30f489478774588bcbd231e449",
-              "currHash": "ebbe46fc9d0db81db722ad10100982bd4710797ce14deefe550e9708fe5d3e29"
+              "prevHash": "3798e74942aa7742d70c929bd2c87e87a41f37f3101e4a93e35c070a6ff8043b",
+              "currHash": "901bddca4db18151d21d80ef90e189ab9313c2de64c76b4b3ea2121492daf37a"
             }
           ],
-          "headHash": "ebbe46fc9d0db81db722ad10100982bd4710797ce14deefe550e9708fe5d3e29"
+          "headHash": "901bddca4db18151d21d80ef90e189ab9313c2de64c76b4b3ea2121492daf37a"
         },
         "scannedAt": "2026-06-01T00:00:00.000Z",
         "source": {
@@ -203,7 +203,7 @@
             "loopDetected": false
           }
         ],
-        "exa": [
+        "reputation": [
           {
             "url": "https://open-meteo.com/en/docs",
             "score": "0.04",
@@ -277,7 +277,7 @@
             },
             {
               "index": 4,
-              "kind": "EXA_REPUTATION",
+              "kind": "REPUTATION",
               "payload": {
                 "url": "https://open-meteo.com/en/docs",
                 "status": "OK",
@@ -285,42 +285,42 @@
                 "score": "0.04"
               },
               "prevHash": "ae199446c3b81267e155069b39b2ae647332ec13a7c5dd622110e81c1ad1bc7e",
-              "currHash": "cb95ee838aa88f15fb923995ae5a99a2ae354e721e170f1aef00dad57ba640f9"
+              "currHash": "ce46fb07eaa5a76b9bb0fbdd397957c948073ff09b2a8c55c5ec509b4429b1cb"
             },
             {
               "index": 5,
-              "kind": "EXA_REPUTATION",
+              "kind": "REPUTATION",
               "payload": {
                 "url": "https://geocoding-api.open-meteo.com/v1/search",
                 "status": "OK",
                 "flagged": 0,
                 "score": "0.04"
               },
-              "prevHash": "cb95ee838aa88f15fb923995ae5a99a2ae354e721e170f1aef00dad57ba640f9",
-              "currHash": "10afc9f1ebbb9eb3a5c380c15d9565f74ad55b0c5aa196f95a2654bb64df2af5"
+              "prevHash": "ce46fb07eaa5a76b9bb0fbdd397957c948073ff09b2a8c55c5ec509b4429b1cb",
+              "currHash": "f65c25ae03eb61a6a362b4f39dc366bf313f8fd1d30419061e217bfe21ac2d32"
             },
             {
               "index": 6,
-              "kind": "EXA_REPUTATION",
+              "kind": "REPUTATION",
               "payload": {
                 "url": "https://github.com/securesg/weather-lookup",
                 "status": "OK",
                 "flagged": 0,
                 "score": "0.04"
               },
-              "prevHash": "10afc9f1ebbb9eb3a5c380c15d9565f74ad55b0c5aa196f95a2654bb64df2af5",
-              "currHash": "1af62fd0907bd8720840871ea1ac7126b5422e1d72fd9920348eb856ab19efd8"
+              "prevHash": "f65c25ae03eb61a6a362b4f39dc366bf313f8fd1d30419061e217bfe21ac2d32",
+              "currHash": "2c92008e144b5faca4928264e7d43a654d553bc5cb2455789200e525c06d5296"
             },
             {
               "index": 7,
-              "kind": "JUDGE_FINDING",
+              "kind": "INJECTION",
               "payload": {
                 "pInjection": "0.02",
                 "modelVerdict": "ALLOW",
                 "findingCount": 0
               },
-              "prevHash": "1af62fd0907bd8720840871ea1ac7126b5422e1d72fd9920348eb856ab19efd8",
-              "currHash": "c8fe8d56c2d4911726483a8b98ded64ec93875eefd3a5622c8386fe6454e270c"
+              "prevHash": "2c92008e144b5faca4928264e7d43a654d553bc5cb2455789200e525c06d5296",
+              "currHash": "088c124e1a60896acc4c0718fb02a8aa9652f659f2541fcad6241f41db6e2537"
             },
             {
               "index": 8,
@@ -328,11 +328,11 @@
               "payload": {
                 "verdict": "ALLOW"
               },
-              "prevHash": "c8fe8d56c2d4911726483a8b98ded64ec93875eefd3a5622c8386fe6454e270c",
-              "currHash": "30aaa25f5d55280adbdf039e1c65c91a9889eca9cd489ad24f89c2cbd092d464"
+              "prevHash": "088c124e1a60896acc4c0718fb02a8aa9652f659f2541fcad6241f41db6e2537",
+              "currHash": "48870c932dd8f95d5637dccd9e0bbde6952cf31a84cd82a039b5ab9baf253ddd"
             }
           ],
-          "headHash": "30aaa25f5d55280adbdf039e1c65c91a9889eca9cd489ad24f89c2cbd092d464"
+          "headHash": "48870c932dd8f95d5637dccd9e0bbde6952cf31a84cd82a039b5ab9baf253ddd"
         },
         "scannedAt": "2026-06-01T00:00:00.000Z",
         "source": {
@@ -386,7 +386,7 @@
             "loopDetected": false
           }
         ],
-        "exa": [
+        "reputation": [
           {
             "url": "http://payload.attacker-host.example/invoice-template.exe",
             "score": "0.94",
@@ -511,7 +511,7 @@
             },
             {
               "index": 6,
-              "kind": "EXA_REPUTATION",
+              "kind": "REPUTATION",
               "payload": {
                 "url": "http://payload.attacker-host.example/invoice-template.exe",
                 "status": "OK",
@@ -519,18 +519,18 @@
                 "score": "0.94"
               },
               "prevHash": "f3f2aaac363f6c541bf403038d99ee6b43674d80fe013687c68f79a7b8ce7c9e",
-              "currHash": "1aed142886928762ccef2ae7406b6f9cc6e2453cb03a162e7386d98978d56453"
+              "currHash": "b0fd373c5bf83868b05caa32245e6ded222cef27dba27e5adb42dc118c159cee"
             },
             {
               "index": 7,
-              "kind": "JUDGE_FINDING",
+              "kind": "INJECTION",
               "payload": {
                 "pInjection": "0.41",
                 "modelVerdict": "HUMAN_APPROVAL_REQUIRED",
                 "findingCount": 0
               },
-              "prevHash": "1aed142886928762ccef2ae7406b6f9cc6e2453cb03a162e7386d98978d56453",
-              "currHash": "4a46b5dfbf3ea67cbbd10eb1a5f49d72a8fb68950d0f6696be3e8f0ab2983ded"
+              "prevHash": "b0fd373c5bf83868b05caa32245e6ded222cef27dba27e5adb42dc118c159cee",
+              "currHash": "dd2b61521139828a0a4708b6768ddf65039a12491291d6f34af8a1b70f36e640"
             },
             {
               "index": 8,
@@ -538,11 +538,11 @@
               "payload": {
                 "verdict": "BLOCK"
               },
-              "prevHash": "4a46b5dfbf3ea67cbbd10eb1a5f49d72a8fb68950d0f6696be3e8f0ab2983ded",
-              "currHash": "d25ae703f7e02e37027ac7eef153f1830965dc1b8d530cfe3cca5cd89c01bf93"
+              "prevHash": "dd2b61521139828a0a4708b6768ddf65039a12491291d6f34af8a1b70f36e640",
+              "currHash": "c7be4d473ebb95a6bb3b62d7e0eeade892fc924e942660e6fd07b7e29faf21f4"
             }
           ],
-          "headHash": "d25ae703f7e02e37027ac7eef153f1830965dc1b8d530cfe3cca5cd89c01bf93"
+          "headHash": "c7be4d473ebb95a6bb3b62d7e0eeade892fc924e942660e6fd07b7e29faf21f4"
         },
         "scannedAt": "2026-06-01T00:00:00.000Z",
         "source": {
@@ -567,7 +567,7 @@
             "loopDetected": false
           }
         ],
-        "exa": [
+        "reputation": [
           {
             "url": "https://keepachangelog.com/en/1.1.0/",
             "score": "0.04",
@@ -618,7 +618,7 @@
             },
             {
               "index": 2,
-              "kind": "EXA_REPUTATION",
+              "kind": "REPUTATION",
               "payload": {
                 "url": "https://keepachangelog.com/en/1.1.0/",
                 "status": "OK",
@@ -626,18 +626,18 @@
                 "score": "0.04"
               },
               "prevHash": "909702460035b38f0bc087e32896d3bf573ee344aa36e6c38a48a045372daae7",
-              "currHash": "d862eaf451e380d4620ef0ac216fa6d7404adf5ff274a270188d7c0a2f8582a2"
+              "currHash": "f0b598b3495cd1bacf7f3c01b9cca70d20fff78d40b5adef0a2d320200e43939"
             },
             {
               "index": 3,
-              "kind": "JUDGE_FINDING",
+              "kind": "INJECTION",
               "payload": {
                 "pInjection": "0.97",
                 "modelVerdict": "BLOCK",
                 "findingCount": 2
               },
-              "prevHash": "d862eaf451e380d4620ef0ac216fa6d7404adf5ff274a270188d7c0a2f8582a2",
-              "currHash": "6de3f856a99200ce343a81f7393352751b5ce903ec8722d0e34e0eedd9f7402b"
+              "prevHash": "f0b598b3495cd1bacf7f3c01b9cca70d20fff78d40b5adef0a2d320200e43939",
+              "currHash": "c3bc0fbb560edd29990f8c87413ecaf432cfe52af270d0a8e4ed17655b095b67"
             },
             {
               "index": 4,
@@ -645,11 +645,11 @@
               "payload": {
                 "verdict": "BLOCK"
               },
-              "prevHash": "6de3f856a99200ce343a81f7393352751b5ce903ec8722d0e34e0eedd9f7402b",
-              "currHash": "cd6be327cbae030ed2a0b44e564e1ec546471e3374a017c5ca114a2a2e1d3069"
+              "prevHash": "c3bc0fbb560edd29990f8c87413ecaf432cfe52af270d0a8e4ed17655b095b67",
+              "currHash": "8200b878875dc1dcef1bd7fe1387f8e8f595719557ff0edb7bfcb8085cf8d573"
             }
           ],
-          "headHash": "cd6be327cbae030ed2a0b44e564e1ec546471e3374a017c5ca114a2a2e1d3069"
+          "headHash": "8200b878875dc1dcef1bd7fe1387f8e8f595719557ff0edb7bfcb8085cf8d573"
         },
         "scannedAt": "2026-06-01T00:00:00.000Z",
         "source": {
