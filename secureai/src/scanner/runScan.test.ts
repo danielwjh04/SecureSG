@@ -35,6 +35,20 @@ describe('runScan', () => {
     expect(result.proof.steps.at(-1)?.kind).toBe('VERDICT')
   })
 
+  it('returns ALLOW for a benign link-free skill (an empty parse is not an error)', async () => {
+    // A skill with no links and no exec patterns is benign, not unparseable.
+    // Previously this threw ParseError ("nothing to scan"); it must now settle a
+    // clean ALLOW with a verifiable proof — the regression for a link-free
+    // SKILL.md (e.g. a resolved GitHub repo whose manifest carries no links).
+    const req: ScanRequest = { content: '# Demo skill\nNothing risky here.' }
+    const { result } = await runScan(req, deps())
+    expect(result.verdict).toBe('ALLOW')
+    expect(result.reputation).toEqual([])
+    expect(result.injections).toEqual([])
+    expect(result.proof.steps.at(-1)?.kind).toBe('VERDICT')
+    expect(await verifyChain(result.proof)).toEqual({ ok: true, firstBrokenIndex: null })
+  })
+
   it('BLOCKs a curl|bash exec pattern and skips inference (cost discipline)', async () => {
     const detect = vi.fn(async () => {
       throw new Error('inference must not run once the baseline is BLOCK')

@@ -17,9 +17,8 @@
  *     let through on a fault.
  *   - "Nothing to scan" is NOT a fault: a tool call with no URLs and no
  *     download-execute pattern carries no supply-chain indicator the scanner can
- *     reason about, so it is `allow` with a `null` verdict — distinguished from a
- *     real fault by catching {@link ParseError} specifically rather than by
- *     string-matching a message.
+ *     reason about, so it is `allow` with a `null` verdict — detected by an empty
+ *     parse result, distinct from a real fault (oversize input still fail-closes).
  *   - Tighten-only: the decision is derived solely from the scanner verdict; this
  *     module never relaxes a BLOCK into an allow.
  *
@@ -30,7 +29,6 @@
 import type { ScanDeps } from '../scanner/runScan'
 import type { Proof, Verdict } from '../schemas/contract'
 import type { PreToolUsePayload } from '../schemas/validate'
-import { ParseError } from '../errors'
 import { parseSkill } from '../pipeline/parse'
 import { runScan } from '../scanner/runScan'
 import { log } from '../observability/logger'
@@ -133,36 +131,30 @@ function buildScannableContent(payload: PreToolUsePayload): string {
 }
 
 /**
- * True when the scannable content carries no indicator the scanner can reason
- * about (no URLs and no download-execute pattern). Detected by running the same
- * deterministic {@link parseSkill} the scanner runs and catching its
- * {@link ParseError} "nothing to scan" signal — NOT by string-matching a
- * message. Any OTHER `ParseError` (e.g. the content exceeds the configured byte
- * ceiling) is a real fault and is re-thrown so the caller fails closed.
+ * True when the scannable content carries an indicator the scanner can reason
+ * about (at least one URL or download-execute pattern). Runs the same
+ * deterministic {@link parseSkill} the scanner runs and inspects its result: an
+ * empty {@link ParseResult} (no URLs, no exec patterns) is a benign, link-free
+ * tool call — nothing to scan (→ allow). Oversize input is still a real fault:
+ * `parseSkill` throws {@link ParseError} on it, which propagates so the caller
+ * fail-closes.
  *
  * Doing this pre-check up front lets the guard distinguish "benign, nothing to
- * scan" (→ allow) from "the scan itself faulted" (→ deny) cleanly: if the
- * pre-check says there ARE indicators, a later `ParseError` from `runScan` is a
- * genuine fault, not an empty input.
+ * scan" (→ allow) from "the scan itself faulted" (→ deny) cleanly.
  *
  * Time complexity: O(n) in the content length (one parser pass).
  * Space complexity: O(u + e) in the extracted URL / exec-pattern counts.
  *
- * @throws {ParseError} If `parseSkill` fails for any reason OTHER than "nothing
- *   to scan" (e.g. oversize input) — a real fault the caller fail-closes on.
+ * @throws {ParseError} If `parseSkill` fails (oversize input) — a real fault the
+ *   caller fail-closes on.
  */
 function hasScannableIndicators(content: string, deps: ScanDeps): boolean {
-  try {
-    parseSkill(content, deps.config)
-    return true
-  } catch (error: unknown) {
-    if (error instanceof ParseError && content.length <= deps.config.skillMaxBytes) {
-      // The only ParseError `parseSkill` raises on within-limit text is the
-      // "no URLs and no download-execute patterns" signal: nothing to scan.
-      return false
-    }
-    throw error
-  }
+  // parseSkill no longer throws on an empty extraction — a link-free document is
+  // benign and returns an empty result — so "nothing to scan" is the empty
+  // ParseResult. The only remaining ParseError is oversize input, which
+  // propagates uncaught so the caller fail-closes (deny).
+  const result = parseSkill(content, deps.config)
+  return result.urls.length > 0 || result.execPatterns.length > 0
 }
 
 /**

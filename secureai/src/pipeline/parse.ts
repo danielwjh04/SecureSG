@@ -101,9 +101,9 @@ const TRAILING_PUNCTUATION = /[.,;:!?)\]}>'"]+$/
  *   3. Dedupe by URL, preserving first-appearance order; cap at `maxUrls`
  *      (URLs beyond the cap are dropped entirely — nothing extra is recorded).
  *   4. Run the curl/wget download-execute matchers; dedupe, preserve order.
- *   5. If nothing actionable was found (no URLs AND no exec patterns), raise
- *      `ParseError` — there is nothing to scan, and silently returning an empty
- *      result would let an unparseable document masquerade as benign.
+ *   5. An empty extraction (no URLs AND no exec patterns) is a benign, link-free
+ *      document: return an empty result so the deterministic pipeline yields a
+ *      clean ALLOW rather than rejecting a harmless skill.
  *
  * Determinism: no randomness, no clock; identical text -> identical result,
  * which is what keeps the downstream proof reproducible.
@@ -116,8 +116,8 @@ const TRAILING_PUNCTUATION = /[.,;:!?)\]}>'"]+$/
  * @param text - The raw skill document.
  * @param config - The {@link ParserConfig} slice (cap + byte limit).
  * @returns The deduped, order-preserved {@link ParseResult}.
- * @throws {ParseError} If the text exceeds `skillMaxBytes`, or if no URL and no
- *   download-execute pattern is present.
+ * @throws {ParseError} If the text exceeds `skillMaxBytes`. An empty extraction
+ *   is NOT an error — it returns an empty {@link ParseResult}.
  */
 export function parseSkill(text: string, config: ParserConfig): ParseResult {
   if (text.length > config.skillMaxBytes) {
@@ -135,12 +135,9 @@ export function parseSkill(text: string, config: ParserConfig): ParseResult {
   const urls = dedupeCappedUrls(tokens, config.maxUrls)
   const execPatterns = collectExecPatterns(text)
 
-  if (urls.length === 0 && execPatterns.length === 0) {
-    throw new ParseError(
-      'no URLs and no download-execute patterns found — nothing to scan',
-    )
-  }
-
+  // An empty extraction (no URLs, no download-execute patterns) is a benign,
+  // link-free document — not an error. Returning it lets the deterministic
+  // pipeline settle a clean ALLOW; only oversize input (guarded above) throws.
   return { urls, execPatterns }
 }
 

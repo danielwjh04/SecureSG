@@ -108,15 +108,16 @@ describe('parseSkill — oversize input', () => {
   })
 })
 
-describe('parseSkill — nothing to scan', () => {
-  it('throws ParseError when there are no URLs and no exec patterns', () => {
-    expect(() => parseSkill('just some prose, no links here', BASE_CONFIG)).toThrow(
-      ParseError,
-    )
+describe('parseSkill — empty extraction is benign, not an error', () => {
+  it('returns an empty result when there are no URLs and no exec patterns', () => {
+    expect(parseSkill('just some prose, no links here', BASE_CONFIG)).toEqual({
+      urls: [],
+      execPatterns: [],
+    })
   })
 
-  it('throws ParseError on empty input', () => {
-    expect(() => parseSkill('', BASE_CONFIG)).toThrow(ParseError)
+  it('returns an empty result on empty input', () => {
+    expect(parseSkill('', BASE_CONFIG)).toEqual({ urls: [], execPatterns: [] })
   })
 })
 
