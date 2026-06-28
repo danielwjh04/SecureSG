@@ -495,14 +495,33 @@ function MembersSection({
   // query, which loads the first unfiltered page).
   useEffect(() => load(debouncedQuery), [load, debouncedQuery])
 
+  /**
+   * Optimistically patch one member row in the loaded table, so a role/plan change
+   * reflects instantly instead of after the round-trip + refetch. The subsequent
+   * `load` reconciles to authoritative state; an error path reloads to roll back.
+   */
+  const patchMember = useCallback((userId: string, changes: Partial<AdminMember>): void => {
+    setState((prev) =>
+      prev.phase === 'ready'
+        ? {
+            ...prev,
+            members: prev.members.map((m) => (m.id === userId ? { ...m, ...changes } : m)),
+          }
+        : prev,
+    )
+  }, [])
+
   const changeRole = useCallback(
     async (userId: string, role: AssignableRole): Promise<void> => {
       setPendingId(userId)
+      patchMember(userId, { role }) // optimistic: the select reflects the change at once
       try {
         await setMemberRole(userId, role)
         // Re-read the current query so the table reflects authoritative state.
         load(debouncedQuery)
       } catch (error) {
+        // Roll back the optimistic change to authoritative state, then surface the error.
+        load(debouncedQuery)
         const message =
           error instanceof ApiError ? error.message : 'Could not update the role.'
         setState({ phase: 'error', message })
@@ -510,17 +529,20 @@ function MembersSection({
         setPendingId(null)
       }
     },
-    [load, debouncedQuery],
+    [load, debouncedQuery, patchMember],
   )
 
   const changeTier = useCallback(
     async (userId: string, tier: AccountTier): Promise<void> => {
       setPendingId(userId)
+      patchMember(userId, { tier }) // optimistic: the plan select reflects the change at once
       try {
         await setMemberTier(userId, tier)
         // Re-read the current query so the table reflects authoritative state.
         load(debouncedQuery)
       } catch (error) {
+        // Roll back the optimistic change to authoritative state, then surface the error.
+        load(debouncedQuery)
         const message =
           error instanceof ApiError ? error.message : 'Could not update the plan.'
         setState({ phase: 'error', message })
@@ -528,7 +550,7 @@ function MembersSection({
         setPendingId(null)
       }
     },
-    [load, debouncedQuery],
+    [load, debouncedQuery, patchMember],
   )
 
   const remove = useCallback(

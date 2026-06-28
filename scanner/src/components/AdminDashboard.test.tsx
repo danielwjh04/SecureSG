@@ -207,6 +207,23 @@ describe('AdminDashboard · members', () => {
     expect(screen.getByText('Owner')).toBeInTheDocument()
   })
 
+  it('optimistically reflects a role change before the server confirms', async () => {
+    stubOverview()
+    vi.spyOn(client, 'fetchMembers').mockResolvedValue(
+      membersPage([member({ id: 'u1', email: 'a@securesg.test', role: 'member' })]),
+    )
+    // A never-resolving call so the only state change is the optimistic patch.
+    vi.spyOn(client, 'setMemberRole').mockReturnValue(new Promise(() => {}))
+
+    render(<AdminDashboard canManageRoles={true} />)
+    const roleSelect = await screen.findByRole('combobox', { name: 'Role for a@securesg.test' })
+
+    fireEvent.change(roleSelect, { target: { value: 'admin' } })
+
+    // The select shows the new role immediately, without waiting for the request.
+    expect(roleSelect).toHaveValue('admin')
+  })
+
   it('calls the API and refetches when an owner changes a role', async () => {
     stubOverview()
     const fetchSpy = vi
