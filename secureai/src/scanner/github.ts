@@ -185,9 +185,10 @@ export async function resolveGithubSkillUrl(
   if (chosen === null) {
     const scope = subdir.length > 0 ? ` under '${subdir}'` : ''
     throw new SourceResolutionError(
-      `no ${SKILL_MANIFEST_FILENAME} found in ${target.owner}/${target.repo}` +
-        `${scope}; paste the raw ${SKILL_MANIFEST_FILENAME} URL or the skill ` +
-        `text directly`,
+      `no ${SKILL_MANIFEST_FILENAME} found in ${target.owner}/${target.repo}${scope}. ` +
+        `SecureAI scans Agent Skill manifests (${SKILL_MANIFEST_FILENAME}); this ` +
+        `looks like a repository without one. Paste the raw ${SKILL_MANIFEST_FILENAME} ` +
+        `URL, or the skill text directly.`,
     )
   }
   return buildRawUrl(target.owner, target.repo, ref, chosen)

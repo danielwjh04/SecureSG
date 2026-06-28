@@ -233,7 +233,7 @@ describe('resolveGithubSkillUrl — repo root (default branch + tree)', () => {
     expect(url).toBe(`${RAW}/main/alpha/SKILL.md`)
   })
 
-  it('throws SourceResolutionError when the repo has no SKILL.md', async () => {
+  it('throws an actionable "not a skill" SourceResolutionError when the repo has no SKILL.md', async () => {
     const { fetch } = mockFetch({
       [API]: { json: { default_branch: 'main' } },
       [TREE_MAIN]: {
@@ -251,9 +251,16 @@ describe('resolveGithubSkillUrl — repo root (default branch + tree)', () => {
       repo: 'context7-skill',
     }
 
-    await expect(
-      resolveGithubSkillUrl(target, fetch, TIMEOUT_MS),
-    ).rejects.toBeInstanceOf(SourceResolutionError)
+    const error = await resolveGithubSkillUrl(target, fetch, TIMEOUT_MS).then(
+      () => null,
+      (caught: unknown) => caught,
+    )
+    expect(error).toBeInstanceOf(SourceResolutionError)
+    // Lock the user-facing 422 copy: it must explain SecureAI scans skill
+    // manifests and what to do, so a non-skill repo (e.g. a plain project) gets a
+    // clear message rather than a confusing one.
+    expect((error as Error).message).toMatch(/SecureAI scans Agent Skill manifests/i)
+    expect((error as Error).message).toMatch(/SKILL\.md/)
   })
 
   it('throws SourceResolutionError on a GitHub API error status', async () => {
