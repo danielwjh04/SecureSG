@@ -29,8 +29,12 @@ const ADMIN_EMAIL = 'owner@example.com'
 const SECRET = 'admin-route-test-secret'
 const config = loadConfig({ SCANNER_ADMIN_EMAILS: ADMIN_EMAIL })
 
-function deps(db: AdminDeps['db'], sessionSecret: string | null = SECRET): AdminDeps {
-  return { db, sessionSecret, config }
+function deps(
+  db: AdminDeps['db'],
+  sessionSecret: string | null = SECRET,
+  objectStore: AdminDeps['objectStore'] = null,
+): AdminDeps {
+  return { db, sessionSecret, config, objectStore }
 }
 
 function getReq(headers: Record<string, string> = {}): Request {
@@ -461,7 +465,7 @@ describe('handleAdminMemberRole', () => {
     const { user: coOwner } = await createFreeUser(db, 'co-owner@example.com')
     const res = await handleAdminMemberRole(
       roleReq(bearer(ownerKey), { userId: coOwner.id, role: 'member' }),
-      { db, sessionSecret: SECRET, config: ownerConfig },
+      { db, sessionSecret: SECRET, config: ownerConfig, objectStore: null },
     )
     expect(res.status).toBe(403)
   })
@@ -644,7 +648,7 @@ describe('handleAdminMemberRemove', () => {
     const { user: coOwner } = await createFreeUser(db, 'co-owner@example.com')
     const res = await handleAdminMemberRemove(
       removeReq(bearer(ownerKey), { userId: coOwner.id }),
-      { db, sessionSecret: SECRET, config: ownerConfig },
+      { db, sessionSecret: SECRET, config: ownerConfig, objectStore: null },
     )
     expect(res.status).toBe(403)
     expect(store.users.has(coOwner.id)).toBe(true)

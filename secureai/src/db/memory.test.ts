@@ -129,6 +129,13 @@ export class MemoryStore {
   /** Per-statement failure injection: when armed, the next call throws once. */
   public failNext = false
 
+  /**
+   * Monotonic write counter standing in for a D1 session bookmark: it advances on
+   * every write, so a session opened after a write surfaces a changed bookmark.
+   * The fake does not model replica lag — read-your-writes always holds here.
+   */
+  public bookmark = 0
+
   /** Throw once if failure injection is armed, then disarm. */
   public maybeFail(): void {
     if (this.failNext) {
@@ -506,6 +513,7 @@ export class MemoryStore {
   /** Apply a write (insert / update / upsert), returning the row-change count. */
   public execute(sql: string, params: readonly unknown[]): WriteResult {
     this.maybeFail()
+    this.bookmark += 1
     if (sql.startsWith('INSERT INTO users')) {
       const id = String(params[0])
       const email = String(params[1])
@@ -874,6 +882,24 @@ export class MemoryD1 {
 
   public prepare(sql: string): MemoryStatement {
     return new MemoryStatement(this.store, sql)
+  }
+
+  /**
+   * Open a read-replication "session". The fake ignores the constraint (no replica
+   * lag is modeled) and returns a runner delegating to this instance, exposing a
+   * `getBookmark()` that reflects the store's write counter — so a bookmark
+   * obtained after a write differs from one obtained before.
+   */
+  public withSession(_constraint?: string): {
+    prepare: (sql: string) => MemoryStatement
+    batch: (statements: MemoryStatement[]) => Promise<{ meta: { changes: number } }[]>
+    getBookmark: () => string
+  } {
+    return {
+      prepare: (sql: string) => this.prepare(sql),
+      batch: (statements: MemoryStatement[]) => this.batch(statements),
+      getBookmark: () => `bm-${this.store.bookmark}`,
+    }
   }
 
   /**

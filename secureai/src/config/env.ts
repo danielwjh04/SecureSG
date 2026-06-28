@@ -21,6 +21,12 @@ export interface Env {
   DB?: D1Database
   KV?: KVNamespace
   /**
+   * Optional R2 bucket for full caught-scan content offload (gated by
+   * `SCANNER_R2_ENABLED`). Absent → the feature is a no-op and D1 keeps the
+   * truncated preview only. Typed as the R2 binding when declared in wrangler.
+   */
+  R2?: R2Bucket
+  /**
    * HMAC secret signing stateless session cookies. A SECRET (set via
    * `wrangler secret put SESSION_SECRET`), so it is read from `env` at the route
    * — never folded into {@link ScannerConfig}, and never in source. When absent,
@@ -177,6 +183,20 @@ export interface ScannerConfig {
   readonly breakerEnabled: boolean
   readonly breakerFailureThreshold: number
   readonly breakerCooldownSeconds: number
+  /**
+   * Whether reads use D1 read-replication SESSIONS (read-your-writes via a
+   * bookmark). Default OFF for safe rollout; when off, every request uses a plain
+   * primary binding. Requires the D1 binding; a no-op when DB is unbound.
+   */
+  readonly dbSessionsEnabled: boolean
+  /** TTL (seconds) of the client's `d1b` bookmark cookie when sessions are on. */
+  readonly dbBookmarkTtlSeconds: number
+  /**
+   * Whether full caught-scan content is offloaded to the R2 bucket (the `R2`
+   * binding). Default OFF; also a no-op when the bucket is unbound. When on, D1
+   * keeps the truncated preview and R2 holds the full payload for admin review.
+   */
+  readonly r2Enabled: boolean
 }
 
 /**
@@ -285,6 +305,12 @@ export function loadConfig(env: Env): ScannerConfig {
   const breakerEnabled = readBool(env, 'SCANNER_BREAKER_ENABLED', true)
   const breakerFailureThreshold = readIntInRange(env, 'SCANNER_BREAKER_FAILURE_THRESHOLD', 5, 1, 100)
   const breakerCooldownSeconds = readIntInRange(env, 'SCANNER_BREAKER_COOLDOWN_S', 30, 1, 3600)
+  // D1 read replication (read-your-writes via session bookmarks). Off by default;
+  // the bookmark cookie is short-lived.
+  const dbSessionsEnabled = readBool(env, 'SCANNER_DB_SESSIONS_ENABLED', false)
+  const dbBookmarkTtlSeconds = readIntInRange(env, 'SCANNER_DB_BOOKMARK_TTL_S', 60, 1, 600)
+  // R2 full-content offload (gated; no-op when the bucket is unbound).
+  const r2Enabled = readBool(env, 'SCANNER_R2_ENABLED', false)
 
   // Cross-field invariants (fail-closed).
   if (!(reviewThreshold < blockThreshold)) {
@@ -350,6 +376,9 @@ export function loadConfig(env: Env): ScannerConfig {
     breakerEnabled,
     breakerFailureThreshold,
     breakerCooldownSeconds,
+    dbSessionsEnabled,
+    dbBookmarkTtlSeconds,
+    r2Enabled,
   }
 }
 

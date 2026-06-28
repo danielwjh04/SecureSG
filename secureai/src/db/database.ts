@@ -81,13 +81,32 @@ export interface Database {
 }
 
 /**
- * The D1 batch surface the {@link d1Database} adapter calls — a `batch` over
- * prepared statements returning per-statement results. Declared structurally so
- * the in-memory test fake need only implement `prepare` + `batch`.
+ * A {@link Database} backed by a D1 read-replication SESSION. Identical surface,
+ * plus {@link getBookmark} which surfaces the session's latest bookmark so a
+ * caller can return it to the client for read-your-writes on the next request.
  */
-interface D1BatchCapable {
+export interface SessionDatabase extends Database {
+  /** The session's current bookmark, or `null` if the driver exposes none yet. */
+  getBookmark(): string | null
+}
+
+/**
+ * The D1 surface the adapter calls — `prepare` + `batch` over prepared
+ * statements. Declared structurally so the in-memory test fake (and a D1 session,
+ * which has the same shape) both satisfy it.
+ */
+interface D1Runner {
   prepare(sql: string): { bind(...params: unknown[]): unknown }
   batch(statements: unknown[]): Promise<{ meta?: { changes?: number } }[]>
+}
+
+/**
+ * The D1 binding's session entry point. `withSession` accepts a prior bookmark
+ * (read-your-writes) or a constraint literal; the returned session is a runner
+ * that also exposes `getBookmark()`.
+ */
+interface D1SessionCapable {
+  withSession(constraint?: string): D1Runner & { getBookmark?: () => string | null }
 }
 
 /**
@@ -102,25 +121,56 @@ interface D1BatchCapable {
  * @returns A {@link Database} backed by `db`.
  */
 export function d1Database(db: D1Database): Database {
+  return makeDatabase(db as unknown as D1Runner)
+}
+
+/**
+ * Adapt a D1 binding to a read-replication {@link SessionDatabase}. Reads may be
+ * served by a replica while writes go to the primary; passing the client's prior
+ * `bookmark` gives read-your-writes (that client always sees at least its own
+ * latest write). A missing/blank bookmark falls back to `'first-unconstrained'`
+ * (others may read a replica). After the request's writes, return
+ * {@link SessionDatabase.getBookmark} to the client (see `db/bookmark.ts`).
+ *
+ * Time complexity: O(1) wrapper. Space complexity: O(1).
+ *
+ * @param db - The `env.DB` D1 binding (must support `withSession`).
+ * @param bookmark - The caller's prior bookmark, or `null`/empty for none.
+ * @returns A session-backed {@link SessionDatabase}.
+ */
+export function d1Session(db: D1Database, bookmark: string | null): SessionDatabase {
+  const constraint =
+    bookmark !== null && bookmark.trim().length > 0 ? bookmark : 'first-unconstrained'
+  const session = (db as unknown as D1SessionCapable).withSession(constraint)
+  const base = makeDatabase(session)
+  return {
+    ...base,
+    getBookmark(): string | null {
+      return typeof session.getBookmark === 'function' ? (session.getBookmark() ?? null) : null
+    },
+  }
+}
+
+/**
+ * Build the {@link Database} surface over any D1 {@link D1Runner} — the raw
+ * binding (plain reads/writes) or a session (read-replicated). Both expose the
+ * same `prepare`/`batch`, so the five methods are identical; only how the runner
+ * routes reads differs.
+ *
+ * Time complexity: O(1) wrapper overhead; query cost is the database's.
+ * Space complexity: O(1).
+ */
+function makeDatabase(runner: D1Runner): Database {
   return {
     async queryOne(sql: string, params: readonly unknown[]): Promise<Row | null> {
-      return db
-        .prepare(sql)
-        .bind(...params)
-        .first<Row>()
+      return (runner.prepare(sql).bind(...params) as D1PreparedStatement).first<Row>()
     },
     async queryAll(sql: string, params: readonly unknown[]): Promise<Row[]> {
-      const result = await db
-        .prepare(sql)
-        .bind(...params)
-        .all<Row>()
+      const result = await (runner.prepare(sql).bind(...params) as D1PreparedStatement).all<Row>()
       return result.results
     },
     async execute(sql: string, params: readonly unknown[]): Promise<WriteResult> {
-      const result = await db
-        .prepare(sql)
-        .bind(...params)
-        .run()
+      const result = await (runner.prepare(sql).bind(...params) as D1PreparedStatement).run()
       // D1 surfaces the affected-row count in `meta.changes`. Default to 0 so a
       // backend that omits it fails closed (treated as a no-op) rather than
       // falsely reporting a change.
@@ -130,13 +180,12 @@ export function d1Database(db: D1Database): Database {
       // D1.batch runs the prepared list as one implicit transaction (atomic,
       // sequential). Wrap a rejection as a typed PersistenceError so callers can
       // tell a batch fault from a single-statement one; nothing committed on throw.
-      const batchable = db as unknown as D1BatchCapable
       const prepared = statements.map((statement) =>
-        batchable.prepare(statement.sql).bind(...statement.params),
+        runner.prepare(statement.sql).bind(...statement.params),
       )
       let results: { meta?: { changes?: number } }[]
       try {
-        results = await batchable.batch(prepared)
+        results = await runner.batch(prepared)
       } catch (error: unknown) {
         throw new PersistenceError('database batch write failed', { cause: error })
       }

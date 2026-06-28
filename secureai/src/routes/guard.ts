@@ -16,6 +16,7 @@ import type { Env, ScannerConfig } from '../config/env'
 import type { GuardDecision } from '../guard/claudeCode'
 import type { PreToolUsePayload } from '../schemas/validate'
 import {
+  CircuitOpenError,
   ConfigError,
   InferenceError,
   ParseError,
@@ -26,10 +27,12 @@ import {
   SourceResolutionError,
 } from '../errors'
 import { guardDecision } from '../guard/claudeCode'
+import { resolveCachedDecision, type GuardCacheKv } from '../guard/guardCache'
 import { buildInferenceClient, type AiRunner } from '../pipeline/inference'
+import { breakerFor, type BreakerStore } from '../resilience/circuitBreaker'
 import { DenylistReputationClient, type IndicatorKv } from '../pipeline/indicators'
 import { preToolUseSchema } from '../schemas/validate'
-import { d1Database } from '../db/database'
+import { d1Database, type Database } from '../db/database'
 import { authenticate } from '../middleware/auth'
 import { aiAllowedForTier, enforceDailyCap } from '../middleware/gate'
 import { recordVerdict } from '../db/usage'
@@ -114,13 +117,14 @@ export async function handleGuard(
   request: Request,
   env: Env,
   config: ScannerConfig,
+  db: Database | null = env.DB !== undefined && env.DB !== null ? d1Database(env.DB) : null,
 ): Promise<Response> {
   try {
     const payload = await parseGuardBody(request)
 
-    // Accounts seam: present only when D1 is bound. Without it, the caller is an
-    // unmetered anonymous (no cap, no usage write), but the guard still runs.
-    const db = env.DB !== undefined && env.DB !== null ? d1Database(env.DB) : null
+    // Accounts seam (threaded from the worker entry, session-aware when read
+    // replication is on; defaults to a plain binding when called directly): null
+    // when D1 is unbound — the caller is then an unmetered anonymous.
     const today = new Date().toISOString().slice(0, 10)
 
     const sessionSecret = typeof env.SESSION_SECRET === 'string' ? env.SESSION_SECRET : undefined
@@ -136,8 +140,21 @@ export async function handleGuard(
     const aiEligible =
       aiAllowedForTier(ctx.tier, config) && env.AI !== undefined && env.AI !== null
     const inference = aiEligible
-      ? // The Workers AI binding's `run` is structurally an AiRunner.
-        buildInferenceClient(env.AI as unknown as AiRunner, config)
+      ? // The Workers AI binding's `run` is structurally an AiRunner; the model
+        // call is guarded by a KV-backed breaker (pass-through when KV is unbound).
+        buildInferenceClient(
+          env.AI as unknown as AiRunner,
+          config,
+          breakerFor(
+            (env.KV as BreakerStore | undefined) ?? null,
+            config,
+            'inference',
+            () =>
+              new InferenceError('inference circuit open', {
+                cause: new CircuitOpenError('inference breaker open'),
+              }),
+          ),
+        )
       : null
 
     // Known-bad indicator lookup: the curated host denylist from config plus,
@@ -147,13 +164,23 @@ export async function handleGuard(
     const kv = env.KV !== undefined && env.KV !== null ? (env.KV as IndicatorKv) : null
     const reputation = new DenylistReputationClient(config.badHosts, kv)
 
-    const decision: GuardDecision = await guardDecision(payload, {
-      config,
-      reputation,
-      inference,
-      scannedAt: new Date().toISOString(),
-      githubToken: typeof env.GITHUB_TOKEN === 'string' ? env.GITHUB_TOKEN : undefined,
-    })
+    // Decision cache: a repeated identical tool call (the common Guard case) is
+    // served from KV, skipping the redirect trace + AI compute. Auth, the daily
+    // cap, and metering below still run for this caller on a hit.
+    const guardCacheKv = env.KV !== undefined && env.KV !== null ? (env.KV as GuardCacheKv) : null
+    const decision: GuardDecision = await resolveCachedDecision(
+      payload,
+      guardCacheKv,
+      config.verdictCacheTtlSeconds,
+      () =>
+        guardDecision(payload, {
+          config,
+          reputation,
+          inference,
+          scannedAt: new Date().toISOString(),
+          githubToken: typeof env.GITHUB_TOKEN === 'string' ? env.GITHUB_TOKEN : undefined,
+        }),
+    )
 
     if (db !== null) {
       // Meter the guarded call. A `null` decision verdict means "nothing

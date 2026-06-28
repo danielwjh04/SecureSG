@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { d1Database } from './database'
+import { d1Database, d1Session } from './database'
 import { MemoryD1, MemoryStore } from './memory.test'
 import { PersistenceError } from '../errors'
 
@@ -53,5 +53,32 @@ describe('d1Database.batch', () => {
   it('returns an empty result array for an empty batch', async () => {
     const { db } = adapter()
     expect(await db.batch([])).toEqual([])
+  })
+})
+
+describe('d1Session', () => {
+  it('reads and writes through a session and surfaces a bookmark that advances on writes', async () => {
+    const store = new MemoryStore()
+    const d1 = new MemoryD1(store) as unknown as D1Database
+    const session = d1Session(d1, null)
+
+    const before = session.getBookmark()
+    await session.execute(
+      'INSERT INTO users (id, email, tier, stripe_customer_id, created_at, email_verified) VALUES (?, ?, ?, ?, ?, 1)',
+      ['u1', 's@x.test', 'free', null, '2026-06-28T00:00:00.000Z'],
+    )
+    const after = session.getBookmark()
+    // The bookmark advances after a write (read-your-writes marker).
+    expect(after).not.toBe(before)
+    // Reads go through the same session.
+    const row = await session.queryOne('SELECT tier FROM users WHERE id = ?', ['u1'])
+    expect(row?.['tier']).toBe('free')
+  })
+
+  it('accepts a prior bookmark constraint without error', async () => {
+    const store = new MemoryStore()
+    const d1 = new MemoryD1(store) as unknown as D1Database
+    const session = d1Session(d1, 'bm-prior')
+    expect(typeof session.getBookmark()).toBe('string')
   })
 })

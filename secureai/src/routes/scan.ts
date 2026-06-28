@@ -25,6 +25,7 @@ import {
 import { runScan } from '../scanner/runScan'
 import { buildInferenceClient, type AiRunner } from '../pipeline/inference'
 import { breakerFor, type BreakerStore } from '../resilience/circuitBreaker'
+import { putScanContent, type ObjectStore } from '../storage/r2'
 import { DenylistReputationClient, type IndicatorKv } from '../pipeline/indicators'
 import { scanRequestSchema } from '../schemas/validate'
 import { d1Database } from '../db/database'
@@ -252,10 +253,14 @@ async function writeScanAtomic(
   aiUsed: boolean,
   scannedText: string | null,
   config: ScannerConfig,
+  objectStore: ObjectStore | null,
 ): Promise<void> {
   const statements: BatchStatement[] = [
     verdictStatement(subject, day, result.verdict, flaggedCount, { ai: aiUsed }),
   ]
+  // When R2 offload is on, the FULL content is stored to object storage keyed by
+  // this scan id after the D1 batch commits (best-effort); D1 keeps the preview.
+  let offload: { scanId: string; content: string } | null = null
   if (!subject.startsWith(ANON_SUBJECT_PREFIX)) {
     const scanId = crypto.randomUUID()
     statements.push(
@@ -285,10 +290,17 @@ async function writeScanAtomic(
           createdAt: result.scannedAt,
         }),
       )
+      if (objectStore !== null && scannedText !== null) {
+        offload = { scanId, content: scannedText }
+      }
     }
   }
   try {
     await db.batch(statements)
+    // Offload the full payload only after the D1 row it pairs with is committed.
+    if (offload !== null && objectStore !== null) {
+      await putScanContent(objectStore, offload.scanId, offload.content)
+    }
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
     console.warn(`[handleScan] scan write batch failed (${className}); continuing`)
@@ -337,13 +349,15 @@ export async function handleScan(
   request: Request,
   env: Env,
   config: ScannerConfig,
+  db: Database | null = env.DB !== undefined && env.DB !== null ? d1Database(env.DB) : null,
 ): Promise<Response> {
   try {
     const body = await parseScanBody(request)
 
-    // Accounts seam: present only when D1 is bound. Without it, the caller is an
-    // unmetered anonymous (no cap, no usage write), but the scan still runs.
-    const db = env.DB !== undefined && env.DB !== null ? d1Database(env.DB) : null
+    // Accounts seam (threaded from the worker entry, session-aware when read
+    // replication is on; defaults to a plain binding when called directly): null
+    // when D1 is unbound — the caller is then an unmetered anonymous (no cap, no
+    // usage write), but the scan still runs.
     const today = new Date().toISOString().slice(0, 10)
 
     // Anonymous-by-default when there is no store to resolve a credential
@@ -420,6 +434,10 @@ export async function handleScan(
       // flag. Both run on a cache hit too: the cache saves the compute, never the
       // per-caller accounting.
       if (config.scanWriteAtomic) {
+        const objectStore =
+          config.r2Enabled && env.R2 !== undefined && env.R2 !== null
+            ? (env.R2 as ObjectStore)
+            : null
         await writeScanAtomic(
           db,
           ctx.subject,
@@ -429,6 +447,7 @@ export async function handleScan(
           inference !== null,
           scannedText,
           config,
+          objectStore,
         )
       } else {
         await recordVerdict(db, ctx.subject, today, result.verdict, flaggedCount, {

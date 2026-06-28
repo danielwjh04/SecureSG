@@ -30,6 +30,7 @@ import { ParseError } from '../errors'
 import { authenticate } from '../middleware/auth'
 import { findRoleByUserId, getAccountProfile, parseAccountTier, setUserTier } from '../db/accounts'
 import { getScanDetail } from '../db/scans'
+import { getScanContent, type ObjectStore } from '../storage/r2'
 import { canManageRoles, canViewAdmin, effectiveRole, parseAssignableRole } from '../auth/roles'
 import {
   adminSearchQuerySchema,
@@ -76,6 +77,11 @@ export interface AdminDeps {
   readonly db: Database | null
   readonly sessionSecret: string | null
   readonly config: ScannerConfig
+  /**
+   * R2 store for full caught-scan content, or `null` (offload off / unbound). When
+   * present, the scan-detail read prefers the full payload here over the D1 preview.
+   */
+  readonly objectStore: ObjectStore | null
 }
 
 /** The 200 body of `GET /api/admin/overview`. */
@@ -522,7 +528,16 @@ export async function handleAdminScanDetail(
     if (detail === null) {
       return Response.json({ error: 'not_found' }, { status: STATUS_NOT_FOUND })
     }
-    return Response.json(toAdminScanDetail(detail), { status: STATUS_OK })
+    // Prefer the full payload from R2 when offload is enabled; fall back to the
+    // D1 preview (getScanContent returns null on miss/error).
+    let resolved = detail
+    if (deps.objectStore !== null) {
+      const fullContent = await getScanContent(deps.objectStore, scanId)
+      if (fullContent !== null) {
+        resolved = { ...detail, content: fullContent }
+      }
+    }
+    return Response.json(toAdminScanDetail(resolved), { status: STATUS_OK })
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
     console.error(`[handleAdminScanDetail] ${className}`)

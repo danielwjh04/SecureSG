@@ -16,7 +16,7 @@ import type { Env } from '../config/env'
 import type { SignupPayload } from '../schemas/validate'
 import { AuthError, ParseError, ScannerError } from '../errors'
 import { signupSchema } from '../schemas/validate'
-import { d1Database } from '../db/database'
+import { d1Database, type Database } from '../db/database'
 import { createFreeUser } from '../db/accounts'
 
 const STATUS_CREATED = 201
@@ -55,18 +55,21 @@ async function parseSignupBody(request: Request): Promise<SignupPayload> {
  * Time complexity: O(1) (validate + two single-row inserts).
  * Space complexity: O(1).
  */
-export async function handleSignup(request: Request, env: Env): Promise<Response> {
+export async function handleSignup(
+  request: Request,
+  env: Env,
+  db: Database | null = env.DB !== undefined && env.DB !== null ? d1Database(env.DB) : null,
+): Promise<Response> {
   try {
     const body = await parseSignupBody(request)
 
-    if (env.DB === undefined || env.DB === null) {
+    if (db === null) {
       return Response.json(
         { error: 'service_unavailable', message: 'account store is not configured' },
         { status: STATUS_SERVICE_UNAVAILABLE },
       )
     }
 
-    const db = d1Database(env.DB)
     const { user, apiKey } = await createFreeUser(db, body.email)
 
     return Response.json({ apiKey, tier: user.tier }, { status: STATUS_CREATED })

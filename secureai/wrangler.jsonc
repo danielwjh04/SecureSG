@@ -137,6 +137,19 @@
     "SCANNER_STRIPE_MAX_NETWORK_RETRIES": "1",
     "SCANNER_BREAKER_ENABLED": "true",
     "SCANNER_BREAKER_FAILURE_THRESHOLD": "5",
-    "SCANNER_BREAKER_COOLDOWN_S": "30"
+    "SCANNER_BREAKER_COOLDOWN_S": "30",
+    // D1 read replication (read-your-writes via session bookmarks). OFF by default
+    // for safe rollout; flip SCANNER_DB_SESSIONS_ENABLED to "true" once replicas
+    // are provisioned. SCANNER_DB_BOOKMARK_TTL_S bounds the client bookmark cookie.
+    "SCANNER_DB_SESSIONS_ENABLED": "false",
+    "SCANNER_DB_BOOKMARK_TTL_S": "60",
+    // R2 full caught-scan-content offload. OFF by default. To enable: create a
+    // bucket (`wrangler r2 bucket create secureai-scan-content`), declare the
+    // binding below (uncomment `r2_buckets`), then set this to "true". When the
+    // bucket is unbound the offload is a no-op and D1 keeps the truncated preview.
+    "SCANNER_R2_ENABLED": "false"
   }
+  // ,"r2_buckets": [
+  //   { "binding": "R2", "bucket_name": "secureai-scan-content" }
+  // ]
 }

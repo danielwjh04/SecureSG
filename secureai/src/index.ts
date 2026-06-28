@@ -44,7 +44,9 @@ import {
   handleAdminScanDetail,
   handleAdminThreats,
 } from './routes/admin'
-import { d1Database } from './db/database'
+import { d1Database, d1Session, type SessionDatabase } from './db/database'
+import { readBookmark, withBookmark } from './db/bookmark'
+import type { ObjectStore } from './storage/r2'
 import { buildEmailSender } from './email/sender'
 import { buildStripe, StripeBillingGateway } from './billing/stripe'
 import { BillingError, CircuitOpenError, ParseError, ScannerError } from './errors'
@@ -92,12 +94,27 @@ export default {
       return jsonError('configuration error', 500)
     }
 
+    // Per-request DB seam. When D1 read replication is enabled (and DB is bound),
+    // open a session seeded with the caller's prior bookmark (read-your-writes):
+    // their reads see at least their own writes, while others may hit a replica.
+    // `stamp` returns the session's post-request bookmark to the client on every
+    // DB-touching response; a non-session db (replication off) is a plain binding
+    // and `stamp` is a no-op.
+    const session: SessionDatabase | null =
+      config.dbSessionsEnabled && env.DB !== undefined && env.DB !== null
+        ? d1Session(env.DB, readBookmark(request))
+        : null
+    const db: Database | null =
+      session ?? (env.DB !== undefined && env.DB !== null ? d1Database(env.DB) : null)
+    const stamp = async (response: Promise<Response>): Promise<Response> =>
+      withBookmark(await response, session?.getBookmark() ?? null, config.dbBookmarkTtlSeconds)
+
     if (url.pathname === ROUTE_SCAN) {
       if (request.method !== 'POST') {
         return jsonError('method not allowed', 405)
       }
       // handleScan owns its own error→status mapping and never throws.
-      return await handleScan(request, env, config)
+      return await stamp(handleScan(request, env, config, db))
     }
 
     if (url.pathname === ROUTE_GUARD) {
@@ -105,7 +122,7 @@ export default {
         return jsonError('method not allowed', 405)
       }
       // handleGuard owns its own error→status mapping and never throws.
-      return await handleGuard(request, env, config)
+      return await stamp(handleGuard(request, env, config, db))
     }
 
     if (url.pathname === ROUTE_SIGNUP) {
@@ -113,7 +130,7 @@ export default {
         return jsonError('method not allowed', 405)
       }
       // handleSignup owns its own error→status mapping and never throws.
-      return await handleSignup(request, env)
+      return await stamp(handleSignup(request, env, db))
     }
 
     if (url.pathname === ROUTE_CONTACT) {
@@ -140,12 +157,8 @@ export default {
         return jsonError('method not allowed', 405)
       }
       // handleCheckout owns its own error→status mapping and never throws.
-      return await handleCheckout(
-        request,
-        billingDatabase(env),
-        billingGateway(env, config),
-        config,
-        sessionSecretOf(env),
+      return await stamp(
+        handleCheckout(request, db, billingGateway(env, config), config, sessionSecretOf(env)),
       )
     }
 
@@ -154,12 +167,8 @@ export default {
         return jsonError('method not allowed', 405)
       }
       // handlePortal owns its own error→status mapping and never throws.
-      return await handlePortal(
-        request,
-        billingDatabase(env),
-        billingGateway(env, config),
-        config,
-        sessionSecretOf(env),
+      return await stamp(
+        handlePortal(request, db, billingGateway(env, config), config, sessionSecretOf(env)),
       )
     }
 
@@ -170,35 +179,35 @@ export default {
       // handleWebhook owns its own error→status mapping and never throws. The
       // ledger day is stamped here, at the edge, so it is deterministic per call.
       const day = new Date().toISOString()
-      return await handleWebhook(request, billingDatabase(env), billingGateway(env, config), day)
+      return await stamp(handleWebhook(request, db, billingGateway(env, config), day))
     }
 
     if (url.pathname === ROUTE_REGISTER) {
       if (request.method !== 'POST') {
         return jsonError('method not allowed', 405)
       }
-      return await handleRegister(request, authDeps(env, config))
+      return await stamp(handleRegister(request, authDeps(env, config, db)))
     }
 
     if (url.pathname === ROUTE_LOGIN) {
       if (request.method !== 'POST') {
         return jsonError('method not allowed', 405)
       }
-      return await handleLogin(request, authDeps(env, config))
+      return await stamp(handleLogin(request, authDeps(env, config, db)))
     }
 
     if (url.pathname === ROUTE_LOGIN_VERIFY) {
       if (request.method !== 'POST') {
         return jsonError('method not allowed', 405)
       }
-      return await handleLoginVerify(request, authDeps(env, config))
+      return await stamp(handleLoginVerify(request, authDeps(env, config, db)))
     }
 
     if (url.pathname === ROUTE_LOGIN_RESEND) {
       if (request.method !== 'POST') {
         return jsonError('method not allowed', 405)
       }
-      return await handleLoginResend(request, authDeps(env, config))
+      return await stamp(handleLoginResend(request, authDeps(env, config, db)))
     }
 
     if (url.pathname === ROUTE_LOGOUT) {
@@ -212,35 +221,35 @@ export default {
       if (request.method !== 'GET') {
         return jsonError('method not allowed', 405)
       }
-      return await handleMe(request, authDeps(env, config))
+      return await stamp(handleMe(request, authDeps(env, config, db)))
     }
 
     if (url.pathname === ROUTE_STATS) {
       if (request.method !== 'GET') {
         return jsonError('method not allowed', 405)
       }
-      return await handleStats(request, statsDeps(env, config))
+      return await stamp(handleStats(request, statsDeps(env, config, db)))
     }
 
     if (url.pathname === ROUTE_SCANS_RECENT) {
       if (request.method !== 'GET') {
         return jsonError('method not allowed', 405)
       }
-      return await handleRecentScans(request, recentScansDeps(env))
+      return await stamp(handleRecentScans(request, recentScansDeps(env, db)))
     }
 
     if (url.pathname === ROUTE_ADMIN_OVERVIEW) {
       if (request.method !== 'GET') {
         return jsonError('method not allowed', 405)
       }
-      return await handleAdminOverview(request, adminDeps(env, config))
+      return await stamp(handleAdminOverview(request, adminDeps(env, config, db)))
     }
 
     if (url.pathname === ROUTE_ADMIN_THREATS) {
       if (request.method !== 'GET') {
         return jsonError('method not allowed', 405)
       }
-      return await handleAdminThreats(request, adminDeps(env, config))
+      return await stamp(handleAdminThreats(request, adminDeps(env, config, db)))
     }
 
     // Caught-scan detail: GET /api/admin/scans/:id. The id is the path segment
@@ -255,7 +264,7 @@ export default {
       if (scanId.length === 0 || scanId.includes('/')) {
         return jsonError('not found', 404)
       }
-      return await handleAdminScanDetail(request, adminDeps(env, config), scanId)
+      return await stamp(handleAdminScanDetail(request, adminDeps(env, config, db), scanId))
     }
 
     // The role-change path is more specific than the members list path, so it is
@@ -264,48 +273,40 @@ export default {
       if (request.method !== 'POST') {
         return jsonError('method not allowed', 405)
       }
-      return await handleAdminMemberRole(request, adminDeps(env, config))
+      return await stamp(handleAdminMemberRole(request, adminDeps(env, config, db)))
     }
 
     if (url.pathname === ROUTE_ADMIN_MEMBER_TIER) {
       if (request.method !== 'POST') {
         return jsonError('method not allowed', 405)
       }
-      return await handleAdminMemberTier(request, adminDeps(env, config))
+      return await stamp(handleAdminMemberTier(request, adminDeps(env, config, db)))
     }
 
     if (url.pathname === ROUTE_ADMIN_MEMBER_REMOVE) {
       if (request.method !== 'POST') {
         return jsonError('method not allowed', 405)
       }
-      return await handleAdminMemberRemove(request, adminDeps(env, config))
+      return await stamp(handleAdminMemberRemove(request, adminDeps(env, config, db)))
     }
 
     if (url.pathname === ROUTE_ADMIN_MEMBERS) {
       if (request.method !== 'GET') {
         return jsonError('method not allowed', 405)
       }
-      return await handleAdminMembers(request, adminDeps(env, config))
+      return await stamp(handleAdminMembers(request, adminDeps(env, config, db)))
     }
 
     if (url.pathname === ROUTE_KEY_ROTATE) {
       if (request.method !== 'POST') {
         return jsonError('method not allowed', 405)
       }
-      return await handleKeyRotate(request, authDeps(env, config))
+      return await stamp(handleKeyRotate(request, authDeps(env, config, db)))
     }
 
     return jsonError('not found', 404)
   },
 } satisfies ExportedHandler<Env>
-
-/**
- * Build the {@link Database} seam from the `DB` binding, or `null` when D1 is
- * not bound. The billing routes return 503 on `null` rather than crashing.
- */
-function billingDatabase(env: Env): Database | null {
-  return env.DB !== undefined && env.DB !== null ? d1Database(env.DB) : null
-}
 
 /**
  * Read `SESSION_SECRET` from env, or `null` when unset/empty. Cookie auth is
@@ -318,13 +319,14 @@ function sessionSecretOf(env: Env): string | null {
 }
 
 /**
- * Assemble the auth routes' dependencies (DB seam, session secret, config, and
- * the email sender). The email sender is `null` unless `RESEND_API_KEY` is set,
- * which is the gate that activates email two-factor on login.
+ * Assemble the auth routes' dependencies. The `db` seam is built once per request
+ * by `fetch` (session-aware when read replication is enabled) and threaded in.
+ * The email sender is `null` unless `RESEND_API_KEY` is set, which is the gate
+ * that activates email two-factor on login.
  */
-function authDeps(env: Env, config: ScannerConfig): AuthDeps {
+function authDeps(env: Env, config: ScannerConfig, db: Database | null): AuthDeps {
   return {
-    db: billingDatabase(env),
+    db,
     sessionSecret: sessionSecretOf(env),
     config,
     emailSender: buildEmailSender(env, config),
@@ -343,19 +345,21 @@ function contactDeps(env: Env, config: ScannerConfig): ContactDeps {
   return { emailSender: buildEmailSender(env, config), kv, config }
 }
 
-/** Assemble the stats route's dependencies (DB seam, session secret, config). */
-function statsDeps(env: Env, config: ScannerConfig): StatsDeps {
-  return { db: billingDatabase(env), sessionSecret: sessionSecretOf(env), config }
+/** Assemble the stats route's dependencies (DB seam threaded from `fetch`). */
+function statsDeps(env: Env, config: ScannerConfig, db: Database | null): StatsDeps {
+  return { db, sessionSecret: sessionSecretOf(env), config }
 }
 
-/** Assemble the recent-scans route's dependencies (DB seam, session secret). */
-function recentScansDeps(env: Env): RecentScansDeps {
-  return { db: billingDatabase(env), sessionSecret: sessionSecretOf(env) }
+/** Assemble the recent-scans route's dependencies (DB seam threaded from `fetch`). */
+function recentScansDeps(env: Env, db: Database | null): RecentScansDeps {
+  return { db, sessionSecret: sessionSecretOf(env) }
 }
 
-/** Assemble the admin route's dependencies (DB seam, session secret, config). */
-function adminDeps(env: Env, config: ScannerConfig): AdminDeps {
-  return { db: billingDatabase(env), sessionSecret: sessionSecretOf(env), config }
+/** Assemble the admin route's dependencies (DB seam threaded from `fetch`). */
+function adminDeps(env: Env, config: ScannerConfig, db: Database | null): AdminDeps {
+  const objectStore =
+    config.r2Enabled && env.R2 !== undefined && env.R2 !== null ? (env.R2 as ObjectStore) : null
+  return { db, sessionSecret: sessionSecretOf(env), config, objectStore }
 }
 
 /**
