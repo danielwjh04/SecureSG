@@ -34,6 +34,13 @@ export interface ScannerConfig {
   readonly redirectTimeoutMs: number
   readonly allowedSchemes: ReadonlySet<string>
   readonly shortenerHosts: ReadonlySet<string>
+  /**
+   * Curated known-bad host/domain denylist (lowercased) for the reputation
+   * stage. A entry `evil.com` flags `evil.com` and every subdomain of it.
+   * Dynamic entries can additionally be added at runtime in KV under
+   * `host:<hostname>` (see {@link DenylistReputationClient}).
+   */
+  readonly badHosts: ReadonlySet<string>
   readonly aiModel: string
   readonly aiTimeoutMs: number
   readonly reviewThreshold: number
@@ -71,6 +78,10 @@ export function loadConfig(env: Env): ScannerConfig {
   const redirectTimeoutMs = readIntInRange(env, 'SCANNER_REDIRECT_TIMEOUT_MS', 5000, 100, 60000)
   const allowedSchemes = readSet(env, 'SCANNER_ALLOWED_SCHEMES', 'https')
   const shortenerHosts = readSet(env, 'SCANNER_URL_SHORTENERS', '')
+  // Curated known-bad host denylist for the reputation stage. Default empty:
+  // an empty denylist is valid (the stage simply flags nothing statically) and
+  // hosts can also be added dynamically in KV under `host:<hostname>`.
+  const badHosts = readSet(env, 'SCANNER_BAD_HOSTS', '')
   const aiModel = readString(env, 'SCANNER_AI_MODEL', '@cf/meta/llama-3.2-1b-instruct')
   const aiTimeoutMs = readIntInRange(env, 'SCANNER_AI_TIMEOUT_MS', 8000, 100, 60000)
   const reviewThreshold = readFloatInRange(env, 'SCANNER_REVIEW_THRESHOLD', 0.3, 0, 1)
@@ -120,6 +131,7 @@ export function loadConfig(env: Env): ScannerConfig {
     redirectTimeoutMs,
     allowedSchemes,
     shortenerHosts,
+    badHosts,
     aiModel,
     aiTimeoutMs,
     reviewThreshold,

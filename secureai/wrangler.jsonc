@@ -30,6 +30,12 @@
     "SCANNER_REDIRECT_TIMEOUT_MS": "5000",
     "SCANNER_ALLOWED_SCHEMES": "https",
     "SCANNER_URL_SHORTENERS": "bit.ly,tinyurl.com,t.co,goo.gl,ow.ly,buff.ly,is.gd,rebrand.ly,cutt.ly",
+    // Curated known-bad host/domain denylist for the reputation stage (comma
+    // list, lowercased). An entry like "evil.com" flags evil.com and every
+    // subdomain of it. Default empty. Hosts can ALSO be added dynamically at
+    // runtime in KV under the key `host:<hostname>` (any non-null value flags),
+    // without redeploying.
+    "SCANNER_BAD_HOSTS": "",
     "SCANNER_AI_MODEL": "@cf/meta/llama-3.2-1b-instruct",
     "SCANNER_AI_TIMEOUT_MS": "8000",
     "SCANNER_REVIEW_THRESHOLD": "0.30",

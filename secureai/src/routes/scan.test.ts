@@ -158,6 +158,20 @@ describe('handleScan — metering and caps', () => {
     expect(await getUsage(db, user.id, today)).toEqual({ scans: 1, aiScans: 1 })
   })
 
+  it('escalates the verdict to REVIEW when content references a denylisted host', async () => {
+    // A skill body whose only URL resolves (200, terminal) to a host on the
+    // configured denylist. The deterministic baseline is ALLOW; the reputation
+    // stage flags the host and the fail-closed fold raises the verdict.
+    const denyConfig = loadConfig({ SCANNER_BAD_HOSTS: 'example.com' })
+    const res = await handleScan(post(benign), {}, denyConfig)
+    expect(res.status).toBe(200)
+    const result = (await res.json()) as ScanResult
+    expect(result.verdict).toBe('HUMAN_APPROVAL_REQUIRED')
+    const flagged = result.reputation.find((r) => r.flagged)
+    expect(flagged?.status).toBe('denylisted')
+    expect(flagged?.title).toBe('example.com')
+  })
+
   it('maps a redirect-trace transport failure to 502 and meters nothing', async () => {
     const { env, db } = fixture()
     // A fetch that rejects makes the redirect tracer raise RedirectResolutionError,

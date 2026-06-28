@@ -27,6 +27,7 @@ import {
 } from '../errors'
 import { guardDecision } from '../guard/claudeCode'
 import { buildInferenceClient, type AiRunner } from '../pipeline/inference'
+import { DenylistReputationClient, type IndicatorKv } from '../pipeline/indicators'
 import { preToolUseSchema } from '../schemas/validate'
 import { d1Database } from '../db/database'
 import { authenticate } from '../middleware/auth'
@@ -138,9 +139,16 @@ export async function handleGuard(
         buildInferenceClient(env.AI as unknown as AiRunner, config)
       : null
 
+    // Known-bad indicator lookup: the curated host denylist from config plus,
+    // when KV is bound, dynamic `host:<hostname>` entries. Always present (an
+    // empty denylist simply flags nothing statically) so the reputation stage
+    // is wired in for every caller.
+    const kv = env.KV !== undefined && env.KV !== null ? (env.KV as IndicatorKv) : null
+    const reputation = new DenylistReputationClient(config.badHosts, kv)
+
     const decision: GuardDecision = await guardDecision(payload, {
       config,
-      reputation: null, // indicator-feed client lands with the D1 cache
+      reputation,
       inference,
       scannedAt: new Date().toISOString(),
       githubToken: typeof env.GITHUB_TOKEN === 'string' ? env.GITHUB_TOKEN : undefined,
