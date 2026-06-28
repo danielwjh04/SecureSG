@@ -260,31 +260,28 @@ async function sessionResponse(
 
 /**
  * Handle `POST /api/register`. Validates `{ email, password }`, rejects a
- * duplicate email with 409 (before any challenge or email), hashes the password
- * (PBKDF2), and provisions a free user with an API key. The outcome GATES on
- * whether email verification is configured (`deps.emailSender`), mirroring
- * `handleLogin`:
+ * duplicate email with 409 (before anything else), hashes the password (PBKDF2),
+ * and provisions a free user with an API key. The outcome GATES on whether email
+ * verification is configured (`deps.emailSender`):
  *   - sender `null` (no provider) → the account is created VERIFIED (no code can
  *     be sent), the session cookie is issued immediately, and the route returns
  *     `201 { user: { email, tier } }`, exactly as before this feature existed.
  *   - sender present → the account is created UNVERIFIED and is NOT usable yet
- *     (its API key does not resolve and no session is issued). An emailed-code
- *     challenge is opened and the route returns `200 { twoFactor: true,
- *     challengeId, email: <masked> }` with NO Set-Cookie. Verification completes
- *     via `POST /api/login/verify`, which flips the account to verified and mints
- *     the session — so no separate verify endpoint is needed. If the email
- *     cannot be sent, the route returns 502 and issues no session (fail-closed);
- *     the unverified account + its pending challenge remain so `/api/login/resend`
- *     can retry.
+ *     (its API key does not resolve and no session is issued). Register sends NO
+ *     code and issues NO session; it returns `201 { registered: true }` with NO
+ *     Set-Cookie. Verification is DEFERRED to the user's first login: login (which
+ *     2FAs on every attempt) opens the emailed-code challenge — the single code —
+ *     and `POST /api/login/verify` flips the account to verified and mints the
+ *     session. This yields one code total, at login, instead of one at signup and
+ *     one at first login.
  *
  * The minted API key is NOT returned by register (the contract returns only the
- * user); programmatic callers obtain one via `POST /api/key/rotate` once the
- * account is verified.
+ * user under the no-provider branch); programmatic callers obtain one via
+ * `POST /api/key/rotate` once the account is verified.
  *
  * Requires `env.DB` and `env.SESSION_SECRET` (503 otherwise).
  *
- * Time complexity: O(iterations) (PBKDF2) + O(1) inserts [+ one email round trip
- * when verification is active]. Space complexity: O(1).
+ * Time complexity: O(iterations) (PBKDF2) + O(1) inserts. Space complexity: O(1).
  */
 export async function handleRegister(request: Request, deps: AuthDeps): Promise<Response> {
   if (deps.db === null) {
@@ -317,20 +314,13 @@ export async function handleRegister(request: Request, deps: AuthDeps): Promise<
       verifiedAtCreation,
     )
 
-    // Verification active: withhold the session, open an emailed-code challenge,
-    // and return the same shape as handleLogin's 2FA branch (no Set-Cookie).
+    // Verification active: the account exists but is UNVERIFIED and not usable
+    // yet. Register sends NO code and issues NO session — verification is deferred
+    // to the user's first login, which opens the single emailed-code challenge and
+    // (via verify) marks the account verified. Return 201 { registered: true } with
+    // no Set-Cookie.
     if (deps.emailSender !== null) {
-      const challengeId = await openChallenge(
-        db,
-        deps.emailSender,
-        deps.config,
-        user.id,
-        user.email,
-      )
-      return Response.json(
-        { twoFactor: true, challengeId, email: maskEmail(user.email) },
-        { status: STATUS_OK },
-      )
+      return Response.json({ registered: true }, { status: STATUS_CREATED })
     }
 
     return await sessionResponse(
@@ -347,11 +337,6 @@ export async function handleRegister(request: Request, deps: AuthDeps): Promise<
     console.error(`[handleRegister] ${className}`)
     if (error instanceof ParseError) {
       return Response.json({ error: className, message }, { status: STATUS_UNPROCESSABLE })
-    }
-    // A verification code that could not be delivered fails closed: the account
-    // exists but UNVERIFIED, and NO session is issued (the user can resend).
-    if (error instanceof EmailError) {
-      return Response.json({ error: 'email_send_failed' }, { status: STATUS_BAD_GATEWAY })
     }
     return Response.json({ error: 'registration_failed' }, { status: statusForError(error) })
   }

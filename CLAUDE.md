@@ -24,7 +24,7 @@ Repo: https://github.com/danielwjh04/SecureSG (starts empty, fresh build). Stack
 
 SecureAI ships as a product, not a research demo. Weigh every feature against shipping demonstrable, sellable value. The engineering rules below still hold; this section sets what to build toward.
 
-**MVP (about 3 weeks):** public scanner plus Claude Code guard live, free tier open, Stripe wired for Pro at $12/mo. Success is a real agent action blocked live plus the first paying subscriber.
+**MVP (about 3 weeks):** public scanner plus Claude Code guard live, free tier open, Stripe wired for Pro at S$9.90/mo. Success is a real agent action blocked live plus the first paying subscriber.
 
 Priorities, in order:
 - **Real inline blocking, not advisory.** The Claude Code guard must use PreToolUse hooks to return a real `deny` and fail closed. A flagged-but-allowed action is a failed build.

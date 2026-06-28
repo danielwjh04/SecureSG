@@ -4,15 +4,17 @@
  * app-level auth state and redirects to `#dashboard`. Errors from the API are
  * mapped to inline, human messages keyed off the {@link ApiError} status.
  *
- * Both modes have a second, conditional step: when the server has email
- * verification configured, `POST /api/login` (2FA) and `POST /api/register`
- * (email verification) each return `{ twoFactor, challengeId, email }` instead
- * of a session, and the card flips to the same 6-digit code-entry step. The code
- * is verified via `POST /api/login/verify`; a "Resend code" link rotates to a
- * fresh code via `POST /api/login/resend`. When no email provider is configured,
- * each behaves exactly as before (one step, straight to the dashboard). The
- * code step's copy is keyed off the mode so signup reads as "finish creating
- * your account" while login reads as "sign in".
+ * Verification lives entirely at login. When the server has email verification
+ * configured, `POST /api/login` returns `{ twoFactor, challengeId, email }`
+ * instead of a session and the card flips to a 6-digit code-entry step; the code
+ * is verified via `POST /api/login/verify`, with a "Resend code" link rotating a
+ * fresh code via `POST /api/login/resend`. Signup reaches that same step without
+ * its own code: `POST /api/register` returns `{ registered: true }` (no session,
+ * no code), so the submit handler immediately signs in with the same credentials
+ * and follows the login path — one form submission, one emailed code from login.
+ * When no email provider is configured both register and login return `{ user }`
+ * and go straight to the dashboard. The code step's copy is keyed off the mode so
+ * signup reads as "finish creating your account" while login reads as "sign in".
  */
 
 import { useState, type FormEvent } from 'react'
@@ -20,6 +22,7 @@ import { motion } from 'motion/react'
 import { ShieldCheck, MailCheck } from 'lucide-react'
 import { ApiError, login, loginResend, loginVerify, register } from '../api/client'
 import type { AuthState } from '../hooks/useAuth'
+import type { LoginResponse } from '../api/types'
 
 export type AuthMode = 'login' | 'register'
 
@@ -173,24 +176,43 @@ export function Auth({ mode, auth }: AuthProps) {
     window.location.assign('#dashboard')
   }
 
+  // Apply a login response (from the login path, or the register follow-up
+  // login): a 2FA challenge flips to the emailed-code step with no session yet;
+  // a completed `{ user }` finishes the login. Verification now lives entirely at
+  // login, so signup reaches the code step by signing in right after registering.
+  const applyLoginResult = async (result: LoginResponse): Promise<void> => {
+    if ('twoFactor' in result) {
+      setChallenge({ challengeId: result.challengeId, email: result.email })
+      setCode('')
+      setBusy(false)
+      return
+    }
+    await finishLogin()
+  }
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
     setBusy(true)
     setError(null)
+    const credentials = { email, password }
     try {
-      const credentials = { email, password }
-      // register (email verification) and login (2FA) share one union: either a
-      // completed session (`{ user }`) or an emailed-code challenge.
-      const result =
-        mode === 'register' ? await register(credentials) : await login(credentials)
-      if ('twoFactor' in result) {
-        // Email verification / 2FA is active: flip to the code step, no session yet.
-        setChallenge({ challengeId: result.challengeId, email: result.email })
-        setCode('')
-        setBusy(false)
+      if (mode === 'register') {
+        // Register no longer returns a session-less challenge or a code. It
+        // returns either a completed session (`{ user }`, no verification) or
+        // `{ registered: true }` (verification deferred to login). On the latter,
+        // sign in immediately with the same credentials and handle that login's
+        // result — including its 2FA challenge — exactly like the login path, so
+        // the user submits the signup form once and flows straight into the one
+        // emailed code that login issues.
+        const registered = await register(credentials)
+        if ('registered' in registered) {
+          await applyLoginResult(await login(credentials))
+          return
+        }
+        await finishLogin()
         return
       }
-      await finishLogin()
+      await applyLoginResult(await login(credentials))
     } catch (caught) {
       setError(errorMessage(caught, mode))
       setBusy(false)
@@ -231,8 +253,8 @@ export function Auth({ mode, auth }: AuthProps) {
   }
 
   // ----------------------------------------------- email code-entry step ---
-  // Reached by login (2FA) and register (email verification) alike; the copy is
-  // keyed off the mode so signup reads as finishing the account.
+  // Reached by login (2FA) directly, and by register via its follow-up login;
+  // the copy is keyed off the mode so signup reads as finishing the account.
   if (challenge !== null) {
     const codeCopy = CODE_COPY[mode]
     return (

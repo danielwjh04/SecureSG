@@ -443,6 +443,21 @@ describe('AdminDashboard · blocked threats', () => {
     expect(screen.getByText(/pipes a remote script into bash/)).toBeInTheDocument()
     expect(screen.getByText('download-execute')).toBeInTheDocument()
 
+    // The modal is a fixed, full-viewport overlay portaled to <body> — so it is
+    // NOT clipped by the Threats section's transformed, overflow-hidden glass
+    // card. The dialog's backdrop carries `fixed inset-0` and sits directly under
+    // document.body (the portal target), not inside the admin section tree.
+    const dialog = screen.getByRole('dialog', { name: /Scan detail for/ })
+    const backdrop = dialog.parentElement as HTMLElement
+    expect(backdrop.className).toContain('fixed')
+    expect(backdrop.className).toContain('inset-0')
+    expect(backdrop.className).toContain('overflow-y-auto')
+    expect(backdrop.parentElement).toBe(document.body)
+    // The evidence body scrolls internally so long scanned content cannot
+    // overflow the card.
+    const scrollBody = screen.getByText('Scanned content').closest('[class*="overflow-y-auto"]')
+    expect(scrollBody).not.toBeNull()
+
     // Closing the modal removes it from the document.
     fireEvent.click(screen.getByRole('button', { name: /Close scan detail/ }))
     await waitFor(() =>

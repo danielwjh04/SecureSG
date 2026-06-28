@@ -9,12 +9,16 @@
  * It owns its own load lifecycle (loading / error / 404 "details not available" /
  * ready), keyed on the scan id, and reuses the scanner's evidence components
  * (InjectionFindings, Reputation, RedirectChain) so the admin sees the same
- * panels a user sees in a scan report. Closing is wired three ways — the close
- * button, the backdrop, and the Escape key — and the body scroll is locked while
- * the modal is open so the page behind it cannot scroll under the overlay.
+ * panels a user sees in a scan report. It renders through a portal into
+ * `document.body` so the fixed full-viewport overlay escapes the Threats
+ * section's transformed, clipping glass card rather than being constrained to it.
+ * Closing is wired three ways — the close button, the backdrop, and the Escape
+ * key — and the body scroll is locked while the modal is open so the page behind
+ * it cannot scroll under the overlay.
  */
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { ReactNode } from 'react'
 import {
   AlertTriangle,
@@ -103,7 +107,14 @@ export function ThreatDetailModal({
     dialogRef.current?.focus()
   }, [])
 
-  return (
+  // Portal to <body> so the fixed overlay is sized to the viewport, not trapped
+  // inside the Threats section's transformed, `overflow-hidden` glass card (a CSS
+  // transform on an ancestor makes it the containing block for `position: fixed`,
+  // which would otherwise clip the modal to that card). The backdrop fills the
+  // viewport; the card is vertically centered with `my-auto` and the evidence
+  // body scrolls internally (`max-h`/`overflow-y-auto`) so long scanned content
+  // never overflows the card.
+  return createPortal(
     <div
       className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/70 p-4 sm:p-8"
       style={{ backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
@@ -120,7 +131,8 @@ export function ThreatDetailModal({
       >
         <DetailBody state={state} email={email} onClose={onClose} />
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 

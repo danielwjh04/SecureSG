@@ -196,15 +196,26 @@ describe('Auth — register without email verification', () => {
   })
 })
 
-describe('Auth — register with email verification', () => {
-  it('renders the signup code-entry step (with masked email) on a twoFactor response', async () => {
-    vi.spyOn(client, 'register').mockResolvedValue({
+describe('Auth — register with email verification (deferred to login)', () => {
+  it('auto-logs-in after register { registered } and shows the signup code step', async () => {
+    // New contract: register returns { registered: true } (no session, no code);
+    // the component immediately signs in, and that login returns the 2FA
+    // challenge that drives the emailed-code step.
+    const reg = vi.spyOn(client, 'register').mockResolvedValue({ registered: true })
+    const signIn = vi.spyOn(client, 'login').mockResolvedValue({
       twoFactor: true,
       challengeId: 'reg-1',
       email: 'a***@b.com',
     })
+
     render(<Auth mode="register" auth={authState()} />)
     submitCredentials('Create account')
+
+    // register, then the follow-up login with the same credentials.
+    await waitFor(() => expect(reg).toHaveBeenCalled())
+    await waitFor(() =>
+      expect(signIn).toHaveBeenCalledWith({ email: 'a@b.com', password: 'password123' }),
+    )
 
     // The signup-specific copy, not the login wording.
     expect(await screen.findByText('Verify your email')).toBeInTheDocument()
@@ -217,10 +228,26 @@ describe('Auth — register with email verification', () => {
     expect(screen.queryByText('Enter your code')).not.toBeInTheDocument()
   })
 
+  it('goes straight to the dashboard when the follow-up login returns { user }', async () => {
+    // register defers, but the follow-up login itself has no 2FA: no code step.
+    const { calls } = stubAssign()
+    const refresh = vi.fn().mockResolvedValue(undefined)
+    vi.spyOn(client, 'register').mockResolvedValue({ registered: true })
+    vi.spyOn(client, 'login').mockResolvedValue({ user: { email: 'a@b.com', tier: 'free' } })
+
+    render(<Auth mode="register" auth={authState({ refresh })} />)
+    submitCredentials('Create account')
+
+    await waitFor(() => expect(refresh).toHaveBeenCalled())
+    expect(calls).toContain('#dashboard')
+    expect(screen.queryByText('Verify your email')).not.toBeInTheDocument()
+  })
+
   it('verifies the emailed code and redirects to the dashboard on success', async () => {
     const { calls } = stubAssign()
     const refresh = vi.fn().mockResolvedValue(undefined)
-    vi.spyOn(client, 'register').mockResolvedValue({
+    vi.spyOn(client, 'register').mockResolvedValue({ registered: true })
+    vi.spyOn(client, 'login').mockResolvedValue({
       twoFactor: true,
       challengeId: 'reg-1',
       email: 'a***@b.com',
@@ -241,7 +268,8 @@ describe('Auth — register with email verification', () => {
   })
 
   it('shows an inline error on a wrong/expired code and stays on the code step', async () => {
-    vi.spyOn(client, 'register').mockResolvedValue({
+    vi.spyOn(client, 'register').mockResolvedValue({ registered: true })
+    vi.spyOn(client, 'login').mockResolvedValue({
       twoFactor: true,
       challengeId: 'reg-1',
       email: 'a***@b.com',
@@ -260,7 +288,8 @@ describe('Auth — register with email verification', () => {
   })
 
   it('resends a fresh code, then verifies with the rotated challenge id', async () => {
-    vi.spyOn(client, 'register').mockResolvedValue({
+    vi.spyOn(client, 'register').mockResolvedValue({ registered: true })
+    vi.spyOn(client, 'login').mockResolvedValue({
       twoFactor: true,
       challengeId: 'reg-1',
       email: 'a***@b.com',
@@ -282,8 +311,12 @@ describe('Auth — register with email verification', () => {
     await waitFor(() => expect(verify).toHaveBeenCalledWith('reg-2', '654321'))
   })
 
-  it('shows the verification-code send-failure message on a 502 from register', async () => {
-    vi.spyOn(client, 'register').mockRejectedValue(new ApiError(502, 'send failed'))
+  it('shows the verification-code send-failure message when the follow-up login 502s', async () => {
+    // register succeeds (deferred), but the follow-up login fails to send the
+    // code: the signup-mode 502 message names the verification code.
+    vi.spyOn(client, 'register').mockResolvedValue({ registered: true })
+    vi.spyOn(client, 'login').mockRejectedValue(new ApiError(502, 'send failed'))
+
     render(<Auth mode="register" auth={authState()} />)
     submitCredentials('Create account')
 

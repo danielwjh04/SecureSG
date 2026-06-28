@@ -86,7 +86,7 @@ Two invariants hold everywhere: **fail closed** (anything that can't be judged s
 
 **Sign up with email + password.** Sessions are carried in an **HMAC-signed cookie**; your **API key** is stored only as a SHA-256 hash (and is **rotatable** from the dashboard). Daily caps are enforced per tier. A pricing page lays out Free / Pro / Enterprise, and the whole UI is mobile-responsive.
 
-**Email 2FA.** When two-factor is enabled, login is a two-step flow: password first, then a one-time **6-digit code emailed via Resend**. 2FA is gated on the `RESEND_API_KEY` secret — with it unset, login stays single-step.
+**Email verification at login.** When enabled, login is a two-step flow: password first, then a one-time **6-digit code emailed via Resend**. A new account sends **no code at signup**. It is verified by completing that emailed-code login, and stays unusable (no session, no working API key) until it does. Gated on the `RESEND_API_KEY` secret; with it unset, login stays single-step and accounts are usable immediately.
 
 **Your dashboard** shows real protection stats: **scans run**, **threats blocked**, **malicious IOCs/URLs caught**, the verdict breakdown (Allow / Review / Block), and a 30-day trend — plus your **last 3 scans** and a copy-able **API key** (used for programmatic scans and the Guard). Upgrade to Pro or open the Stripe billing portal inline.
 

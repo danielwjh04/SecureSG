@@ -122,7 +122,7 @@ export function AdminDashboard({
   useEffect(() => refresh(), [refresh])
 
   return (
-    <section className="relative z-10 bg-black flex-1">
+    <section className="relative z-10 flex-1">
       <div className="max-w-5xl mx-auto px-6 py-10 flex flex-col gap-8">
         <Header
           generatedAt={load.phase === 'ready' ? load.overview.generatedAt : null}

@@ -111,12 +111,13 @@ const WITH_CREDENTIALS = { credentials: 'include' } as const
 /**
  * Register a new account. 409 if the email exists.
  *
- * The response is a union: when no email provider is configured server-side, it
- * returns `{ user }` and the session cookie is already set. When email
- * verification IS active, it returns `{ twoFactor: true, challengeId, email }`
- * and NO cookie — the account is unusable until the caller collects the emailed
- * 6-digit code and completes it via {@link loginVerify} (resend via
- * {@link loginResend}). Discriminate on the `twoFactor` field.
+ * The response is a union: when no email verification is configured server-side,
+ * it returns `{ user }` and the session cookie is already set. When verification
+ * IS active, it returns `{ registered: true }` and NO cookie and NO code —
+ * verification is deferred to login, so the caller must immediately {@link login}
+ * with the same credentials and handle the {@link TwoFactorChallenge} that login
+ * returns (collect the emailed code and complete via {@link loginVerify}).
+ * Discriminate on the `user`/`registered` field.
  */
 export async function register(
   credentials: AuthCredentials,

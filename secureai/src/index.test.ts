@@ -162,7 +162,8 @@ describe('worker.fetch routing', () => {
   it('routes POST /api/login to a twoFactor challenge when RESEND_API_KEY is set', async () => {
     const d1 = new MemoryD1(new MemoryStore()) as unknown as D1Database
     const env: Env = { DB: d1, SESSION_SECRET: 'router-2fa-secret', RESEND_API_KEY: 're_test' }
-    // Register (no 2FA on register — it issues a session directly).
+    // Register defers verification to login: it sends no code and issues no
+    // session (201 { registered: true }). The first login below sends the code.
     await worker.fetch(
       req('/api/register', 'POST', { email: 'router-2fa@example.com', password: 'password123' }),
       env,

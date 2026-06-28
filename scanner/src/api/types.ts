@@ -69,13 +69,25 @@ export interface TwoFactorChallenge {
 export type LoginResponse = AuthUserResponse | TwoFactorChallenge
 
 /**
- * Response body for `POST /api/register`: EITHER a completed signup (`{ user }`,
- * no email provider configured — the session cookie is already set) OR an email
- * verification challenge (`{ twoFactor, challengeId, email }`, verification
- * active — NO session yet, the account is unusable until the emailed code is
- * verified via `/api/login/verify`). Discriminate on the `twoFactor` field.
+ * The verification-deferred shape of a register response: the account was
+ * created but a session was NOT issued and NO code was sent. Verification now
+ * happens at login, so the client must immediately sign in with the same
+ * credentials — that login returns the {@link TwoFactorChallenge} that drives
+ * the emailed-code step. Discriminated by the `registered` field.
  */
-export type AuthResponse = AuthUserResponse | TwoFactorChallenge
+export interface RegisteredResponse {
+  registered: true
+}
+
+/**
+ * Response body for `POST /api/register`: EITHER a completed signup (`{ user }`,
+ * no email verification configured — the session cookie is already set) OR a
+ * verification-deferred signup (`{ registered: true }`, verification active — NO
+ * session and NO code yet; the account is created but verification happens at
+ * login, so the caller signs in next). Discriminate on the `user`/`registered`
+ * field.
+ */
+export type AuthResponse = AuthUserResponse | RegisteredResponse
 
 /** Response body for `POST /api/login/verify`: the completed login. */
 export type VerifyLoginResponse = AuthUserResponse

@@ -38,7 +38,7 @@ const SHELL =
 /** The site footer: the product mark (SecureAI) + links. */
 function Footer(): ReactNode {
   return (
-    <footer className="relative z-10 bg-black border-t border-white/[0.06]">
+    <footer className="relative z-10 bg-black/40 border-t border-white/[0.06]">
       <div className="max-w-5xl mx-auto px-6 py-10 flex flex-col sm:flex-row items-center justify-between gap-4 text-[13px]">
         <div className="flex items-center gap-2">
           <ShieldCheck className="w-4 h-4 text-white/70" />
@@ -192,7 +192,7 @@ function App(): ReactNode {
     return (
       <main id="top" className={SHELL}>
         <BackgroundVideo />
-        <div className="fixed inset-0 bg-black/70" aria-hidden="true" />
+        <div className="fixed inset-0 bg-black/55" aria-hidden="true" />
         <Navbar onHome={controller.reset} auth={auth} />
         <Auth mode={route} auth={auth} />
         <Footer />
@@ -206,7 +206,7 @@ function App(): ReactNode {
     return (
       <main id="top" className={SHELL}>
         <BackgroundVideo />
-        <div className="fixed inset-0 bg-black/80" aria-hidden="true" />
+        <div className="fixed inset-0 bg-black/55" aria-hidden="true" />
         <Navbar onHome={controller.reset} auth={auth} />
         {auth.status === 'authenticated' && auth.user !== null ? (
           <Dashboard user={auth.user} auth={auth} />
@@ -226,7 +226,7 @@ function App(): ReactNode {
     return (
       <main id="top" className={SHELL}>
         <BackgroundVideo />
-        <div className="fixed inset-0 bg-black/80" aria-hidden="true" />
+        <div className="fixed inset-0 bg-black/55" aria-hidden="true" />
         <Navbar onHome={controller.reset} auth={auth} />
         {auth.status === 'authenticated' && auth.isAdmin ? (
           <AdminDashboard canManageRoles={auth.isOwner} viewerEmail={auth.user?.email ?? null} />
@@ -245,7 +245,7 @@ function App(): ReactNode {
     return (
       <main id="top" className={SHELL}>
         <BackgroundVideo />
-        <div className="fixed inset-0 bg-black/80" aria-hidden="true" />
+        <div className="fixed inset-0 bg-black/55" aria-hidden="true" />
         <Navbar onHome={controller.reset} auth={auth} />
         <ResultSurface state={state} onReset={controller.reset} />
         <Footer />
@@ -258,7 +258,7 @@ function App(): ReactNode {
     return (
       <main id="top" className="relative bg-black w-screen h-screen flex flex-col overflow-hidden selection:bg-white selection:text-black">
         <BackgroundVideo />
-        <div className="fixed inset-0 bg-black/70" aria-hidden="true" />
+        <div className="fixed inset-0 bg-black/55" aria-hidden="true" />
         <Navbar onHome={controller.reset} auth={auth} />
         <ErrorSurface message={state.message} onRetry={controller.reset} />
       </main>
@@ -272,7 +272,7 @@ function App(): ReactNode {
       <BackgroundVideo />
       <Navbar onHome={controller.reset} auth={auth} />
       <Hero state={state} onScan={controller.scan} />
-      <div className="relative z-10 bg-black">
+      <div className="relative z-10 bg-black/60">
         <HowItWorks />
         <EaseOfUse />
         <section className="max-w-5xl mx-auto px-6 pb-20">

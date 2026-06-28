@@ -58,6 +58,24 @@ describe('Navbar admin link', () => {
   })
 })
 
+describe('Navbar anonymous auth link', () => {
+  it('labels the anonymous link "Log in / Sign up" and routes to #login', () => {
+    render(<Navbar auth={authState()} />)
+    const link = screen.getByRole('link', { name: 'Log in / Sign up' })
+    expect(link).toBeInTheDocument()
+    expect(link).toHaveAttribute('href', '#login')
+  })
+
+  it('keeps the same label on the same anchor on the register route (hash drives mode)', () => {
+    // The anchor always points at #login; the bare "Log in" label is gone.
+    render(<Navbar auth={authState()} />)
+    expect(screen.queryByRole('link', { name: 'Log in' })).toBeNull()
+    expect(
+      screen.getByRole('link', { name: 'Log in / Sign up' }),
+    ).toHaveAttribute('href', '#login')
+  })
+})
+
 describe('Navbar guard link removal', () => {
   it('does not render a Guard nav link in the desktop links', () => {
     render(<Navbar auth={authState()} />)

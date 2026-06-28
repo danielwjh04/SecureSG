@@ -177,7 +177,7 @@ export function Pricing({ auth }: PricingProps) {
       </section>
 
       {/* 2 · Plan cards ---------------------------------------------------- */}
-      <div className="relative z-10 bg-black">
+      <div className="relative z-10 bg-black/60">
         <div className="max-w-5xl mx-auto px-6 pb-24">
           <motion.div
             {...RISE}

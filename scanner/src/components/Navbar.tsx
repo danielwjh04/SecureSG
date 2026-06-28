@@ -2,8 +2,8 @@
  * Glassmorphism navbar for the dark hero. Animates in from the top, carries the
  * SecureAI mark, and routes between the scanner, Pricing, and the Enterprise page
  * with hash links. The mark calls `onHome` so it always returns to a fresh
- * scanner landing. The right side is session-aware: a "Log in" link when logged
- * out, a "Dashboard" link once a session cookie is present.
+ * scanner landing. The right side is session-aware: a "Log in / Sign up" link
+ * when logged out, a "Dashboard" link once a session cookie is present.
  *
  * On phones the primary nav links collapse behind a hamburger toggle: tapping it
  * drops a glass menu with the same links + GitHub, so every destination stays
@@ -106,13 +106,13 @@ export function Navbar({ onHome, auth }: NavbarProps) {
             ) : auth.status === 'anonymous' ? (
               <a
                 href="#login"
-                className={`glass-pill px-4 py-1.5 ${
+                className={`glass-pill whitespace-nowrap px-4 py-1.5 ${
                   route === 'login' || route === 'register'
                     ? 'text-white'
                     : 'text-white/70 hover:text-white'
                 } transition-colors`}
               >
-                Log in
+                Log in / Sign up
               </a>
             ) : null}
 
