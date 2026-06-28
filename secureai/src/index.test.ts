@@ -74,4 +74,52 @@ describe('worker.fetch routing', () => {
     const res = await worker.fetch(req('/api/unknown'), baseEnv)
     expect(res.status).toBe(404)
   })
+
+  it('routes POST /api/checkout and returns 503 when billing is unconfigured', async () => {
+    const res = await worker.fetch(req('/api/checkout'), baseEnv)
+    expect(res.status).toBe(503)
+  })
+
+  it('rejects a non-POST /api/checkout with 405', async () => {
+    const res = await worker.fetch(req('/api/checkout', 'GET'), baseEnv)
+    expect(res.status).toBe(405)
+  })
+
+  it('routes POST /api/portal and returns 503 when billing is unconfigured', async () => {
+    const res = await worker.fetch(req('/api/portal'), baseEnv)
+    expect(res.status).toBe(503)
+  })
+
+  it('rejects a non-POST /api/portal with 405', async () => {
+    const res = await worker.fetch(req('/api/portal', 'GET'), baseEnv)
+    expect(res.status).toBe(405)
+  })
+
+  it('routes POST /api/webhook and returns 503 when billing is unconfigured', async () => {
+    const res = await worker.fetch(req('/api/webhook'), baseEnv)
+    expect(res.status).toBe(503)
+  })
+
+  it('rejects a non-POST /api/webhook with 405', async () => {
+    const res = await worker.fetch(req('/api/webhook', 'GET'), baseEnv)
+    expect(res.status).toBe(405)
+  })
+
+  it('routes POST /api/webhook to a 400 when the gateway is configured but the signature is bad', async () => {
+    const d1 = new MemoryD1(new MemoryStore()) as unknown as D1Database
+    const env: Env = {
+      DB: d1,
+      STRIPE_SECRET_KEY: 'sk_test_dummy',
+      STRIPE_WEBHOOK_SECRET: 'whsec_dummy',
+    }
+    const res = await worker.fetch(
+      new Request('https://secureai.test/api/webhook', {
+        method: 'POST',
+        headers: { 'stripe-signature': 't=1,v1=bad' },
+        body: '{"id":"evt_1"}',
+      }),
+      env,
+    )
+    expect(res.status).toBe(400)
+  })
 })

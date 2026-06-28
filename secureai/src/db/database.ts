@@ -16,6 +16,16 @@
 export type Row = Record<string, unknown>
 
 /**
+ * The outcome of a write. `changes` is the number of rows the statement
+ * actually mutated — the load-bearing field for idempotency: an
+ * `INSERT ... ON CONFLICT DO NOTHING` reports 0 on a conflict and 1 on a fresh
+ * insert, so a duplicate can be detected without a follow-up read.
+ */
+export interface WriteResult {
+  readonly changes: number
+}
+
+/**
  * Minimal database surface used by the accounts and usage repositories.
  *
  * Implementations bind `params` positionally to the `?` placeholders in `sql`,
@@ -30,11 +40,11 @@ export interface Database {
   queryOne(sql: string, params: readonly unknown[]): Promise<Row | null>
 
   /**
-   * Run a write (INSERT / UPDATE / upsert). The result is intentionally not
-   * surfaced — callers that need a row back read it separately, keeping the
-   * seam minimal.
+   * Run a write (INSERT / UPDATE / upsert). Returns the row-change count so
+   * idempotency gates (e.g. `ON CONFLICT DO NOTHING`) can detect a no-op
+   * without a follow-up read. Callers that do not need it simply ignore it.
    */
-  execute(sql: string, params: readonly unknown[]): Promise<void>
+  execute(sql: string, params: readonly unknown[]): Promise<WriteResult>
 }
 
 /**
@@ -56,11 +66,15 @@ export function d1Database(db: D1Database): Database {
         .bind(...params)
         .first<Row>()
     },
-    async execute(sql: string, params: readonly unknown[]): Promise<void> {
-      await db
+    async execute(sql: string, params: readonly unknown[]): Promise<WriteResult> {
+      const result = await db
         .prepare(sql)
         .bind(...params)
         .run()
+      // D1 surfaces the affected-row count in `meta.changes`. Default to 0 so a
+      // backend that omits it fails closed (treated as a no-op) rather than
+      // falsely reporting a change.
+      return { changes: result.meta.changes ?? 0 }
     },
   }
 }

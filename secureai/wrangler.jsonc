@@ -39,6 +39,12 @@
     "SCANNER_CAP_ANONYMOUS_PER_DAY": "10",
     "SCANNER_CAP_FREE_PER_DAY": "100",
     "SCANNER_CAP_PRO_PER_DAY": "5000",
-    "SCANNER_AI_TIERS": "pro"
+    "SCANNER_AI_TIERS": "pro",
+    // Billing (Stripe). STRIPE_PRICE_PRO is the $12/mo recurring Price id —
+    // create it in the Stripe dashboard and replace the placeholder before the
+    // billing routes function. The secrets STRIPE_SECRET_KEY and
+    // STRIPE_WEBHOOK_SECRET are NOT vars; set them with `wrangler secret put`.
+    "STRIPE_PRICE_PRO": "price_REPLACE",
+    "SCANNER_APP_BASE_URL": "https://secureai.zurielst.com"
   }
 }

@@ -1,0 +1,127 @@
+/**
+ * `POST /api/checkout` handler — start a Pro-tier subscription.
+ *
+ * Authenticated: the caller must present an `Authorization: Bearer <key>` that
+ * resolves to a known account. An anonymous or unknown-key caller is a 401
+ * {@link AuthError} (unlike the metering routes, billing is never anonymous —
+ * there is no account to bill). The handler ensures the account has a Stripe
+ * customer (creating and persisting one on first checkout), opens a subscription
+ * Checkout Session for `config.stripePricePro`, and returns `{ url }`.
+ *
+ * Billing requires both the account store (`env.DB`) and the Stripe seam; when
+ * either is absent the route returns 503 rather than fabricating a session.
+ */
+
+import type { ScannerConfig } from '../config/env'
+import type { Database } from '../db/database'
+import type { BillingGateway } from '../billing/stripe'
+import { AuthError, BillingError, ParseError, ScannerError } from '../errors'
+import { authenticate } from '../middleware/auth'
+import { getUserById, setStripeCustomerId } from '../db/billing'
+
+const STATUS_OK = 200
+const STATUS_UNAUTHORIZED = 401
+const STATUS_UNPROCESSABLE = 422
+const STATUS_BAD_GATEWAY = 502
+const STATUS_SERVER_ERROR = 500
+const STATUS_SERVICE_UNAVAILABLE = 503
+
+/** Path segments appended to the app base URL for post-checkout redirects. */
+const SUCCESS_PATH = '/billing/success'
+const CANCEL_PATH = '/billing/cancel'
+
+/**
+ * Resolve the authenticated user id, or throw an {@link AuthError}. Billing has
+ * no anonymous mode: a caller without a key, or with an unknown key, resolves to
+ * the anonymous pseudo-tier and is rejected here (mapped to 401).
+ *
+ * Time complexity: O(1). Space complexity: O(1).
+ *
+ * @throws {AuthError} When the caller is not an authenticated account.
+ */
+async function requireUserId(request: Request, db: Database): Promise<string> {
+  const ctx = await authenticate(request, db)
+  if (ctx.tier === 'anonymous') {
+    throw new AuthError('authentication required for billing')
+  }
+  return ctx.subject
+}
+
+/**
+ * Map a billing error to its HTTP status: AuthError → 401; ParseError → 422;
+ * BillingError → 502 (upstream Stripe fault); any other ScannerError → 500.
+ *
+ * Time complexity: O(1). Space complexity: O(1).
+ */
+function statusForError(error: unknown): number {
+  if (error instanceof AuthError) {
+    return STATUS_UNAUTHORIZED
+  }
+  if (error instanceof ParseError) {
+    return STATUS_UNPROCESSABLE
+  }
+  if (error instanceof BillingError) {
+    return STATUS_BAD_GATEWAY
+  }
+  if (error instanceof ScannerError) {
+    return STATUS_SERVER_ERROR
+  }
+  return STATUS_SERVER_ERROR
+}
+
+/**
+ * Handle `POST /api/checkout`. Requires `env.DB` AND a billing gateway; without
+ * either, returns 503. Authenticates the caller (401 if anonymous), ensures the
+ * account has a Stripe customer (persisting a new one on first checkout), opens
+ * a subscription Checkout Session for the Pro price, and returns `{ url }`.
+ *
+ * Idempotent customer creation: the gateway keys customer creation on the user
+ * id, so a retried checkout reuses one logical customer; the new id is persisted
+ * only when the account had none.
+ *
+ * Time complexity: O(1) — at most one user read, one customer create, one
+ * session create. Space complexity: O(1).
+ */
+export async function handleCheckout(
+  request: Request,
+  db: Database | null,
+  billing: BillingGateway | null,
+  config: ScannerConfig,
+): Promise<Response> {
+  if (db === null || billing === null) {
+    return Response.json(
+      { error: 'service_unavailable', message: 'billing is not configured' },
+      { status: STATUS_SERVICE_UNAVAILABLE },
+    )
+  }
+  try {
+    const userId = await requireUserId(request, db)
+
+    const user = await getUserById(db, userId)
+    if (user === null) {
+      // The key resolved to a user id, but the row is gone — treat as unauthenticated.
+      throw new AuthError('account not found')
+    }
+
+    let customerId = user.stripeCustomerId
+    if (customerId === null) {
+      customerId = await billing.ensureCustomer(userId, user.email)
+      await setStripeCustomerId(db, userId, customerId)
+    }
+
+    const base = config.appBaseUrl
+    const url = await billing.createCheckoutSession({
+      customerId,
+      priceId: config.stripePricePro,
+      successUrl: `${base}${SUCCESS_PATH}`,
+      cancelUrl: `${base}${CANCEL_PATH}`,
+    })
+
+    return Response.json({ url }, { status: STATUS_OK })
+  } catch (error: unknown) {
+    const className = error instanceof Error ? error.constructor.name : typeof error
+    const message = error instanceof Error ? error.message : String(error)
+    console.error(`[handleCheckout] ${className}: ${message}`)
+    return Response.json({ error: className, message }, { status: statusForError(error) })
+  }
+}

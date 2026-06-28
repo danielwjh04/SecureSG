@@ -43,4 +43,17 @@ describe('loadConfig', () => {
   it('rejects a non-integer value', () => {
     expect(() => loadConfig({ SCANNER_MAX_URLS: '3.5' })).toThrow(ConfigError)
   })
+
+  it('exposes billing config with defaults and overrides', () => {
+    const defaults = loadConfig({})
+    expect(defaults.stripePricePro).toBe('price_REPLACE')
+    expect(defaults.appBaseUrl).toBe('https://secureai.zurielst.com')
+
+    const overridden = loadConfig({
+      STRIPE_PRICE_PRO: 'price_live_123',
+      SCANNER_APP_BASE_URL: 'https://app.example.com',
+    })
+    expect(overridden.stripePricePro).toBe('price_live_123')
+    expect(overridden.appBaseUrl).toBe('https://app.example.com')
+  })
 })

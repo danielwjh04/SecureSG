@@ -14,7 +14,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import type { Database } from './database'
+import type { Database, WriteResult } from './database'
 import { d1Database } from './database'
 
 interface UserRecord {
@@ -39,6 +39,19 @@ interface UsageRecord {
   ai_scans: number
 }
 
+interface SubscriptionRecord {
+  user_id: string
+  status: string
+  price_id: string
+  current_period_end: string | null
+}
+
+interface WebhookEventRecord {
+  event_id: string
+  type: string
+  created_at: string
+}
+
 /** Composite key for the usage map, mirroring the `(subject, day)` PK. */
 function usageKey(subject: string, day: string): string {
   return `${subject} ${day}`
@@ -54,6 +67,10 @@ export class MemoryStore {
   public readonly apiKeys = new Map<string, ApiKeyRecord>()
   /** Keyed by `${subject} ${day}`. */
   public readonly usage = new Map<string, UsageRecord>()
+  /** Keyed by `user_id` (the subscription mirror's primary key). */
+  public readonly subscriptions = new Map<string, SubscriptionRecord>()
+  /** Keyed by Stripe `event_id` (the webhook idempotency ledger). */
+  public readonly webhookEvents = new Map<string, WebhookEventRecord>()
 
   /** Per-statement failure injection: when armed, the next call throws once. */
   public failNext = false
@@ -81,11 +98,26 @@ export class MemoryStore {
       const record = this.usage.get(usageKey(String(params[0]), String(params[1])))
       return record === undefined ? null : { scans: record.scans, ai_scans: record.ai_scans }
     }
+    if (sql.includes('FROM users WHERE id')) {
+      const user = this.users.get(String(params[0]))
+      return user === undefined
+        ? null
+        : { id: user.id, email: user.email, stripe_customer_id: user.stripe_customer_id }
+    }
+    if (sql.includes('FROM users WHERE stripe_customer_id')) {
+      const customerId = String(params[0])
+      for (const user of this.users.values()) {
+        if (user.stripe_customer_id === customerId) {
+          return { id: user.id, email: user.email, stripe_customer_id: user.stripe_customer_id }
+        }
+      }
+      return null
+    }
     throw new Error(`MemoryStore: unrecognized queryOne SQL: ${sql}`)
   }
 
-  /** Apply a write (insert / update / upsert). */
-  public execute(sql: string, params: readonly unknown[]): void {
+  /** Apply a write (insert / update / upsert), returning the row-change count. */
+  public execute(sql: string, params: readonly unknown[]): WriteResult {
     this.maybeFail()
     if (sql.startsWith('INSERT INTO users')) {
       const id = String(params[0])
@@ -102,7 +134,7 @@ export class MemoryStore {
         stripe_customer_id: params[3] === null ? null : String(params[3]),
         created_at: String(params[4]),
       })
-      return
+      return { changes: 1 }
     }
     if (sql.startsWith('INSERT INTO api_keys')) {
       const keyHash = String(params[0])
@@ -112,7 +144,7 @@ export class MemoryStore {
         status: String(params[2]),
         created_at: String(params[3]),
       })
-      return
+      return { changes: 1 }
     }
     if (sql.startsWith('INSERT INTO usage')) {
       const subject = String(params[0])
@@ -126,25 +158,60 @@ export class MemoryStore {
         existing.scans += 1
         existing.ai_scans += aiDelta
       }
-      return
+      return { changes: 1 }
+    }
+    if (sql.startsWith('INSERT INTO webhook_events')) {
+      const eventId = String(params[0])
+      // ON CONFLICT (event_id) DO NOTHING: a replay changes zero rows.
+      if (this.webhookEvents.has(eventId)) {
+        return { changes: 0 }
+      }
+      this.webhookEvents.set(eventId, {
+        event_id: eventId,
+        type: String(params[1]),
+        created_at: String(params[2]),
+      })
+      return { changes: 1 }
+    }
+    if (sql.startsWith('INSERT INTO subscriptions')) {
+      const userId = String(params[0])
+      this.subscriptions.set(userId, {
+        user_id: userId,
+        status: String(params[1]),
+        price_id: String(params[2]),
+        current_period_end: params[3] === null ? null : String(params[3]),
+      })
+      return { changes: 1 }
     }
     if (sql.startsWith('UPDATE users SET tier = ? WHERE stripe_customer_id')) {
       const tier = String(params[0])
       const customerId = String(params[1])
+      let changes = 0
       for (const user of this.users.values()) {
         if (user.stripe_customer_id === customerId) {
           user.tier = tier
+          changes += 1
         }
       }
-      return
+      return { changes }
     }
     if (sql.startsWith('UPDATE users SET tier = ? WHERE id')) {
       const tier = String(params[0])
       const user = this.users.get(String(params[1]))
-      if (user !== undefined) {
-        user.tier = tier
+      if (user === undefined) {
+        return { changes: 0 }
       }
-      return
+      user.tier = tier
+      return { changes: 1 }
+    }
+    if (sql.startsWith('UPDATE users SET stripe_customer_id = ? WHERE id')) {
+      const customerId = String(params[0])
+      const user = this.users.get(String(params[1]))
+      if (user === undefined) {
+        return { changes: 0 }
+      }
+      user.stripe_customer_id = customerId
+      return { changes: 1 }
     }
     throw new Error(`MemoryStore: unrecognized execute SQL: ${sql}`)
   }
@@ -167,8 +234,11 @@ class MemoryStatement {
     return this.store.queryOne(this.sql, this.params) as T | null
   }
 
-  public async run(): Promise<void> {
-    this.store.execute(this.sql, this.params)
+  public async run(): Promise<{ meta: { changes: number } }> {
+    const result = this.store.execute(this.sql, this.params)
+    // Mirror D1's `run()` result shape so the d1Database adapter reads the same
+    // `meta.changes` field in tests as in production.
+    return { meta: { changes: result.changes } }
   }
 }
 

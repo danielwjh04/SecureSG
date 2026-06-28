@@ -48,3 +48,11 @@ export class AuthError extends ScannerError {}
 
 /** A subject exceeded its per-tier daily cap. Mapped to HTTP 429. */
 export class QuotaExceededError extends ScannerError {}
+
+/**
+ * A billing-provider fault: a failed Stripe API call (checkout/portal session
+ * creation), or a webhook the provider could not process. Mapped to HTTP 502 —
+ * the upstream payment provider is unreachable or rejected the request. Never
+ * used to signal an unverified webhook signature, which is a fail-closed 400.
+ */
+export class BillingError extends ScannerError {}

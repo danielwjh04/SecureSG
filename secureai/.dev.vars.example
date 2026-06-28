@@ -2,9 +2,17 @@
 # Non-secret tunables live in wrangler.jsonc `vars`, not here.
 # Set real secrets in deploys with `wrangler secret put <NAME>`.
 
-# Stripe (billing) — added when the billing routes land.
-# STRIPE_SECRET_KEY=sk_test_...
-# STRIPE_WEBHOOK_SECRET=whsec_...
+# Stripe (billing). Both secrets are REQUIRED for the /api/checkout,
+# /api/portal, and /api/webhook routes; without them those routes return 503.
+# Set them in production with `wrangler secret put STRIPE_SECRET_KEY` etc.
+#   STRIPE_SECRET_KEY      — your Stripe secret API key (test or live mode).
+#   STRIPE_WEBHOOK_SECRET  — the signing secret of the /api/webhook endpoint,
+#                            shown when you create the endpoint in the dashboard.
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+# STRIPE_PRICE_PRO is a non-secret var (lives in wrangler.jsonc); override it
+# here only to point local dev at a different Price. It is the $12/mo recurring
+# Price id created in the Stripe dashboard.
 # STRIPE_PRICE_PRO=price_...
 
 # Threat-intel feed credentials, if a feed requires one (Spamhaus DROP does not).
