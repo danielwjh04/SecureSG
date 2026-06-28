@@ -388,6 +388,27 @@ export async function findTierByUserId(
 }
 
 /**
+ * Read a user's RAW granted-role column by user id, or `null` when the id is
+ * unknown. The value is returned verbatim (it may be a corrupt non-allowlisted
+ * string); the caller passes it through {@link ../auth/roles.effectiveRole} /
+ * {@link ../auth/roles.parseStoredRole}, which fail closed to `member`. Used by
+ * the auth/admin gates to derive the effective role from the email allowlist plus
+ * this column.
+ *
+ * Time complexity: O(1) — primary-key lookup. Space complexity: O(1).
+ */
+export async function findRoleByUserId(
+  db: Database,
+  userId: string,
+): Promise<string | null> {
+  const row = await db.queryOne('SELECT role FROM users WHERE id = ?', [userId])
+  if (row === null) {
+    return null
+  }
+  return typeof row['role'] === 'string' ? row['role'] : ''
+}
+
+/**
  * Read the public {@link AccountProfile} for `userId` (for `GET /api/me`), or
  * `null` when the id is unknown. `apiKeyPrefix` is the non-secret brand prefix
  * when the account has at least one ACTIVE key, else `null` — it never exposes

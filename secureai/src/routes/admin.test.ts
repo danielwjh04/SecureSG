@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import type { AdminDeps, AdminOverview } from './admin'
+import type { AdminDeps, AdminMembersPage, AdminOverview } from './admin'
 import { memoryDatabase } from '../db/memory.test'
 import { createFreeUser, setUserTier } from '../db/accounts'
+import { setUserRole } from '../db/admin'
 import { recordVerdict } from '../db/usage'
 import { upsertSubscription } from '../db/billing'
 import { loadConfig } from '../config/env'
 import { signSession, SESSION_COOKIE_NAME } from '../auth/session'
-import { handleAdminOverview } from './admin'
+import { handleAdminMemberRole, handleAdminMembers, handleAdminOverview } from './admin'
 
 const ADMIN_EMAIL = 'owner@example.com'
 const SECRET = 'admin-route-test-secret'
@@ -25,6 +26,22 @@ async function adminBearer(db: AdminDeps['db']): Promise<string> {
   if (db === null) throw new Error('db required')
   const { apiKey } = await createFreeUser(db, ADMIN_EMAIL)
   return apiKey
+}
+
+function bearer(apiKey: string): Record<string, string> {
+  return { Authorization: `Bearer ${apiKey}` }
+}
+
+function membersReq(headers: Record<string, string> = {}, query = ''): Request {
+  return new Request(`https://secureai.test/api/admin/members${query}`, { headers })
+}
+
+function roleReq(headers: Record<string, string>, body: unknown): Request {
+  return new Request('https://secureai.test/api/admin/members/role', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+  })
 }
 
 describe('handleAdminOverview', () => {
@@ -109,5 +126,161 @@ describe('handleAdminOverview', () => {
     }
     const res = await handleAdminOverview(getReq({ Authorization: `Bearer ${apiKey}` }), deps(db))
     expect(res.status).toBe(500)
+  })
+
+  it('lets an admin (granted role) view the overview, not just an owner', async () => {
+    const { db } = memoryDatabase()
+    await adminBearer(db) // the owner exists
+    const { user, apiKey } = await createFreeUser(db, 'staff@example.com')
+    await setUserRole(db, user.id, 'admin')
+    const res = await handleAdminOverview(getReq(bearer(apiKey)), deps(db))
+    expect(res.status).toBe(200)
+  })
+})
+
+describe('handleAdminMembers', () => {
+  it('returns the directory for an owner, with the owner shown as role owner', async () => {
+    const { db } = memoryDatabase()
+    const ownerKey = await adminBearer(db)
+    const { user: u } = await createFreeUser(db, 'member@example.com')
+    const day = new Date().toISOString().slice(0, 10)
+    await recordVerdict(db, u.id, day, 'ALLOW', 0, { ai: false })
+
+    const res = await handleAdminMembers(membersReq(bearer(ownerKey)), deps(db))
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as AdminMembersPage
+    expect(body.total).toBe(2)
+    const owner = body.members.find((m) => m.email === ADMIN_EMAIL)
+    const member = body.members.find((m) => m.email === 'member@example.com')
+    expect(owner?.role).toBe('owner')
+    expect(member?.role).toBe('member')
+    expect(member?.scans).toBe(1)
+  })
+
+  it('lets a granted admin view the directory too (200)', async () => {
+    const { db } = memoryDatabase()
+    await adminBearer(db)
+    const { user, apiKey } = await createFreeUser(db, 'admin2@example.com')
+    await setUserRole(db, user.id, 'admin')
+    const res = await handleAdminMembers(membersReq(bearer(apiKey)), deps(db))
+    expect(res.status).toBe(200)
+  })
+
+  it('forbids a plain member (403)', async () => {
+    const { db } = memoryDatabase()
+    await adminBearer(db)
+    const { apiKey } = await createFreeUser(db, 'plain@example.com')
+    const res = await handleAdminMembers(membersReq(bearer(apiKey)), deps(db))
+    expect(res.status).toBe(403)
+  })
+
+  it('returns 401 for an anonymous caller', async () => {
+    const { db } = memoryDatabase()
+    const res = await handleAdminMembers(membersReq(), deps(db))
+    expect(res.status).toBe(401)
+  })
+
+  it('returns 503 when the account store is absent', async () => {
+    const res = await handleAdminMembers(membersReq(), deps(null))
+    expect(res.status).toBe(503)
+  })
+
+  it('honors limit + offset query params', async () => {
+    const { db, store } = memoryDatabase()
+    const ownerKey = await adminBearer(db)
+    // Make the owner the oldest so the page boundary is deterministic.
+    for (const u of store.users.values()) {
+      u.created_at = '2026-01-01T00:00:00.000Z'
+    }
+    await createFreeUser(db, 'b@example.com')
+    await createFreeUser(db, 'c@example.com')
+    const res = await handleAdminMembers(membersReq(bearer(ownerKey), '?limit=1&offset=1'), deps(db))
+    const body = (await res.json()) as AdminMembersPage
+    expect(body.members).toHaveLength(1)
+    expect(body.total).toBe(3)
+  })
+})
+
+describe('handleAdminMemberRole', () => {
+  it('lets an owner promote a member to admin (200) and persists it', async () => {
+    const { db } = memoryDatabase()
+    const ownerKey = await adminBearer(db)
+    const { user } = await createFreeUser(db, 'promote@example.com')
+    const res = await handleAdminMemberRole(roleReq(bearer(ownerKey), { userId: user.id, role: 'admin' }), deps(db))
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { id: string; role: string }
+    expect(body).toEqual({ id: user.id, role: 'admin' })
+  })
+
+  it('lets an owner demote an admin back to member (200)', async () => {
+    const { db } = memoryDatabase()
+    const ownerKey = await adminBearer(db)
+    const { user } = await createFreeUser(db, 'demote@example.com')
+    await setUserRole(db, user.id, 'admin')
+    const res = await handleAdminMemberRole(roleReq(bearer(ownerKey), { userId: user.id, role: 'member' }), deps(db))
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { id: string; role: string }
+    expect(body.role).toBe('member')
+  })
+
+  it('forbids a granted admin from changing roles (403)', async () => {
+    const { db } = memoryDatabase()
+    await adminBearer(db)
+    const { user: adminUser, apiKey: adminKey } = await createFreeUser(db, 'admin3@example.com')
+    await setUserRole(db, adminUser.id, 'admin')
+    const { user: target } = await createFreeUser(db, 'target@example.com')
+    const res = await handleAdminMemberRole(roleReq(bearer(adminKey), { userId: target.id, role: 'admin' }), deps(db))
+    expect(res.status).toBe(403)
+  })
+
+  it('forbids a plain member from changing roles (403)', async () => {
+    const { db } = memoryDatabase()
+    await adminBearer(db)
+    const { apiKey: memberKey } = await createFreeUser(db, 'm@example.com')
+    const { user: target } = await createFreeUser(db, 't@example.com')
+    const res = await handleAdminMemberRole(roleReq(bearer(memberKey), { userId: target.id, role: 'admin' }), deps(db))
+    expect(res.status).toBe(403)
+  })
+
+  it('returns 401 for an anonymous caller', async () => {
+    const { db } = memoryDatabase()
+    const { user: target } = await createFreeUser(db, 't@example.com')
+    const res = await handleAdminMemberRole(roleReq({}, { userId: target.id, role: 'admin' }), deps(db))
+    expect(res.status).toBe(401)
+  })
+
+  it('rejects an invalid role with 422 and leaves the target untouched', async () => {
+    const { db, store } = memoryDatabase()
+    const ownerKey = await adminBearer(db)
+    const { user: target } = await createFreeUser(db, 't@example.com')
+    const res = await handleAdminMemberRole(roleReq(bearer(ownerKey), { userId: target.id, role: 'owner' }), deps(db))
+    expect(res.status).toBe(422)
+    // `owner` is never assignable: the stored column stays at the default member.
+    expect(store.users.get(target.id)?.role).toBe('member')
+  })
+
+  it('forbids changing an owner-by-email target with 403', async () => {
+    const { db } = memoryDatabase()
+    const ownerKey = await adminBearer(db)
+    // A SECOND owner email, to be the target of an attempted demotion.
+    const ownerConfig = loadConfig({ SCANNER_ADMIN_EMAILS: `${ADMIN_EMAIL},co-owner@example.com` })
+    const { user: coOwner } = await createFreeUser(db, 'co-owner@example.com')
+    const res = await handleAdminMemberRole(
+      roleReq(bearer(ownerKey), { userId: coOwner.id, role: 'member' }),
+      { db, sessionSecret: SECRET, config: ownerConfig },
+    )
+    expect(res.status).toBe(403)
+  })
+
+  it('returns 404 for an unknown user id', async () => {
+    const { db } = memoryDatabase()
+    const ownerKey = await adminBearer(db)
+    const res = await handleAdminMemberRole(roleReq(bearer(ownerKey), { userId: 'ghost', role: 'admin' }), deps(db))
+    expect(res.status).toBe(404)
+  })
+
+  it('returns 503 when the account store is absent', async () => {
+    const res = await handleAdminMemberRole(roleReq({}, { userId: 'x', role: 'admin' }), deps(null))
+    expect(res.status).toBe(503)
   })
 })

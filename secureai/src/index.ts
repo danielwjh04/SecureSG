@@ -30,7 +30,7 @@ import {
   handleRegister,
 } from './routes/auth'
 import { handleStats } from './routes/stats'
-import { handleAdminOverview } from './routes/admin'
+import { handleAdminMemberRole, handleAdminMembers, handleAdminOverview } from './routes/admin'
 import { d1Database } from './db/database'
 import { buildEmailSender } from './email/sender'
 import { buildStripe, StripeBillingGateway } from './billing/stripe'
@@ -51,6 +51,8 @@ const ROUTE_LOGOUT = '/api/logout'
 const ROUTE_ME = '/api/me'
 const ROUTE_STATS = '/api/stats'
 const ROUTE_ADMIN_OVERVIEW = '/api/admin/overview'
+const ROUTE_ADMIN_MEMBERS = '/api/admin/members'
+const ROUTE_ADMIN_MEMBER_ROLE = '/api/admin/members/role'
 const ROUTE_KEY_ROTATE = '/api/key/rotate'
 
 export default {
@@ -196,6 +198,22 @@ export default {
         return jsonError('method not allowed', 405)
       }
       return await handleAdminOverview(request, adminDeps(env, config))
+    }
+
+    // The role-change path is more specific than the members list path, so it is
+    // matched first (an exact-equality match means order is for clarity here).
+    if (url.pathname === ROUTE_ADMIN_MEMBER_ROLE) {
+      if (request.method !== 'POST') {
+        return jsonError('method not allowed', 405)
+      }
+      return await handleAdminMemberRole(request, adminDeps(env, config))
+    }
+
+    if (url.pathname === ROUTE_ADMIN_MEMBERS) {
+      if (request.method !== 'GET') {
+        return jsonError('method not allowed', 405)
+      }
+      return await handleAdminMembers(request, adminDeps(env, config))
     }
 
     if (url.pathname === ROUTE_KEY_ROTATE) {

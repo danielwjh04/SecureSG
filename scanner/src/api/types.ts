@@ -72,6 +72,12 @@ export interface ResendResponse {
   challengeId: string
 }
 
+/** The three effective access-control roles (`owner` > `admin` > `member`). */
+export type Role = 'owner' | 'admin' | 'member'
+
+/** The roles an owner may grant another account via the members directory. */
+export type AssignableRole = 'admin' | 'member'
+
 /** Response body for `GET /api/me`: the signed-in account. */
 export interface MeResponse {
   email: string
@@ -79,8 +85,12 @@ export interface MeResponse {
   createdAt: string
   /** The non-secret prefix of the account's API key, safe to display. */
   apiKeyPrefix: string
-  /** Whether this account's email is in the server's admin allowlist. */
+  /** The effective role: `owner` (allowlisted email), `admin`, or `member`. */
+  role: Role
+  /** Whether this account may VIEW the admin surface (owner or admin). */
   isAdmin: boolean
+  /** Whether this account may MANAGE roles (owner only). */
+  isOwner: boolean
 }
 
 /** The credentials body for register/login. */
@@ -157,4 +167,27 @@ export interface AdminOverview {
   activeSubscriptions: number
   /** ISO timestamp the edge stamped the response. */
   generatedAt: string
+}
+
+/** One account in the members directory, with its EFFECTIVE (owner-aware) role. */
+export interface AdminMember {
+  id: string
+  email: string
+  tier: AccountTier
+  role: Role
+  createdAt: string
+  /** This account's lifetime scan count (summed across all days). */
+  scans: number
+}
+
+/** Response body for `GET /api/admin/members`: one page plus the total count. */
+export interface AdminMembersPage {
+  members: AdminMember[]
+  total: number
+}
+
+/** Response body for `POST /api/admin/members/role`: the updated id + role. */
+export interface SetRoleResponse {
+  id: string
+  role: AssignableRole
 }

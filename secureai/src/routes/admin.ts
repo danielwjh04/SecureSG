@@ -1,25 +1,34 @@
 /**
- * `GET /api/admin/overview` handler — the owner-only sitewide analytics overview:
- * total accounts, the tier breakdown, the last-30-days signup series, sitewide
- * verdict/indicator totals, and the active-subscription count.
+ * Admin route handlers — gated, fail-closed reads/writes over the account store:
+ *   - `GET  /api/admin/overview`     — sitewide analytics (view: owner OR admin).
+ *   - `GET  /api/admin/members`      — the members directory (view: owner OR admin).
+ *   - `POST /api/admin/members/role` — grant a role (manage: OWNER only).
  *
- * Gating is strict (CLAUDE.md §6, fail-closed): authenticated via Bearer key OR
- * session cookie; an anonymous caller is 401, and an authenticated caller whose
- * email is NOT in `config.adminEmails` is 403. Only an admin reaches the
- * aggregate reads. Requires `env.DB` (503 otherwise). The signup-window lower
- * bound and `generatedAt` stamp are computed here, at the edge, from a single
- * `now` so the read is deterministic per request.
+ * Gating is strict (CLAUDE.md §6, fail-closed). Every handler authenticates via
+ * Bearer key OR session cookie; an anonymous caller is 401. The VIEW endpoints
+ * require {@link canViewAdmin} (effective role owner or admin) — a member is 403.
+ * The MANAGE endpoint requires {@link canManageRoles} (effective role owner) —
+ * an admin or member is 403. The effective role is derived from the resolved
+ * account email + its stored `role` column via {@link effectiveRole}, so owners
+ * (email allowlist) always pass and a corrupt stored role fails closed to member.
+ * Requires `env.DB` (503 otherwise).
  */
 
 import type { ScannerConfig } from '../config/env'
 import type { Database } from '../db/database'
-import type { SignupDay, TierCounts, UsageTotals } from '../db/admin'
-import { ScannerError } from '../errors'
+import type { MemberRow, SignupDay, TierCounts, UsageTotals } from '../db/admin'
+import type { Role } from '../auth/roles'
+import { ParseError } from '../errors'
 import { authenticate } from '../middleware/auth'
-import { getAccountProfile } from '../db/accounts'
+import { findRoleByUserId, getAccountProfile } from '../db/accounts'
+import { canManageRoles, canViewAdmin, effectiveRole, parseAssignableRole } from '../auth/roles'
+import { memberRoleSchema } from '../schemas/validate'
 import {
   activeSubscriptions,
+  countMembers,
   countUsers,
+  listMembers,
+  setUserRole,
   signupsByDay,
   usageTotals,
   usersByTier,
@@ -28,6 +37,8 @@ import {
 const STATUS_OK = 200
 const STATUS_UNAUTHORIZED = 401
 const STATUS_FORBIDDEN = 403
+const STATUS_NOT_FOUND = 404
+const STATUS_UNPROCESSABLE = 422
 const STATUS_SERVER_ERROR = 500
 const STATUS_SERVICE_UNAVAILABLE = 503
 
@@ -35,6 +46,11 @@ const STATUS_SERVICE_UNAVAILABLE = 503
 const SIGNUP_WINDOW_DAYS = 30
 /** Milliseconds in one day, for the window lower-bound computation. */
 const MS_PER_DAY = 86_400_000
+
+/** Default page size for the members directory when no `limit` is given. */
+const MEMBERS_DEFAULT_LIMIT = 100
+/** Hard cap on a members page, so a caller cannot request an unbounded scan. */
+const MEMBERS_MAX_LIMIT = 500
 
 /** A configured admin route's dependencies, assembled by the worker entry. */
 export interface AdminDeps {
@@ -52,6 +68,32 @@ export interface AdminOverview {
   readonly activeSubscriptions: number
   /** ISO timestamp the edge stamped the response; outside any hash. */
   readonly generatedAt: string
+}
+
+/** One member in the directory response, with the EFFECTIVE (owner-aware) role. */
+export interface AdminMember {
+  readonly id: string
+  readonly email: string
+  readonly tier: string
+  /** Effective role: `owner` for an allowlisted email, else the stored role. */
+  readonly role: Role
+  readonly createdAt: string
+  readonly scans: number
+}
+
+/** The 200 body of `GET /api/admin/members`. */
+export interface AdminMembersPage {
+  readonly members: readonly AdminMember[]
+  readonly total: number
+}
+
+/**
+ * The viewer identity an admin gate resolved: the authenticated user id and the
+ * effective role derived from the email allowlist + stored role column.
+ */
+interface AdminViewer {
+  readonly userId: string
+  readonly role: Role
 }
 
 /**
@@ -74,9 +116,54 @@ function unauthorized(): Response {
   )
 }
 
+/** Build a 503 when the account store is not configured. */
+function unavailable(): Response {
+  return Response.json(
+    { error: 'service_unavailable', message: 'account store is not configured' },
+    { status: STATUS_SERVICE_UNAVAILABLE },
+  )
+}
+
+/** Build a 403 forbidden body (insufficient role). */
+function forbidden(): Response {
+  return Response.json({ error: 'forbidden' }, { status: STATUS_FORBIDDEN })
+}
+
 /**
- * Handle `GET /api/admin/overview`. Authenticates the caller, requires the
- * resolved profile email to be in `config.adminEmails` (403 otherwise), then
+ * Resolve the calling request to an {@link AdminViewer}, or a `Response` to
+ * return directly (401 anonymous / vanished, 403 insufficient role). Shared by
+ * every admin handler so the gate is identical: authenticate, derive the
+ * effective role from the email allowlist + stored role column, then require
+ * `requirement(role)`.
+ *
+ * Time complexity: O(1) — two indexed reads + O(1) checks. Space complexity: O(1).
+ */
+async function resolveViewer(
+  request: Request,
+  deps: AdminDeps,
+  db: Database,
+  requirement: (role: Role) => boolean,
+): Promise<AdminViewer | Response> {
+  const ctx = await authenticate(request, db, deps.sessionSecret ?? undefined)
+  if (ctx.tier === 'anonymous') {
+    return unauthorized()
+  }
+  const profile = await getAccountProfile(db, ctx.subject)
+  if (profile === null) {
+    // Resolved to a user id that no longer exists — treat as unauthenticated.
+    return unauthorized()
+  }
+  const roleColumn = await findRoleByUserId(db, ctx.subject)
+  const role = effectiveRole(profile.email, roleColumn, deps.config.adminEmails)
+  if (!requirement(role)) {
+    return forbidden()
+  }
+  return { userId: ctx.subject, role }
+}
+
+/**
+ * Handle `GET /api/admin/overview`. Authenticates the caller and requires the
+ * effective role to be owner OR admin ({@link canViewAdmin}; 403 otherwise), then
  * returns the sitewide {@link AdminOverview}. Requires `env.DB` (503 otherwise).
  *
  * Time complexity: O(r) in the active signup days in the window (every other
@@ -87,24 +174,13 @@ export async function handleAdminOverview(
   deps: AdminDeps,
 ): Promise<Response> {
   if (deps.db === null) {
-    return Response.json(
-      { error: 'service_unavailable', message: 'account store is not configured' },
-      { status: STATUS_SERVICE_UNAVAILABLE },
-    )
+    return unavailable()
   }
   const db = deps.db
   try {
-    const ctx = await authenticate(request, db, deps.sessionSecret ?? undefined)
-    if (ctx.tier === 'anonymous') {
-      return unauthorized()
-    }
-    const profile = await getAccountProfile(db, ctx.subject)
-    if (profile === null) {
-      // Resolved to a user id that no longer exists — treat as unauthenticated.
-      return unauthorized()
-    }
-    if (!deps.config.adminEmails.has(profile.email.toLowerCase())) {
-      return Response.json({ error: 'forbidden' }, { status: STATUS_FORBIDDEN })
+    const viewer = await resolveViewer(request, deps, db, canViewAdmin)
+    if (viewer instanceof Response) {
+      return viewer
     }
 
     const now = new Date()
@@ -128,7 +204,161 @@ export async function handleAdminOverview(
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
     console.error(`[handleAdminOverview] ${className}`)
-    const status = error instanceof ScannerError ? STATUS_SERVER_ERROR : STATUS_SERVER_ERROR
-    return Response.json({ error: 'admin_overview_failed' }, { status })
+    return Response.json({ error: 'admin_overview_failed' }, { status: STATUS_SERVER_ERROR })
+  }
+}
+
+/**
+ * Clamp a `limit` query param to `[1, MEMBERS_MAX_LIMIT]`, defaulting to
+ * {@link MEMBERS_DEFAULT_LIMIT} when absent or unparseable. A non-integer or
+ * out-of-range value is coerced rather than rejected — pagination params are
+ * display-only, so a sane clamp is friendlier than a 4xx.
+ *
+ * Time complexity: O(1). Space complexity: O(1).
+ */
+function clampLimit(raw: string | null): number {
+  const value = raw === null ? MEMBERS_DEFAULT_LIMIT : Number(raw)
+  if (!Number.isInteger(value) || value < 1) {
+    return MEMBERS_DEFAULT_LIMIT
+  }
+  return Math.min(value, MEMBERS_MAX_LIMIT)
+}
+
+/** Clamp an `offset` query param to a non-negative integer (default 0). */
+function clampOffset(raw: string | null): number {
+  const value = raw === null ? 0 : Number(raw)
+  return Number.isInteger(value) && value >= 0 ? value : 0
+}
+
+/**
+ * Project a stored {@link MemberRow} to an {@link AdminMember} with the EFFECTIVE
+ * role: an account whose email is in the owner allowlist is shown as `owner`
+ * (overriding its stored column), otherwise the validated stored role
+ * (fail-closed to `member`).
+ *
+ * Time complexity: O(1). Space complexity: O(1).
+ */
+function toAdminMember(row: MemberRow, adminEmails: ReadonlySet<string>): AdminMember {
+  return {
+    id: row.id,
+    email: row.email,
+    tier: row.tier,
+    role: effectiveRole(row.email, row.role, adminEmails),
+    createdAt: row.createdAt,
+    scans: row.scans,
+  }
+}
+
+/**
+ * Handle `GET /api/admin/members?limit&offset`. Authenticates the caller and
+ * requires the effective role to be owner OR admin ({@link canViewAdmin}; 403
+ * otherwise), then returns a page of the members directory plus the total count
+ * for pagination. Each row carries its effective (owner-aware) role. Requires
+ * `env.DB` (503 otherwise).
+ *
+ * Time complexity: O(p log p) in the page size p (the ordered LIMIT/OFFSET page).
+ * Space complexity: O(p).
+ */
+export async function handleAdminMembers(request: Request, deps: AdminDeps): Promise<Response> {
+  if (deps.db === null) {
+    return unavailable()
+  }
+  const db = deps.db
+  try {
+    const viewer = await resolveViewer(request, deps, db, canViewAdmin)
+    if (viewer instanceof Response) {
+      return viewer
+    }
+
+    const url = new URL(request.url)
+    const limit = clampLimit(url.searchParams.get('limit'))
+    const offset = clampOffset(url.searchParams.get('offset'))
+
+    const [rows, total] = await Promise.all([listMembers(db, limit, offset), countMembers(db)])
+    const members = rows.map((row) => toAdminMember(row, deps.config.adminEmails))
+
+    const body: AdminMembersPage = { members, total }
+    return Response.json(body, { status: STATUS_OK })
+  } catch (error: unknown) {
+    const className = error instanceof Error ? error.constructor.name : typeof error
+    console.error(`[handleAdminMembers] ${className}`)
+    return Response.json({ error: 'admin_members_failed' }, { status: STATUS_SERVER_ERROR })
+  }
+}
+
+/**
+ * Parse + Zod-validate the role-change body, or throw {@link ParseError} (→ 422).
+ *
+ * Time complexity: O(b) in the body byte length. Space complexity: O(b).
+ */
+async function parseRoleBody(request: Request): Promise<{ userId: string; role: 'member' | 'admin' }> {
+  let raw: unknown
+  try {
+    raw = await request.json()
+  } catch (error: unknown) {
+    throw new ParseError('request body is not valid JSON', { cause: error })
+  }
+  const parsed = memberRoleSchema.safeParse(raw)
+  if (!parsed.success) {
+    throw new ParseError(`invalid member role request: ${parsed.error.message}`)
+  }
+  return parsed.data
+}
+
+/**
+ * Handle `POST /api/admin/members/role`. Authenticates the caller and requires
+ * the effective role to be OWNER ({@link canManageRoles}; an admin or member is
+ * 403). Validates `{ userId, role }` where `role` is allowlisted to
+ * {`member`, `admin`} (422 otherwise — `owner` is never assignable). Rejects
+ * changing an OWNER (target email in the allowlist) with 403, and an unknown
+ * `userId` with 404. On success sets the target's role and returns
+ * `200 { id, role }`. Requires `env.DB` (503 otherwise).
+ *
+ * Time complexity: O(1) — a bounded set of indexed reads + one PK update.
+ * Space complexity: O(1).
+ */
+export async function handleAdminMemberRole(request: Request, deps: AdminDeps): Promise<Response> {
+  if (deps.db === null) {
+    return unavailable()
+  }
+  const db = deps.db
+  try {
+    const viewer = await resolveViewer(request, deps, db, canManageRoles)
+    if (viewer instanceof Response) {
+      return viewer
+    }
+
+    const body = await parseRoleBody(request)
+    // Defense in depth: the schema already allowlists role, but re-validate so a
+    // value can never slip past into the write (CLAUDE.md §6).
+    const role = parseAssignableRole(body.role)
+    if (role === null) {
+      return Response.json({ error: 'invalid_role' }, { status: STATUS_UNPROCESSABLE })
+    }
+
+    // The target must exist. Read its profile first so an unknown id is a 404 and
+    // an owner-by-email target is a 403 — BEFORE any write.
+    const target = await getAccountProfile(db, body.userId)
+    if (target === null) {
+      return Response.json({ error: 'not_found' }, { status: STATUS_NOT_FOUND })
+    }
+    if (deps.config.adminEmails.has(target.email.toLowerCase())) {
+      // An owner is conferred by the allowlist and can never be changed via the API.
+      return forbidden()
+    }
+
+    const changes = await setUserRole(db, body.userId, role)
+    if (changes === 0) {
+      // Lost a race (the row vanished between the profile read and the update).
+      return Response.json({ error: 'not_found' }, { status: STATUS_NOT_FOUND })
+    }
+    return Response.json({ id: body.userId, role }, { status: STATUS_OK })
+  } catch (error: unknown) {
+    const className = error instanceof Error ? error.constructor.name : typeof error
+    console.error(`[handleAdminMemberRole] ${className}`)
+    if (error instanceof ParseError) {
+      return Response.json({ error: 'invalid_role' }, { status: STATUS_UNPROCESSABLE })
+    }
+    return Response.json({ error: 'admin_member_role_failed' }, { status: STATUS_SERVER_ERROR })
   }
 }

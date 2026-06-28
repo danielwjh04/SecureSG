@@ -9,6 +9,7 @@
  */
 
 import type { Database, Row } from './database'
+import type { AssignableRole } from '../auth/roles'
 import { AdminError } from '../errors'
 
 /** Per-tier account counts. Absent tiers read as 0, never undefined. */
@@ -31,6 +32,24 @@ export interface UsageTotals {
   readonly reviews: number
   readonly blocks: number
   readonly flagged: number
+}
+
+/**
+ * One account row in the members directory: identity, tier, the RAW stored role
+ * column, signup time, and that account's lifetime scan count. The route layer
+ * derives the EFFECTIVE role (owners overridden to `owner`) from `role` + the
+ * email allowlist; the repository returns the column verbatim so the same read
+ * serves both the gate and the display.
+ */
+export interface MemberRow {
+  readonly id: string
+  readonly email: string
+  readonly tier: string
+  /** The raw `users.role` column value (not yet owner-overridden). */
+  readonly role: string
+  readonly createdAt: string
+  /** Sum of `usage.scans` across every day for this account (0 if none). */
+  readonly scans: number
 }
 
 /** The three persisted account tiers, used to densify the tier breakdown. */
@@ -181,6 +200,112 @@ export async function activeSubscriptions(db: Database): Promise<number> {
   } catch (error: unknown) {
     throw wrap('activeSubscriptions', error)
   }
+}
+
+/**
+ * Read a page of the members directory: `limit` accounts from `offset`, ordered
+ * oldest-first (stable signup order), each with its summed lifetime scan count.
+ *
+ * The scan total is a LEFT JOIN + `SUM` over `usage` keyed by the user id as the
+ * `subject`, so an account that has never scanned still appears with `scans = 0`
+ * (an INNER join would silently drop zero-scan accounts). `GROUP BY` collapses
+ * the per-day usage rows to one total per user. The role column is returned
+ * verbatim; the route derives the effective role.
+ *
+ * Time complexity: O(p log p) for the ordered page of size p = `limit` (the
+ * index on `created_at` is unavailable, so SQLite sorts the page). Space
+ * complexity: O(p).
+ *
+ * @param db - The persistence seam.
+ * @param limit - Max rows to return (caller-clamped to a sane bound).
+ * @param offset - Rows to skip (caller-clamped to non-negative).
+ * @throws {AdminError} On a database failure (fail-closed).
+ */
+export async function listMembers(
+  db: Database,
+  limit: number,
+  offset: number,
+): Promise<MemberRow[]> {
+  try {
+    const rows = await db.queryAll(
+      'SELECT u.id AS id, u.email AS email, u.tier AS tier, u.role AS role, ' +
+        'u.created_at AS created_at, ' +
+        'COALESCE(SUM(g.scans), 0) AS scans ' +
+        'FROM users u LEFT JOIN usage g ON g.subject = u.id ' +
+        'GROUP BY u.id ' +
+        'ORDER BY u.created_at ASC, u.id ASC ' +
+        'LIMIT ? OFFSET ?',
+      [limit, offset],
+    )
+    const members: MemberRow[] = []
+    for (const row of rows) {
+      members.push({
+        id: requireString(row, 'id'),
+        email: requireString(row, 'email'),
+        tier: requireString(row, 'tier'),
+        role: typeof row['role'] === 'string' ? row['role'] : '',
+        createdAt: requireString(row, 'created_at'),
+        scans: readCount(row, 'scans'),
+      })
+    }
+    return members
+  } catch (error: unknown) {
+    throw wrap('listMembers', error)
+  }
+}
+
+/**
+ * Count all registered accounts (the total for the members directory's
+ * pagination). Distinct from {@link countUsers} only in intent; both are a
+ * single `COUNT(*)`.
+ *
+ * Time complexity: O(1) — single `COUNT(*)` aggregate. Space complexity: O(1).
+ *
+ * @throws {AdminError} On a database failure (fail-closed).
+ */
+export async function countMembers(db: Database): Promise<number> {
+  try {
+    const row = await db.queryOne('SELECT COUNT(*) AS total FROM users', [])
+    return readCount(row, 'total')
+  } catch (error: unknown) {
+    throw wrap('countMembers', error)
+  }
+}
+
+/**
+ * Set an account's granted role by user id (used by the owner-only role-change
+ * endpoint). The `role` is the already-validated {@link AssignableRole}
+ * ({`member`, `admin`}); `owner` is never written here — it is conferred by the
+ * email allowlist, not the column.
+ *
+ * Idempotent for the same `(userId, role)`. Returns the row-change count so the
+ * route can distinguish a real update (1) from an unknown user id (0 → 404)
+ * without a follow-up read.
+ *
+ * Time complexity: O(1) — primary-key update. Space complexity: O(1).
+ *
+ * @throws {AdminError} On a database failure (fail-closed).
+ */
+export async function setUserRole(
+  db: Database,
+  userId: string,
+  role: AssignableRole,
+): Promise<number> {
+  try {
+    const result = await db.execute('UPDATE users SET role = ? WHERE id = ?', [role, userId])
+    return result.changes
+  } catch (error: unknown) {
+    throw wrap('setUserRole', error)
+  }
+}
+
+/** Read a column as a non-empty string, failing closed on a malformed record. */
+function requireString(row: Row, column: string): string {
+  const value = row[column]
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new AdminError(`members row missing string column: ${column}`)
+  }
+  return value
 }
 
 /** Wrap a store fault as an {@link AdminError}, logging the exact class. */

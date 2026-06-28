@@ -10,11 +10,13 @@ const USER: MeResponse = {
   tier: 'free',
   createdAt: '2026-06-01T00:00:00.000Z',
   apiKeyPrefix: 'sk_live_42',
+  role: 'member',
   isAdmin: false,
+  isOwner: false,
 }
 
 function authState(): AuthState {
-  return { status: 'authenticated', user: USER, isAdmin: false, refresh: vi.fn() }
+  return { status: 'authenticated', user: USER, isAdmin: false, isOwner: false, refresh: vi.fn() }
 }
 
 function emptyStats(): StatsResponse {

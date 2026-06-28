@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { AuthDeps } from './auth'
 import { memoryDatabase } from '../db/memory.test'
 import { createFreeUser } from '../db/accounts'
+import { setUserRole } from '../db/admin'
 import { loadConfig } from '../config/env'
 import { SESSION_COOKIE_NAME } from '../auth/session'
 import {
@@ -309,6 +310,41 @@ describe('handleMe', () => {
     expect(res.status).toBe(200)
     const body = (await res.json()) as { isAdmin: boolean }
     expect(body.isAdmin).toBe(true)
+  })
+
+  it('returns role member + isAdmin/isOwner false for a plain account', async () => {
+    const { db } = memoryDatabase()
+    const { apiKey } = await createFreeUser(db, 'plainrole@example.com')
+    const res = await handleMe(
+      new Request('https://secureai.test/api/me', { headers: { Authorization: `Bearer ${apiKey}` } }),
+      deps(db),
+    )
+    const body = (await res.json()) as { role: string; isAdmin: boolean; isOwner: boolean }
+    expect(body).toMatchObject({ role: 'member', isAdmin: false, isOwner: false })
+  })
+
+  it('returns role admin + isAdmin true / isOwner false for a granted admin', async () => {
+    const { db } = memoryDatabase()
+    const { user, apiKey } = await createFreeUser(db, 'adminrole@example.com')
+    await setUserRole(db, user.id, 'admin')
+    const res = await handleMe(
+      new Request('https://secureai.test/api/me', { headers: { Authorization: `Bearer ${apiKey}` } }),
+      deps(db),
+    )
+    const body = (await res.json()) as { role: string; isAdmin: boolean; isOwner: boolean }
+    expect(body).toMatchObject({ role: 'admin', isAdmin: true, isOwner: false })
+  })
+
+  it('returns role owner + isAdmin/isOwner true for an allowlisted email', async () => {
+    const { db } = memoryDatabase()
+    const ownerConfig = loadConfig({ SCANNER_ADMIN_EMAILS: 'boss@example.com' })
+    const { apiKey } = await createFreeUser(db, 'boss@example.com')
+    const res = await handleMe(
+      new Request('https://secureai.test/api/me', { headers: { Authorization: `Bearer ${apiKey}` } }),
+      { db, sessionSecret: SECRET, config: ownerConfig, emailSender: null },
+    )
+    const body = (await res.json()) as { role: string; isAdmin: boolean; isOwner: boolean }
+    expect(body).toMatchObject({ role: 'owner', isAdmin: true, isOwner: true })
   })
 
   it('returns 401 when unauthenticated', async () => {

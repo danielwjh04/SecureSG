@@ -24,6 +24,7 @@ import {
 } from 'recharts'
 import {
   CheckCircle2,
+  Crown,
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
@@ -32,10 +33,15 @@ import {
   Wallet,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { fetchAdminOverview } from '../api/client'
+import { ApiError, fetchAdminOverview, fetchMembers, setMemberRole } from '../api/client'
 import { STATS_TREND_DAYS } from '../config'
 import { zeroFillSignups } from '../lib/stats'
-import type { AdminOverview, AdminTierCounts } from '../api/types'
+import type {
+  AdminMember,
+  AdminOverview,
+  AdminTierCounts,
+  AssignableRole,
+} from '../api/types'
 
 /** The shared palette, so cards and charts use exact, consistent colors. */
 const COLOR = {
@@ -63,7 +69,12 @@ type LoadState =
   | { phase: 'ready'; overview: AdminOverview }
   | { phase: 'error'; message: string }
 
-export function AdminDashboard() {
+/**
+ * The admin analytics dashboard. `canManageRoles` (owner-only, sourced from
+ * `/api/me`) gates the per-row role controls in the members directory: an admin
+ * viewer sees the directory read-only, an owner sees the Member/Admin selects.
+ */
+export function AdminDashboard({ canManageRoles = false }: { canManageRoles?: boolean }) {
   const [load, setLoad] = useState<LoadState>({ phase: 'loading' })
 
   const refresh = useCallback((): (() => void) => {
@@ -101,6 +112,8 @@ export function AdminDashboard() {
           <p className="text-block/90 font-mono text-sm py-20 text-center">{load.message}</p>
         )}
         {load.phase === 'ready' && <OverviewBody overview={load.overview} />}
+
+        <MembersSection canManageRoles={canManageRoles} />
       </div>
     </section>
   )
@@ -368,6 +381,197 @@ function VerdictTotals({ totals }: { totals: AdminOverview['usageTotals'] }) {
       </div>
     </div>
   )
+}
+
+/** The members directory load lifecycle, mirroring the overview's. */
+type MembersState =
+  | { phase: 'loading' }
+  | { phase: 'ready'; members: AdminMember[]; total: number }
+  | { phase: 'error'; message: string }
+
+/**
+ * The members directory: a table of every account (Email, Tier, Role, Joined,
+ * Scans) loaded from `GET /api/admin/members`. An owner (`canManageRoles`) gets a
+ * per-row Member/Admin select on non-owner rows; owners' rows show a static
+ * "Owner" badge, and a non-owner viewer sees every role read-only.
+ */
+function MembersSection({ canManageRoles }: { canManageRoles: boolean }) {
+  const [state, setState] = useState<MembersState>({ phase: 'loading' })
+  /** The user id whose role is mid-update, so its select can disable + spin. */
+  const [pendingId, setPendingId] = useState<string | null>(null)
+
+  const load = useCallback((): (() => void) => {
+    let active = true
+    setState({ phase: 'loading' })
+    fetchMembers()
+      .then((page) => {
+        if (active) setState({ phase: 'ready', members: page.members, total: page.total })
+      })
+      .catch(() => {
+        if (active) setState({ phase: 'error', message: 'Could not load members.' })
+      })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => load(), [load])
+
+  const changeRole = useCallback(
+    async (userId: string, role: AssignableRole): Promise<void> => {
+      setPendingId(userId)
+      try {
+        await setMemberRole(userId, role)
+        // Re-read so the table reflects the authoritative server state.
+        load()
+      } catch (error) {
+        const message =
+          error instanceof ApiError ? error.message : 'Could not update the role.'
+        setState({ phase: 'error', message })
+      } finally {
+        setPendingId(null)
+      }
+    },
+    [load],
+  )
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+      className="liquid-glass rounded-2xl p-5 flex flex-col gap-4"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-[12px] font-mono uppercase tracking-[0.14em] text-white/55">
+          Members{state.phase === 'ready' ? ` · ${state.total}` : ''}
+        </h3>
+        <Users className="w-4 h-4 text-white/40" />
+      </div>
+
+      {state.phase === 'loading' && (
+        <p className="text-white/45 font-mono text-sm py-8 text-center">Loading members…</p>
+      )}
+      {state.phase === 'error' && (
+        <p className="text-block/90 font-mono text-sm py-8 text-center">{state.message}</p>
+      )}
+      {state.phase === 'ready' &&
+        (state.members.length === 0 ? (
+          <p className="text-white/45 font-mono text-sm py-8 text-center">No members yet.</p>
+        ) : (
+          <MembersTable
+            members={state.members}
+            canManageRoles={canManageRoles}
+            pendingId={pendingId}
+            onChangeRole={changeRole}
+          />
+        ))}
+    </motion.div>
+  )
+}
+
+interface MembersTableProps {
+  members: AdminMember[]
+  canManageRoles: boolean
+  pendingId: string | null
+  onChangeRole: (userId: string, role: AssignableRole) => void
+}
+
+/** The scrollable members table. Columns: Email, Tier, Role, Joined, Scans. */
+function MembersTable({ members, canManageRoles, pendingId, onChangeRole }: MembersTableProps) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-left border-collapse">
+        <thead>
+          <tr className="text-[10px] font-mono uppercase tracking-[0.14em] text-white/40">
+            <th className="font-medium py-2 pr-4">Email</th>
+            <th className="font-medium py-2 pr-4">Tier</th>
+            <th className="font-medium py-2 pr-4">Role</th>
+            <th className="font-medium py-2 pr-4">Joined</th>
+            <th className="font-medium py-2 pr-4 text-right tabular-nums">Scans</th>
+          </tr>
+        </thead>
+        <tbody>
+          {members.map((member) => (
+            <tr
+              key={member.id}
+              className="border-t border-white/5 text-[13px] text-white/80 align-middle"
+            >
+              <td className="py-2.5 pr-4 font-medium text-white break-all">{member.email}</td>
+              <td className="py-2.5 pr-4">
+                <span className="text-white/60 font-mono text-[11px] uppercase tracking-[0.1em]">
+                  {member.tier}
+                </span>
+              </td>
+              <td className="py-2.5 pr-4">
+                <RoleCell
+                  member={member}
+                  canManageRoles={canManageRoles}
+                  pending={pendingId === member.id}
+                  onChangeRole={onChangeRole}
+                />
+              </td>
+              <td className="py-2.5 pr-4 text-white/55 font-mono text-[11px] whitespace-nowrap">
+                {formatJoined(member.createdAt)}
+              </td>
+              <td className="py-2.5 pr-4 text-right tabular-nums text-white/70">
+                {formatCount(member.scans)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+interface RoleCellProps {
+  member: AdminMember
+  canManageRoles: boolean
+  pending: boolean
+  onChangeRole: (userId: string, role: AssignableRole) => void
+}
+
+/**
+ * The role cell. An OWNER row is always a static "Owner" badge (an owner can
+ * never be demoted via the API). For a non-owner row, an owner viewer gets a
+ * Member/Admin select; everyone else sees a static role label.
+ */
+function RoleCell({ member, canManageRoles, pending, onChangeRole }: RoleCellProps) {
+  if (member.role === 'owner') {
+    return (
+      <span className="glass-pill inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-mono uppercase tracking-[0.12em] text-review">
+        <Crown className="w-3 h-3" />
+        Owner
+      </span>
+    )
+  }
+  if (!canManageRoles) {
+    return (
+      <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-white/60">
+        {member.role}
+      </span>
+    )
+  }
+  return (
+    <select
+      aria-label={`Role for ${member.email}`}
+      value={member.role}
+      disabled={pending}
+      onChange={(event) => onChangeRole(member.id, event.target.value as AssignableRole)}
+      className="glass-pill bg-transparent text-white/80 text-[12px] font-medium px-2.5 py-1 rounded-full cursor-pointer focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed [&>option]:bg-black [&>option]:text-white"
+    >
+      <option value="member">Member</option>
+      <option value="admin">Admin</option>
+    </select>
+  )
+}
+
+/** Format an ISO signup timestamp as a short local date, falling back to raw. */
+function formatJoined(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso
+  return date.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 /** Format a count with thousands separators, never `NaN`. */

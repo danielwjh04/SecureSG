@@ -6,7 +6,14 @@ import { ApiError } from '../api/client'
 import * as client from '../api/client'
 
 function authState(overrides: Partial<AuthState> = {}): AuthState {
-  return { status: 'anonymous', user: null, isAdmin: false, refresh: vi.fn(), ...overrides }
+  return {
+    status: 'anonymous',
+    user: null,
+    isAdmin: false,
+    isOwner: false,
+    refresh: vi.fn(),
+    ...overrides,
+  }
 }
 
 /**

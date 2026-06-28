@@ -21,6 +21,8 @@ interface UserRecord {
   id: string
   email: string
   tier: string
+  /** Granted role column (migration 0005): defaults to 'member' on insert. */
+  role: string
   stripe_customer_id: string | null
   created_at: string
   password_hash: string | null
@@ -141,6 +143,10 @@ export class MemoryStore {
     if (sql.includes('SELECT tier FROM users WHERE id')) {
       const user = this.users.get(String(params[0]))
       return user === undefined ? null : { tier: user.tier }
+    }
+    if (sql.includes('SELECT role FROM users WHERE id')) {
+      const user = this.users.get(String(params[0]))
+      return user === undefined ? null : { role: user.role }
     }
     if (sql.includes('email, tier, created_at FROM users WHERE id')) {
       // getAccountProfile user read.
@@ -267,6 +273,35 @@ export class MemoryStore {
       rows.sort((a, b) => String(a['day']).localeCompare(String(b['day'])))
       return rows
     }
+    // Admin members directory: each user LEFT JOIN usage, summed to a scan total
+    // (zero-scan users still appear), ordered oldest-first, paged by LIMIT/OFFSET.
+    if (sql.includes('FROM users u LEFT JOIN usage g ON g.subject = u.id')) {
+      const limit = Number(params[0])
+      const offset = Number(params[1])
+      const rows: Record<string, unknown>[] = []
+      for (const user of this.users.values()) {
+        let scans = 0
+        for (const record of this.usage.values()) {
+          if (record.subject === user.id) {
+            scans += record.scans
+          }
+        }
+        rows.push({
+          id: user.id,
+          email: user.email,
+          tier: user.tier,
+          role: user.role,
+          created_at: user.created_at,
+          scans,
+        })
+      }
+      // ORDER BY created_at ASC, id ASC.
+      rows.sort((a, b) => {
+        const byDay = String(a['created_at']).localeCompare(String(b['created_at']))
+        return byDay !== 0 ? byDay : String(a['id']).localeCompare(String(b['id']))
+      })
+      return rows.slice(offset, offset + limit)
+    }
     throw new Error(`MemoryStore: unrecognized queryAll SQL: ${sql}`)
   }
 
@@ -288,6 +323,8 @@ export class MemoryStore {
         id,
         email,
         tier: String(params[2]),
+        // Migration 0005 default: a fresh account is a 'member' until promoted.
+        role: 'member',
         stripe_customer_id: params[3] === null ? null : String(params[3]),
         created_at: String(params[4]),
         password_hash: passwordHash,
@@ -403,6 +440,15 @@ export class MemoryStore {
         return { changes: 0 }
       }
       user.tier = tier
+      return { changes: 1 }
+    }
+    if (sql.startsWith('UPDATE users SET role = ? WHERE id')) {
+      const role = String(params[0])
+      const user = this.users.get(String(params[1]))
+      if (user === undefined) {
+        return { changes: 0 }
+      }
+      user.role = role
       return { changes: 1 }
     }
     if (sql.startsWith('UPDATE users SET stripe_customer_id = ? WHERE id')) {

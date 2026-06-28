@@ -228,7 +228,7 @@ function App(): ReactNode {
         <div className="fixed inset-0 bg-black/80" aria-hidden="true" />
         <Navbar onHome={controller.reset} auth={auth} />
         {auth.status === 'authenticated' && auth.isAdmin ? (
-          <AdminDashboard />
+          <AdminDashboard canManageRoles={auth.isOwner} />
         ) : (
           <section className="relative z-10 flex-1 flex items-center justify-center px-6 py-20">
             <p className="text-white/45 font-mono text-sm">Loading admin analytics…</p>

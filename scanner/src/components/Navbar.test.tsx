@@ -10,12 +10,21 @@ function user(isAdmin: boolean): MeResponse {
     tier: 'free',
     createdAt: '2026-06-01T00:00:00.000Z',
     apiKeyPrefix: 'sk_live_ab',
+    role: isAdmin ? 'owner' : 'member',
     isAdmin,
+    isOwner: isAdmin,
   }
 }
 
 function authState(overrides: Partial<AuthState> = {}): AuthState {
-  return { status: 'anonymous', user: null, isAdmin: false, refresh: vi.fn(), ...overrides }
+  return {
+    status: 'anonymous',
+    user: null,
+    isAdmin: false,
+    isOwner: false,
+    refresh: vi.fn(),
+    ...overrides,
+  }
 }
 
 describe('Navbar admin link', () => {

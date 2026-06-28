@@ -34,11 +34,13 @@ import {
 } from '../schemas/validate'
 import {
   createUserWithPassword,
+  findRoleByUserId,
   findTierByUserId,
   findUserByEmail,
   getAccountProfile,
   rotateApiKey,
 } from '../db/accounts'
+import { canManageRoles, canViewAdmin, effectiveRole } from '../auth/roles'
 import {
   createChallenge,
   deleteChallenge,
@@ -532,11 +534,14 @@ export function handleLogout(): Response {
 /**
  * Handle `GET /api/me`. Authenticates via Bearer key OR session cookie; an
  * unauthenticated caller is 401. Returns `200 { email, tier, createdAt,
- * apiKeyPrefix, isAdmin }`, where `apiKeyPrefix` is the non-secret brand prefix
- * when an active key exists, else `null`, and `isAdmin` is whether the profile
- * email is in `config.adminEmails`. Requires `env.DB` (503 otherwise).
+ * apiKeyPrefix, role, isAdmin, isOwner }`, where `apiKeyPrefix` is the non-secret
+ * brand prefix when an active key exists, else `null`. `role` is the EFFECTIVE
+ * role (`owner` for an allowlisted email, else the stored role, fail-closed to
+ * `member`); `isAdmin` is whether that role may VIEW the admin surface
+ * ({@link canViewAdmin}, owner OR admin); `isOwner` is whether it may MANAGE roles
+ * ({@link canManageRoles}, owner only). Requires `env.DB` (503 otherwise).
  *
- * Time complexity: O(1). Space complexity: O(1).
+ * Time complexity: O(1) — two indexed reads. Space complexity: O(1).
  */
 export async function handleMe(request: Request, deps: AuthDeps): Promise<Response> {
   if (deps.db === null) {
@@ -559,13 +564,17 @@ export async function handleMe(request: Request, deps: AuthDeps): Promise<Respon
         { status: STATUS_UNAUTHORIZED },
       )
     }
+    const roleColumn = await findRoleByUserId(db, ctx.subject)
+    const role = effectiveRole(profile.email, roleColumn, deps.config.adminEmails)
     return Response.json(
       {
         email: profile.email,
         tier: profile.tier,
         createdAt: profile.createdAt,
         apiKeyPrefix: profile.apiKeyPrefix,
-        isAdmin: deps.config.adminEmails.has(profile.email.toLowerCase()),
+        role,
+        isAdmin: canViewAdmin(role),
+        isOwner: canManageRoles(role),
       },
       { status: STATUS_OK },
     )

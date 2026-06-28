@@ -7,7 +7,10 @@ import { upsertSubscription } from './billing'
 import { AdminError } from '../errors'
 import {
   activeSubscriptions,
+  countMembers,
   countUsers,
+  listMembers,
+  setUserRole,
   signupsByDay,
   usageTotals,
   usersByTier,
@@ -136,6 +139,97 @@ describe('usageTotals', () => {
     const { db, store } = memoryDatabase()
     store.failNext = true
     await expect(usageTotals(db)).rejects.toBeInstanceOf(AdminError)
+  })
+})
+
+describe('listMembers', () => {
+  it('returns each account with its summed scans, zero-scan users included', async () => {
+    const { db, store } = memoryDatabase()
+    const noScans = await seedUser(db, store, 'quiet@example.com', 'free', '2026-06-01')
+    const busy = await seedUser(db, store, 'busy@example.com', 'pro', '2026-06-02')
+    // `busy` scans across two days; the JOIN must SUM them to 3.
+    await recordVerdict(db, busy, '2026-06-02', 'ALLOW', 0, { ai: false })
+    await recordVerdict(db, busy, '2026-06-02', 'BLOCK', 1, { ai: true })
+    await recordVerdict(db, busy, '2026-06-03', 'ALLOW', 0, { ai: false })
+
+    const members = await listMembers(db, 100, 0)
+    expect(members.map((m) => m.email)).toEqual(['quiet@example.com', 'busy@example.com'])
+    const quiet = members.find((m) => m.id === noScans)
+    const busyRow = members.find((m) => m.id === busy)
+    // Zero-scan user still appears (LEFT JOIN), with scans coerced to 0.
+    expect(quiet?.scans).toBe(0)
+    expect(quiet?.role).toBe('member')
+    expect(quiet?.tier).toBe('free')
+    expect(busyRow?.scans).toBe(3)
+    expect(busyRow?.tier).toBe('pro')
+  })
+
+  it('orders oldest-first and honors limit + offset', async () => {
+    const { db, store } = memoryDatabase()
+    await seedUser(db, store, 'a@example.com', 'free', '2026-06-01')
+    await seedUser(db, store, 'b@example.com', 'free', '2026-06-02')
+    await seedUser(db, store, 'c@example.com', 'free', '2026-06-03')
+
+    const page = await listMembers(db, 1, 1)
+    expect(page.map((m) => m.email)).toEqual(['b@example.com'])
+  })
+
+  it('reflects a promoted role in the stored column', async () => {
+    const { db, store } = memoryDatabase()
+    const id = await seedUser(db, store, 'p@example.com', 'free', '2026-06-01')
+    await setUserRole(db, id, 'admin')
+    const members = await listMembers(db, 100, 0)
+    expect(members[0]?.role).toBe('admin')
+  })
+
+  it('returns an empty page for an empty store', async () => {
+    const { db } = memoryDatabase()
+    expect(await listMembers(db, 100, 0)).toEqual([])
+  })
+
+  it('wraps a database failure as an AdminError', async () => {
+    const { db, store } = memoryDatabase()
+    store.failNext = true
+    await expect(listMembers(db, 100, 0)).rejects.toBeInstanceOf(AdminError)
+  })
+})
+
+describe('countMembers', () => {
+  it('counts all registered accounts', async () => {
+    const { db, store } = memoryDatabase()
+    expect(await countMembers(db)).toBe(0)
+    await seedUser(db, store, 'm1@example.com', 'free', '2026-06-01')
+    await seedUser(db, store, 'm2@example.com', 'pro', '2026-06-02')
+    expect(await countMembers(db)).toBe(2)
+  })
+
+  it('wraps a database failure as an AdminError', async () => {
+    const { db, store } = memoryDatabase()
+    store.failNext = true
+    await expect(countMembers(db)).rejects.toBeInstanceOf(AdminError)
+  })
+})
+
+describe('setUserRole', () => {
+  it('updates an existing user and reports one change', async () => {
+    const { db, store } = memoryDatabase()
+    const id = await seedUser(db, store, 's@example.com', 'free', '2026-06-01')
+    expect(await setUserRole(db, id, 'admin')).toBe(1)
+    expect(store.users.get(id)?.role).toBe('admin')
+    // Demote back.
+    expect(await setUserRole(db, id, 'member')).toBe(1)
+    expect(store.users.get(id)?.role).toBe('member')
+  })
+
+  it('reports zero changes for an unknown user id', async () => {
+    const { db } = memoryDatabase()
+    expect(await setUserRole(db, 'nope', 'admin')).toBe(0)
+  })
+
+  it('wraps a database failure as an AdminError', async () => {
+    const { db, store } = memoryDatabase()
+    store.failNext = true
+    await expect(setUserRole(db, 'x', 'admin')).rejects.toBeInstanceOf(AdminError)
   })
 })
 

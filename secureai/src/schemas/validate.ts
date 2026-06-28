@@ -162,3 +162,21 @@ export const loginResendSchema = z
 
 /** The validated payload `POST /api/login/resend` operates on. */
 export type LoginResendPayload = z.infer<typeof loginResendSchema>
+
+/**
+ * Body of `POST /api/admin/members/role`: the target account id plus the role to
+ * grant it. `role` is allowlisted to exactly {`member`, `admin`} at the boundary
+ * — `owner` (or any other value) is a 422 here, never reaching the handler, so
+ * the endpoint can never be coaxed into minting an owner (owners are conferred by
+ * the email allowlist alone). `.strict()` rejects unexpected fields so a
+ * malformed payload fails closed.
+ */
+export const memberRoleSchema = z
+  .object({
+    userId: z.string().min(1).max(100),
+    role: z.enum(['member', 'admin']),
+  })
+  .strict()
+
+/** The validated payload `POST /api/admin/members/role` operates on. */
+export type MemberRolePayload = z.infer<typeof memberRoleSchema>

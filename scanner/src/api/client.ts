@@ -1,6 +1,8 @@
 import { API } from '../config'
 import type {
+  AdminMembersPage,
   AdminOverview,
+  AssignableRole,
   AuthCredentials,
   AuthResponse,
   CheckoutResponse,
@@ -11,6 +13,7 @@ import type {
   RotateKeyResponse,
   ScanRequest,
   ScanResult,
+  SetRoleResponse,
   StatsResponse,
   VerifyLoginResponse,
   VerifyResult,
@@ -189,6 +192,40 @@ export async function fetchStats(): Promise<StatsResponse> {
  */
 export async function fetchAdminOverview(): Promise<AdminOverview> {
   return request<AdminOverview>(API.adminOverview, { ...WITH_CREDENTIALS })
+}
+
+/**
+ * Fetch a page of the members directory. Throws {@link ApiError}(403) when the
+ * signed-in account may not view the admin surface, or (401) when logged out.
+ *
+ * `limit` and `offset` are display-only pagination params; the worker clamps
+ * them server-side (default 100, cap 500), so omitting them returns the first
+ * page.
+ */
+export async function fetchMembers(limit?: number, offset?: number): Promise<AdminMembersPage> {
+  const params = new URLSearchParams()
+  if (limit !== undefined) params.set('limit', String(limit))
+  if (offset !== undefined) params.set('offset', String(offset))
+  const query = params.toString()
+  const path = query.length > 0 ? `${API.adminMembers}?${query}` : API.adminMembers
+  return request<AdminMembersPage>(path, { ...WITH_CREDENTIALS })
+}
+
+/**
+ * Grant a role to another account (owner-only). Throws {@link ApiError}(403)
+ * when the caller is not an owner or the target is an owner, (404) for an unknown
+ * user, (422) for an invalid role.
+ */
+export async function setMemberRole(
+  userId: string,
+  role: AssignableRole,
+): Promise<SetRoleResponse> {
+  return request<SetRoleResponse>(API.adminMemberRole, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ userId, role }),
+    ...WITH_CREDENTIALS,
+  })
 }
 
 /** Rotate the account's API key. The new key is returned once and not stored. */
