@@ -11,6 +11,8 @@ const USER: MeResponse = {
   tier: 'free',
   createdAt: '2026-06-01T00:00:00.000Z',
   apiKeyPrefix: 'sk_live_42',
+  firstName: 'Ada',
+  lastName: 'Lovelace',
   role: 'member',
   isAdmin: false,
   isOwner: false,
@@ -58,9 +60,22 @@ describe('Dashboard', () => {
     render(<Dashboard user={USER} auth={authState()} />)
 
     expect(screen.getByText(/Loading your protection stats/)).toBeInTheDocument()
-    // The greeting and key card render immediately around the loading body.
-    expect(screen.getByText(USER.email)).toBeInTheDocument()
+    // The greeting and key card render immediately around the loading body. With
+    // a name on the account, the heading greets by first name (not the email).
+    expect(screen.getByText('Hi Ada!')).toBeInTheDocument()
+    expect(screen.queryByText(USER.email)).not.toBeInTheDocument()
     expect(screen.getByText(/Regenerate key/)).toBeInTheDocument()
+  })
+
+  it('falls back to the email in the greeting for a nameless account', () => {
+    vi.spyOn(client, 'fetchStats').mockReturnValue(new Promise(() => {}))
+    vi.spyOn(client, 'fetchRecentScans').mockReturnValue(new Promise(() => {}))
+    const nameless = { ...USER, firstName: null, lastName: null }
+    render(<Dashboard user={nameless} auth={authState()} />)
+
+    // No first name → the heading shows the email, as before this feature.
+    expect(screen.getByText(nameless.email)).toBeInTheDocument()
+    expect(screen.queryByText(/^Hi /)).not.toBeInTheDocument()
   })
 
   it('renders an intentional empty state for a new account with no scans', async () => {

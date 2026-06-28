@@ -15,6 +15,7 @@ import type {
   MeResponse,
   Proof,
   RecentScansResponse,
+  RegisterCredentials,
   RemoveMemberResponse,
   ResendResponse,
   RotateKeyResponse,
@@ -124,7 +125,7 @@ const WITH_CREDENTIALS = { credentials: 'include' } as const
  * Discriminate on the `user`/`registered` field.
  */
 export async function register(
-  credentials: AuthCredentials,
+  credentials: RegisterCredentials,
 ): Promise<AuthResponse> {
   return request<AuthResponse>(API.register, {
     method: 'POST',

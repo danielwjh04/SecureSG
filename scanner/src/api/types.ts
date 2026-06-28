@@ -110,6 +110,10 @@ export interface MeResponse {
   createdAt: string
   /** The non-secret prefix of the account's API key, safe to display. */
   apiKeyPrefix: string
+  /** Account holder's given name, or `null` for a nameless (legacy / API-key) account. */
+  firstName: string | null
+  /** Account holder's family name, or `null` for a nameless account. */
+  lastName: string | null
   /** The effective role: `owner` (allowlisted email), `admin`, or `member`. */
   role: Role
   /** Whether this account may VIEW the admin surface (owner or admin). */
@@ -118,10 +122,19 @@ export interface MeResponse {
   isOwner: boolean
 }
 
-/** The credentials body for register/login. */
+/** The credentials body for login (and the base for registration). */
 export interface AuthCredentials {
   email: string
   password: string
+}
+
+/**
+ * The registration body: credentials plus the account holder's name, so the app
+ * can greet the person by name instead of echoing their email.
+ */
+export interface RegisterCredentials extends AuthCredentials {
+  firstName: string
+  lastName: string
 }
 
 /** One day's verdict tallies in the protection-stats trend series. */

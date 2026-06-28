@@ -53,6 +53,14 @@ function submitCredentials(submitLabel = 'Log in'): void {
 }
 
 describe('Auth — login without 2FA', () => {
+  it('does not render the first/last name fields on the login surface', () => {
+    render(<Auth mode="login" auth={authState()} />)
+    expect(screen.queryByLabelText('First name')).toBeNull()
+    expect(screen.queryByLabelText('Last name')).toBeNull()
+    // The register surface, by contrast, shows them.
+    expect(screen.queryByLabelText('Email')).toBeInTheDocument()
+  })
+
   it('logs straight in and redirects to the dashboard when the server returns { user }', async () => {
     const { calls } = stubAssign()
     const refresh = vi.fn().mockResolvedValue(undefined)
@@ -193,6 +201,27 @@ describe('Auth — register without email verification', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('That email is already registered.')
     expect(screen.queryByText('Verify your email')).not.toBeInTheDocument()
+  })
+
+  it('collects first/last name and sends them to register', async () => {
+    stubAssign()
+    const reg = vi
+      .spyOn(client, 'register')
+      .mockResolvedValue({ user: { email: 'a@b.com', tier: 'free' } })
+
+    render(<Auth mode="register" auth={authState({ refresh: vi.fn().mockResolvedValue(undefined) })} />)
+    fireEvent.change(screen.getByLabelText('First name'), { target: { value: 'Daniel' } })
+    fireEvent.change(screen.getByLabelText('Last name'), { target: { value: 'Wong' } })
+    submitCredentials('Create account')
+
+    await waitFor(() =>
+      expect(reg).toHaveBeenCalledWith({
+        email: 'a@b.com',
+        password: 'password123',
+        firstName: 'Daniel',
+        lastName: 'Wong',
+      }),
+    )
   })
 })
 

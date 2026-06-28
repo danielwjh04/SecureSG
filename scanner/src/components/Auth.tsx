@@ -163,6 +163,8 @@ const submitClass =
 
 export function Auth({ mode, auth }: AuthProps) {
   const copy = COPY[mode]
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -204,7 +206,7 @@ export function Auth({ mode, auth }: AuthProps) {
         // result — including its 2FA challenge — exactly like the login path, so
         // the user submits the signup form once and flows straight into the one
         // emailed code that login issues.
-        const registered = await register(credentials)
+        const registered = await register({ ...credentials, firstName, lastName })
         if ('registered' in registered) {
           await applyLoginResult(await login(credentials))
           return
@@ -343,6 +345,41 @@ export function Auth({ mode, auth }: AuthProps) {
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+          {mode === 'register' && (
+            <div className="grid grid-cols-2 gap-3">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[11px] font-mono uppercase tracking-[0.16em] text-white/45">
+                  First name
+                </span>
+                <input
+                  type="text"
+                  name="firstName"
+                  autoComplete="given-name"
+                  required
+                  value={firstName}
+                  onChange={(event) => setFirstName(event.target.value)}
+                  placeholder="Daniel"
+                  className={inputClass}
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[11px] font-mono uppercase tracking-[0.16em] text-white/45">
+                  Last name
+                </span>
+                <input
+                  type="text"
+                  name="lastName"
+                  autoComplete="family-name"
+                  required
+                  value={lastName}
+                  onChange={(event) => setLastName(event.target.value)}
+                  placeholder="Wong"
+                  className={inputClass}
+                />
+              </label>
+            </div>
+          )}
+
           <label className="flex flex-col gap-1.5">
             <span className="text-[11px] font-mono uppercase tracking-[0.16em] text-white/45">
               Email

@@ -126,6 +126,7 @@ export function Dashboard({ user, auth }: DashboardProps) {
       <div className="max-w-5xl mx-auto px-6 py-10 flex flex-col gap-8">
         <DashboardHeader
           email={user.email}
+          firstName={user.firstName}
           tier={user.tier}
           onLogout={handleLogout}
           onUpgrade={handleUpgrade}
@@ -155,13 +156,18 @@ export function Dashboard({ user, auth }: DashboardProps) {
 
 interface DashboardHeaderProps {
   email: string
+  /** Account holder's given name; drives the greeting, falling back to the email. */
+  firstName: string | null
   tier: AccountTier
   onLogout: () => void
   onUpgrade: () => void
 }
 
-/** The greeting row: account email, tier badge, upgrade (free only), log out. */
-function DashboardHeader({ email, tier, onLogout, onUpgrade }: DashboardHeaderProps) {
+/** The greeting row: a "Hi <name>!" heading (email fallback), tier badge, upgrade (free only), log out. */
+function DashboardHeader({ email, firstName, tier, onLogout, onUpgrade }: DashboardHeaderProps) {
+  // Greet by first name when the account has one; a nameless (legacy / API-key)
+  // account falls back to its email so the heading is never empty.
+  const greeting = firstName !== null && firstName.length > 0 ? `Hi ${firstName}!` : email
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -177,7 +183,7 @@ function DashboardHeader({ email, tier, onLogout, onUpgrade }: DashboardHeaderPr
           style={{ fontFamily: "'Instrument Serif', serif" }}
           className="text-3xl md:text-[38px] font-medium tracking-[-0.01em] text-white leading-tight"
         >
-          {email}
+          {greeting}
         </h1>
       </div>
       <div className="flex items-center gap-2.5">

@@ -113,16 +113,29 @@ export type ContactPayload = z.infer<typeof contactSchema>
 const MIN_PASSWORD_LENGTH = 8
 /** Upper bound on password length, to bound PBKDF2 input and reject abuse. */
 const MAX_PASSWORD_LENGTH = 1024
+/**
+ * Upper bound on a first/last name (characters), bounding the stored display
+ * string. Mirrors {@link CONTACT_NAME_MAX}: a name is input shape, not a
+ * behavioral tunable, so it is a validation-layer constant like the other bounds
+ * here — not a runtime config var.
+ */
+const NAME_MAX_LENGTH = 100
 
 /**
- * Body of `POST /api/register`: an account email plus a password. The email is
- * trimmed/lowercased/validated so the stored value is canonical (matching
- * {@link signupSchema}); the password is length-bounded but never transformed —
- * it is hashed verbatim. `.strict()` rejects unexpected fields so a malformed
- * payload fails closed at the boundary.
+ * Body of `POST /api/register`: an optional name (first + last), an account
+ * email, and a password. The names are trimmed and length-bounded so the app can
+ * greet the person; they are OPTIONAL at this boundary to mirror the nullable
+ * `users.first_name`/`last_name` columns (an API-key / programmatic caller has no
+ * name step), while the sign-up FORM requires them so every human account has a
+ * name. The email is trimmed/lowercased/validated so the stored value is
+ * canonical (matching {@link signupSchema}); the password is length-bounded but
+ * never transformed — it is hashed verbatim. `.strict()` rejects unexpected
+ * fields so a malformed payload fails closed at the boundary.
  */
 export const registerSchema = z
   .object({
+    firstName: z.string().trim().min(1).max(NAME_MAX_LENGTH).optional(),
+    lastName: z.string().trim().min(1).max(NAME_MAX_LENGTH).optional(),
     email: z.string().trim().toLowerCase().email().max(254),
     password: z.string().min(MIN_PASSWORD_LENGTH).max(MAX_PASSWORD_LENGTH),
   })

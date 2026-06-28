@@ -65,6 +65,10 @@ export interface AccountProfile {
   readonly tier: AccountTier
   readonly createdAt: string
   readonly apiKeyPrefix: string | null
+  /** Account holder's given name, or `null` for a nameless (legacy / API-key) account. */
+  readonly firstName: string | null
+  /** Account holder's family name, or `null` for a nameless account. */
+  readonly lastName: string | null
 }
 
 /** Bytes of entropy in a freshly minted raw API key (256-bit). */
@@ -145,6 +149,16 @@ function requireString(row: Row, column: string): string {
     throw new AuthError(`stored account record missing string column: ${column}`)
   }
   return value
+}
+
+/**
+ * Read a nullable text column as a non-empty string, or `null` when it is
+ * absent, NULL, or empty. Used for display-only columns (names) that legacy and
+ * API-key accounts never set — a missing value is normal, never an error.
+ */
+function optionalString(row: Row, column: string): string | null {
+  const value = row[column]
+  return typeof value === 'string' && value.length > 0 ? value : null
 }
 
 /**
@@ -243,6 +257,10 @@ export async function createFreeUser(
  * @param passwordHash - The serialized PBKDF2 hash from `hashPassword`.
  * @param emailVerified - Whether the account starts verified (`true`) or must
  *   verify an emailed code before any credential works (`false`).
+ * @param firstName - The account holder's given name, or `null` when none was
+ *   supplied (caller-validated; stored verbatim).
+ * @param lastName - The account holder's family name, or `null` when none was
+ *   supplied (caller-validated; stored verbatim).
  * @returns The created {@link User} and its one-time raw API key.
  * @throws {AuthError} If persistence fails (e.g. a duplicate email).
  */
@@ -251,6 +269,8 @@ export async function createUserWithPassword(
   email: string,
   passwordHash: string,
   emailVerified: boolean,
+  firstName: string | null,
+  lastName: string | null,
 ): Promise<MintedAccount> {
   const id = crypto.randomUUID()
   const createdAt = new Date().toISOString()
@@ -259,9 +279,10 @@ export async function createUserWithPassword(
   let apiKey: string
   try {
     await db.execute(
-      'INSERT INTO users (id, email, tier, stripe_customer_id, created_at, password_hash, email_verified) ' +
-        'VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [id, email, tier, null, createdAt, passwordHash, emailVerified ? 1 : 0],
+      'INSERT INTO users ' +
+        '(id, email, tier, stripe_customer_id, created_at, password_hash, email_verified, first_name, last_name) ' +
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, email, tier, null, createdAt, passwordHash, emailVerified ? 1 : 0, firstName, lastName],
     )
     apiKey = await insertApiKey(db, id, createdAt)
   } catch (error: unknown) {
@@ -507,7 +528,7 @@ export async function getAccountProfile(
   userId: string,
 ): Promise<AccountProfile | null> {
   const row = await db.queryOne(
-    'SELECT email, tier, created_at FROM users WHERE id = ?',
+    'SELECT email, tier, created_at, first_name, last_name FROM users WHERE id = ?',
     [userId],
   )
   if (row === null) {
@@ -522,6 +543,8 @@ export async function getAccountProfile(
     tier: parseTier(row['tier']),
     createdAt: requireString(row, 'created_at'),
     apiKeyPrefix: activeKey === null ? null : API_KEY_PREFIX,
+    firstName: optionalString(row, 'first_name'),
+    lastName: optionalString(row, 'last_name'),
   }
 }
 

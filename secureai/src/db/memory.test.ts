@@ -33,6 +33,13 @@ interface UserRecord {
    * set 1, and markEmailVerified flips it to 1.
    */
   email_verified: number
+  /**
+   * Display names (migration 0009): the account holder's first/last name,
+   * collected at password registration. NULL for legacy and API-key accounts
+   * (no name step). Display-only — never a credential.
+   */
+  first_name: string | null
+  last_name: string | null
 }
 
 interface ApiKeyRecord {
@@ -189,12 +196,18 @@ export class MemoryStore {
       const user = this.users.get(String(params[0]))
       return user === undefined ? null : { email_verified: user.email_verified }
     }
-    if (sql.includes('email, tier, created_at FROM users WHERE id')) {
+    if (sql.includes('email, tier, created_at, first_name, last_name FROM users WHERE id')) {
       // getAccountProfile user read.
       const user = this.users.get(String(params[0]))
       return user === undefined
         ? null
-        : { email: user.email, tier: user.tier, created_at: user.created_at }
+        : {
+            email: user.email,
+            tier: user.tier,
+            created_at: user.created_at,
+            first_name: user.first_name,
+            last_name: user.last_name,
+          }
     }
     if (sql.includes('FROM users WHERE id')) {
       const user = this.users.get(String(params[0]))
@@ -518,6 +531,16 @@ export class MemoryStore {
       if (sql.includes('email_verified')) {
         emailVerified = hasPassword ? (params[6] === 1 ? 1 : 0) : 1
       }
+      // Display names (migration 0009) are appended after email_verified by
+      // createUserWithPassword (params 7/8). Absent on createFreeUser and bare
+      // test inserts → NULL, mirroring the nullable columns with no default.
+      const hasNames = sql.includes('first_name')
+      const firstName = hasNames && params[7] !== null && params[7] !== undefined
+        ? String(params[7])
+        : null
+      const lastName = hasNames && params[8] !== null && params[8] !== undefined
+        ? String(params[8])
+        : null
       this.users.set(id, {
         id,
         email,
@@ -528,6 +551,8 @@ export class MemoryStore {
         created_at: String(params[4]),
         password_hash: passwordHash,
         email_verified: emailVerified,
+        first_name: firstName,
+        last_name: lastName,
       })
       return { changes: 1 }
     }
@@ -850,6 +875,23 @@ export class MemoryD1 {
   public prepare(sql: string): MemoryStatement {
     return new MemoryStatement(this.store, sql)
   }
+
+  /**
+   * Run a list of prepared statements as a batch. The real D1 batch is atomic
+   * (all-or-nothing); the fake runs them sequentially without modeling rollback —
+   * sufficient because the suites assert WHICH statements a batch issues, and the
+   * underlying SQL is already covered by the execute() self-tests. Returns one
+   * `{ meta: { changes } }` per statement, matching D1's result shape.
+   */
+  public async batch(
+    statements: MemoryStatement[],
+  ): Promise<{ meta: { changes: number } }[]> {
+    const results: { meta: { changes: number } }[] = []
+    for (const statement of statements) {
+      results.push(await statement.run())
+    }
+    return results
+  }
 }
 
 /**
@@ -939,6 +981,26 @@ describe('MemoryD1', () => {
     })
     // An unknown id joins to nothing.
     expect(await db.queryOne(select, ['ghost'])).toBeNull()
+  })
+
+  it('runs a batch of prepared statements and returns a changes count per statement', async () => {
+    const store = new MemoryStore()
+    const d1 = new MemoryD1(store)
+    const results = await d1.batch([
+      d1
+        .prepare(
+          'INSERT INTO users (id, email, tier, stripe_customer_id, created_at, email_verified) VALUES (?, ?, ?, ?, ?, 1)',
+        )
+        .bind('u1', 'b@x.test', 'free', null, '2026-06-28T00:00:00.000Z'),
+      d1
+        .prepare(
+          'INSERT INTO usage (subject, day, scans, ai_scans, allows, reviews, blocks, flagged) VALUES (?, ?, 1, ?, ?, ?, ?, ?) ON CONFLICT (subject, day) DO UPDATE SET scans = scans + 1, ai_scans = ai_scans + ?, blocks = blocks + 1, flagged = flagged + ?',
+        )
+        .bind('u1', '2026-06-28', 0, 0, 0, 1, 1, 0, 1),
+    ])
+    expect(results.map((r) => r.meta.changes)).toEqual([1, 1])
+    expect(store.users.size).toBe(1)
+    expect(store.usage.get('u1 2026-06-28')?.blocks).toBe(1)
   })
 
   it('throws on an unrecognized statement', async () => {

@@ -137,6 +137,8 @@ describe('account endpoints', () => {
       tier: 'free',
       createdAt: '2026-06-01T00:00:00.000Z',
       apiKeyPrefix: 'sk_live_ab',
+      firstName: null,
+      lastName: null,
       role: 'member',
       isAdmin: false,
       isOwner: false,
