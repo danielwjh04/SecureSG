@@ -37,6 +37,7 @@ import {
   handleAdminMemberRole,
   handleAdminMembers,
   handleAdminOverview,
+  handleAdminScanDetail,
   handleAdminThreats,
 } from './routes/admin'
 import { d1Database } from './db/database'
@@ -64,6 +65,8 @@ const ROUTE_ADMIN_THREATS = '/api/admin/threats'
 const ROUTE_ADMIN_MEMBERS = '/api/admin/members'
 const ROUTE_ADMIN_MEMBER_ROLE = '/api/admin/members/role'
 const ROUTE_ADMIN_MEMBER_REMOVE = '/api/admin/members/remove'
+/** Prefix of the caught-scan detail path; the scan id follows as `:id`. */
+const ROUTE_ADMIN_SCANS_PREFIX = '/api/admin/scans/'
 const ROUTE_KEY_ROTATE = '/api/key/rotate'
 
 export default {
@@ -223,6 +226,21 @@ export default {
         return jsonError('method not allowed', 405)
       }
       return await handleAdminThreats(request, adminDeps(env, config))
+    }
+
+    // Caught-scan detail: GET /api/admin/scans/:id. The id is the path segment
+    // after the prefix; it is URL-decoded and must be non-empty (a bare
+    // /api/admin/scans/ with no id is a 404). Matched before the static admin
+    // routes since it is a distinct prefix.
+    if (url.pathname.startsWith(ROUTE_ADMIN_SCANS_PREFIX)) {
+      if (request.method !== 'GET') {
+        return jsonError('method not allowed', 405)
+      }
+      const scanId = decodeURIComponent(url.pathname.slice(ROUTE_ADMIN_SCANS_PREFIX.length))
+      if (scanId.length === 0 || scanId.includes('/')) {
+        return jsonError('not found', 404)
+      }
+      return await handleAdminScanDetail(request, adminDeps(env, config), scanId)
     }
 
     // The role-change path is more specific than the members list path, so it is

@@ -68,6 +68,20 @@ export interface ScanDeps {
 const STAGE_FAILURE_FLOOR: Verdict = 'HUMAN_APPROVAL_REQUIRED'
 
 /**
+ * The outcome of {@link runScan}: the {@link ScanResult} (the proof-bearing
+ * value the API echoes) plus `scannedText` — the exact resolved skill text that
+ * was scanned (`request.content` for a paste, the fetched body for a URL).
+ *
+ * `scannedText` is returned OUT-OF-BAND from the proof so the route can persist
+ * the caught content for admin review WITHOUT it ever entering the hashed chain
+ * or the public `/api/scan` response (CLAUDE.md §6 privacy).
+ */
+export interface ScanOutcome {
+  readonly result: ScanResult
+  readonly scannedText: string
+}
+
+/**
  * Lowercase-hex SHA-256 of the skill text, used as the (float-free) identity of
  * the input in the `SKILL_INPUT` proof step. Hashing rather than embedding the
  * body keeps the proof compact and avoids leaking the full skill into the chain
@@ -241,12 +255,16 @@ function logErrorClass(stage: string, error: unknown): void {
  * and the same recorded clients, the produced proof (and `headHash`) is
  * identical. `scannedAt` is the sole time-varying field and is never hashed.
  *
+ * Returns a {@link ScanOutcome}: the {@link ScanResult} plus the resolved
+ * `scannedText` (out-of-band, for admin-review persistence only — never echoed
+ * by the public API, never hashed).
+ *
  * Time complexity: O(U·H + R + F). Space complexity: O(U·H + R + F).
  *
  * @throws {ParseError} If the input is empty or unparseable.
  * @throws {RedirectResolutionError} On a transport failure tracing a cascade.
  */
-export async function runScan(request: ScanRequest, deps: ScanDeps): Promise<ScanResult> {
+export async function runScan(request: ScanRequest, deps: ScanDeps): Promise<ScanOutcome> {
   const { config } = deps
   const fetchImpl = deps.fetchImpl ?? fetch
 
@@ -313,7 +331,7 @@ export async function runScan(request: ScanRequest, deps: ScanDeps): Promise<Sca
     verdict,
   })
 
-  return {
+  const result: ScanResult = {
     verdict,
     chains,
     reputation: reputationReports,
@@ -323,6 +341,7 @@ export async function runScan(request: ScanRequest, deps: ScanDeps): Promise<Sca
     scannedAt: deps.scannedAt,
     source,
   }
+  return { result, scannedText: skillText }
 }
 
 /**

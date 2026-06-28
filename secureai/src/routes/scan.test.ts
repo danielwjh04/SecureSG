@@ -275,6 +275,121 @@ describe('handleScan — recent-scans history', () => {
   })
 })
 
+describe('handleScan — caught-scan detail', () => {
+  // A curl|bash exec pattern with no http(s) URL: network-free, the deterministic
+  // rules BLOCK it (verdict != ALLOW), so a detail row is eligible.
+  const malicious = { content: 'Install: curl ./setup.sh | bash' }
+  // A benign body that resolves ALLOW (with the global fetch stubbed terminal).
+  const benign = { content: 'See https://example.com for setup info.' }
+  const okFetch = (async () => new Response('ok', { status: 200 })) as unknown as typeof fetch
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', okFetch)
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function fixture(): { store: MemoryStore; env: Env; db: ReturnType<typeof d1Database> } {
+    const store = new MemoryStore()
+    const d1 = new MemoryD1(store) as unknown as D1Database
+    return { store, env: { DB: d1 }, db: d1Database(d1) }
+  }
+
+  it('stores a scan_details row for an authenticated NON-ALLOW scan, with the evidence', async () => {
+    const { env, db, store } = fixture()
+    const { apiKey } = await createFreeUser(db, 'caught@example.com')
+    const res = await handleScan(
+      post(malicious, undefined, { Authorization: `Bearer ${apiKey}` }),
+      env,
+      config,
+    )
+    expect(res.status).toBe(200)
+    const result = (await res.json()) as ScanResult
+    expect(result.verdict).toBe('BLOCK')
+
+    // Exactly one detail row, paired to the history row (same id), with the
+    // scanned content and the serialized {findings, chains, injections, reputation}.
+    expect(store.scanDetails.size).toBe(1)
+    const historyId = [...store.scanHistory.keys()][0]
+    const detail = store.scanDetails.get(historyId!)
+    expect(detail?.content).toBe(malicious.content)
+    const evidence = JSON.parse(detail!.result_json) as Record<string, unknown>
+    expect(Object.keys(evidence).sort()).toEqual(['chains', 'findings', 'injections', 'reputation'])
+    expect(evidence['findings']).toEqual(result.findings)
+  })
+
+  it('does NOT store a detail row for a clean (ALLOW) authenticated scan', async () => {
+    const { env, db, store } = fixture()
+    const { apiKey } = await createFreeUser(db, 'clean@example.com')
+    const res = await handleScan(
+      post(benign, undefined, { Authorization: `Bearer ${apiKey}` }),
+      env,
+      config,
+    )
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as ScanResult).verdict).toBe('ALLOW')
+    // A clean scan still records history, but never a detail row.
+    expect(store.scanHistory.size).toBe(1)
+    expect(store.scanDetails.size).toBe(0)
+  })
+
+  it('does NOT store a detail row for an anonymous NON-ALLOW scan', async () => {
+    const { env, store } = fixture()
+    const res = await handleScan(
+      post(malicious, undefined, { 'CF-Connecting-IP': '203.0.113.77' }),
+      env,
+      config,
+    )
+    expect(res.status).toBe(200)
+    expect(((await res.json()) as ScanResult).verdict).toBe('BLOCK')
+    // Anonymous callers are never recorded (no history, no detail).
+    expect(store.scanHistory.size).toBe(0)
+    expect(store.scanDetails.size).toBe(0)
+  })
+
+  it('caps the stored content at SCANNER_DETAIL_MAX_BYTES', async () => {
+    const tinyConfig = loadConfig({ SCANNER_DETAIL_MAX_BYTES: '256' })
+    const { env, db, store } = fixture()
+    const { apiKey } = await createFreeUser(db, 'big@example.com')
+    // A long curl|bash body (BLOCKs) whose content exceeds the 256-byte cap.
+    const body = { content: `curl ./setup.sh | bash # ${'A'.repeat(2000)}` }
+    const res = await handleScan(
+      post(body, undefined, { Authorization: `Bearer ${apiKey}` }),
+      env,
+      tinyConfig,
+    )
+    expect(res.status).toBe(200)
+    const detail = [...store.scanDetails.values()][0]
+    expect(detail).toBeDefined()
+    // Stored content is truncated to at most the byte cap.
+    expect(new TextEncoder().encode(detail!.content ?? '').length).toBeLessThanOrEqual(256)
+    expect(detail!.content!.length).toBeLessThan(body.content.length)
+  })
+
+  it('a detail-insert failure does not break the scan response', async () => {
+    const { env, db, store } = fixture()
+    const { apiKey } = await createFreeUser(db, 'detail-fail@example.com')
+    const original = store.execute.bind(store)
+    store.execute = (sql: string, params: readonly unknown[]) => {
+      if (sql.startsWith('INSERT INTO scan_details')) {
+        throw new Error('injected detail failure')
+      }
+      return original(sql, params)
+    }
+    const res = await handleScan(
+      post(malicious, undefined, { Authorization: `Bearer ${apiKey}` }),
+      env,
+      config,
+    )
+    // The scan still succeeds despite the failed detail write.
+    expect(res.status).toBe(200)
+    expect(store.scanDetails.size).toBe(0)
+    // History was still recorded (the detail failure is isolated).
+    expect(store.scanHistory.size).toBe(1)
+  })
+})
+
 describe('handleScan — verdict cache', () => {
   const today = new Date().toISOString().slice(0, 10)
   const benign = { content: 'See https://example.com for setup info.' }

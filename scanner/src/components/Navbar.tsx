@@ -62,13 +62,6 @@ export function Navbar({ onHome, auth }: NavbarProps) {
               >
                 How it works
               </a>
-              <a
-                href="#guard"
-                onClick={handleScannerSectionClick}
-                className={linkClass(route === 'scanner' && target === 'guard')}
-              >
-                Guard
-              </a>
               <a href="#pricing" className={linkClass(route === 'pricing')}>
                 Pricing
               </a>
@@ -154,13 +147,6 @@ export function Navbar({ onHome, auth }: NavbarProps) {
                   className="px-2 py-2.5 rounded-xl hover:bg-white/5 text-white/80 hover:text-white transition-colors"
                 >
                   How it works
-                </a>
-                <a
-                  href="#guard"
-                  onClick={handleScannerSectionClick}
-                  className="px-2 py-2.5 rounded-xl hover:bg-white/5 text-white/80 hover:text-white transition-colors"
-                >
-                  Guard
                 </a>
                 <a
                   href="#pricing"

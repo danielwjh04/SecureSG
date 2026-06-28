@@ -4,6 +4,7 @@ import { Dashboard } from './Dashboard'
 import type { AuthState } from '../hooks/useAuth'
 import type { MeResponse, RecentScan, StatsResponse } from '../api/types'
 import * as client from '../api/client'
+import { GUARD_DOWNLOAD_PATH, guardInstallCommand } from '../config'
 
 const USER: MeResponse = {
   email: 'analyst@securesg.test',
@@ -164,5 +165,75 @@ describe('Dashboard · API key copy', () => {
 
     expect(writeText).toHaveBeenCalledWith(USER.apiKeyPrefix)
     await waitFor(() => expect(copyButton).toHaveTextContent('Copied'))
+  })
+})
+
+describe('Dashboard · Set up the Guard', () => {
+  beforeEach(() => {
+    vi.spyOn(client, 'fetchStats').mockResolvedValue(emptyStats())
+    stubRecent([])
+  })
+
+  it('renders the Guard download link with a download attribute', () => {
+    render(<Dashboard user={USER} auth={authState()} />)
+    const download = screen.getByRole('link', { name: /Download the Guard/ })
+    expect(download).toHaveAttribute('href', GUARD_DOWNLOAD_PATH)
+    expect(download).toHaveAttribute('download')
+  })
+
+  it('shows the key-rotation hint and no install command before generating', () => {
+    render(<Dashboard user={USER} auth={authState()} />)
+    expect(screen.getByText('Set up the Guard')).toBeInTheDocument()
+    // The hint warns that generating mints a fresh key and revokes prior ones.
+    expect(screen.getByText(/mints a fresh API key and revokes your previous keys/)).toBeInTheDocument()
+    // The generate button is present; the copyable command is not shown yet.
+    expect(screen.getByRole('button', { name: /Generate install command/ })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Copy install command/ })).toBeNull()
+  })
+
+  it('rotates the key and reveals the key-embedded install command on generate', async () => {
+    const newKey = 'sk_live_freshrotatedkey0001'
+    const rotateSpy = vi.spyOn(client, 'rotateApiKey').mockResolvedValue({ apiKey: newKey })
+    render(<Dashboard user={USER} auth={authState()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Generate install command/ }))
+
+    await waitFor(() => expect(rotateSpy).toHaveBeenCalledTimes(1))
+    // The revealed command embeds the freshly minted key.
+    await waitFor(() =>
+      expect(screen.getByText(guardInstallCommand(newKey))).toBeInTheDocument(),
+    )
+    // The explicit revocation warning is shown alongside it.
+    expect(
+      screen.getByText(/your previous keys are now revoked/i),
+    ).toBeInTheDocument()
+  })
+
+  it('copies the generated install command and confirms with "Copied"', async () => {
+    const newKey = 'sk_live_freshrotatedkey0002'
+    vi.spyOn(client, 'rotateApiKey').mockResolvedValue({ apiKey: newKey })
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+
+    render(<Dashboard user={USER} auth={authState()} />)
+    fireEvent.click(screen.getByRole('button', { name: /Generate install command/ }))
+
+    const copyButton = await screen.findByRole('button', { name: /Copy install command/ })
+    fireEvent.click(copyButton)
+
+    expect(writeText).toHaveBeenCalledWith(guardInstallCommand(newKey))
+    await waitFor(() => expect(copyButton).toHaveTextContent('Copied'))
+  })
+
+  it('surfaces an error and keeps the command hidden when rotation fails', async () => {
+    vi.spyOn(client, 'rotateApiKey').mockRejectedValue(new Error('nope'))
+    render(<Dashboard user={USER} auth={authState()} />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Generate install command/ }))
+
+    await waitFor(() =>
+      expect(screen.getByText(/Could not generate the install command/)).toBeInTheDocument(),
+    )
+    expect(screen.queryByRole('button', { name: /Copy install command/ })).toBeNull()
   })
 })

@@ -254,6 +254,21 @@ describe('worker.fetch routing', () => {
     expect(res.status).toBe(405)
   })
 
+  it('routes GET /api/admin/scans/:id and returns 503 when DB is unconfigured', async () => {
+    const res = await worker.fetch(req('/api/admin/scans/abc123', 'GET'), baseEnv)
+    expect(res.status).toBe(503)
+  })
+
+  it('rejects a non-GET /api/admin/scans/:id with 405', async () => {
+    const res = await worker.fetch(req('/api/admin/scans/abc123', 'POST', {}), baseEnv)
+    expect(res.status).toBe(405)
+  })
+
+  it('404s a bare /api/admin/scans/ with no id', async () => {
+    const res = await worker.fetch(req('/api/admin/scans/', 'GET'), baseEnv)
+    expect(res.status).toBe(404)
+  })
+
   it('routes POST /api/admin/members/remove and returns 503 when DB is unconfigured', async () => {
     const res = await worker.fetch(req('/api/admin/members/remove', 'POST', { userId: 'x' }), baseEnv)
     expect(res.status).toBe(503)

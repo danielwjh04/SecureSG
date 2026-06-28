@@ -63,6 +63,13 @@ export interface ScannerConfig {
   readonly reviewThreshold: number
   readonly blockThreshold: number
   readonly skillMaxBytes: number
+  /**
+   * Max bytes of scanned skill/artifact text persisted in `scan_details` for a
+   * caught (non-ALLOW) AUTHENTICATED scan, so an admin can review what was
+   * flagged. The stored content is truncated to this bound; clean (ALLOW) and
+   * anonymous scans are NEVER persisted (CLAUDE.md §6 privacy).
+   */
+  readonly detailMaxBytes: number
   readonly subrequestCap: number
   /** Max metered scans per UTC day for an anonymous (IP-keyed) caller. */
   readonly capAnonymousPerDay: number
@@ -140,6 +147,11 @@ export function loadConfig(env: Env): ScannerConfig {
   const reviewThreshold = readFloatInRange(env, 'SCANNER_REVIEW_THRESHOLD', 0.3, 0, 1)
   const blockThreshold = readFloatInRange(env, 'SCANNER_BLOCK_THRESHOLD', 0.7, 0, 1)
   const skillMaxBytes = readIntInRange(env, 'SCANNER_SKILL_MAX_BYTES', 262144, 1, 10485760)
+  // Max bytes of caught-scan content persisted for admin review. Default 16 KiB;
+  // range 256..262144 (256 B floor so a snippet is always meaningful, 256 KiB
+  // ceiling matching the skill byte cap). Only non-ALLOW authenticated scans are
+  // stored, truncated to this bound.
+  const detailMaxBytes = readIntInRange(env, 'SCANNER_DETAIL_MAX_BYTES', 16384, 256, 262144)
   const subrequestCap = readIntInRange(env, 'SCANNER_SUBREQUEST_CAP', 50, 1, 1000)
   // Per-tier daily caps (accounts layer). Defaults match the free-tier funnel:
   // a small anonymous allowance, a larger free allowance, a high pro allowance.
@@ -221,6 +233,7 @@ export function loadConfig(env: Env): ScannerConfig {
     reviewThreshold,
     blockThreshold,
     skillMaxBytes,
+    detailMaxBytes,
     subrequestCap,
     capAnonymousPerDay,
     capFreePerDay,

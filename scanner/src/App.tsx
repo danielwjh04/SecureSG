@@ -17,7 +17,7 @@ import { BackgroundVideo } from './components/BackgroundVideo'
 import { Navbar } from './components/Navbar'
 import { Hero } from './components/Hero'
 import { HowItWorks } from './components/HowItWorks'
-import { GuardInstall } from './components/GuardInstall'
+import { EaseOfUse } from './components/EaseOfUse'
 import { Gallery } from './components/Gallery'
 import { ResultView } from './components/ResultView'
 import { Enterprise } from './components/Enterprise'
@@ -147,7 +147,7 @@ function App(): ReactNode {
     const sameRoute = previousRouteRef.current === route
     previousRouteRef.current = route
     const frame = window.requestAnimationFrame(() => {
-      if (target === 'how' || target === 'guard') {
+      if (target === 'how') {
         // Jump straight to the section. A smooth scroll here can stall before it
         // arrives — interrupted by a route remount, or simply giving up on the
         // landing — and strand the page with the hero video still showing above
@@ -274,7 +274,7 @@ function App(): ReactNode {
       <Hero state={state} onScan={controller.scan} />
       <div className="relative z-10 bg-black">
         <HowItWorks />
-        <GuardInstall />
+        <EaseOfUse />
         <section className="max-w-5xl mx-auto px-6 pb-20">
           <Gallery onPick={controller.loadResult} />
         </section>

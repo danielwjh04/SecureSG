@@ -54,6 +54,11 @@
     "SCANNER_REVIEW_THRESHOLD": "0.30",
     "SCANNER_BLOCK_THRESHOLD": "0.70",
     "SCANNER_SKILL_MAX_BYTES": "262144",
+    // Max bytes of caught-scan content persisted in scan_details for admin review
+    // (default 16384 = 16 KiB; range 256..262144). Only non-ALLOW authenticated
+    // scans are stored, truncated to this bound; clean/anonymous scans are never
+    // persisted (privacy).
+    "SCANNER_DETAIL_MAX_BYTES": "16384",
     "SCANNER_SUBREQUEST_CAP": "50",
     "SCANNER_CAP_ANONYMOUS_PER_DAY": "10",
     "SCANNER_CAP_FREE_PER_DAY": "100",

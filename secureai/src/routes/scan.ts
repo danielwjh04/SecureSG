@@ -29,7 +29,7 @@ import { d1Database } from '../db/database'
 import { authenticate } from '../middleware/auth'
 import { aiAllowedForTier, enforceDailyCap } from '../middleware/gate'
 import { recordVerdict } from '../db/usage'
-import { insertScan } from '../db/scans'
+import { insertScan, insertScanDetail } from '../db/scans'
 import { resolveCachedScan, type VerdictCacheKv } from '../scanner/verdictCache'
 
 const STATUS_OK = 200
@@ -43,6 +43,13 @@ const STATUS_BAD_GATEWAY = 502
 const ANON_SUBJECT_PREFIX = 'anon:'
 /** Max stored length of a scan-history `source_ref` label (privacy + bound). */
 const SOURCE_REF_MAX_CHARS = 200
+/** The clean verdict: a scan with this verdict is NEVER detail-persisted. */
+const CLEAN_VERDICT: ScanResult['verdict'] = 'ALLOW'
+
+/** Shared encoder/decoder for byte-bounded content truncation (allocation-free). */
+const detailTextEncoder = new TextEncoder()
+/** Non-fatal decoder: drops a partial trailing code point rather than throwing. */
+const detailTextDecoder = new TextDecoder('utf-8', { fatal: false, ignoreBOM: true })
 
 /**
  * Parse and Zod-validate the JSON body into a {@link ScanRequest}. A body that
@@ -116,6 +123,7 @@ function statusForError(error: unknown): number {
  */
 async function recordScanHistory(
   db: Database,
+  scanId: string,
   subject: string,
   result: ScanResult,
   flaggedCount: number,
@@ -125,7 +133,7 @@ async function recordScanHistory(
   }
   try {
     await insertScan(db, {
-      id: crypto.randomUUID(),
+      id: scanId,
       userId: subject,
       verdict: result.verdict,
       sourceKind: result.source.kind,
@@ -137,6 +145,79 @@ async function recordScanHistory(
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
     console.warn(`[handleScan] scan-history insert failed (${className}); continuing`)
+  }
+}
+
+/**
+ * Truncate a string to at most `maxBytes` UTF-8 bytes WITHOUT splitting a
+ * multi-byte code point. Encodes once, slices the byte view at the bound, then
+ * decodes with `{ fatal: false }` so a partial trailing sequence is dropped
+ * rather than emitting a replacement char. A string already within the bound is
+ * returned unchanged (no re-encode round trip beyond the length check).
+ *
+ * Time complexity: O(n) in the string byte length. Space complexity: O(n).
+ */
+function truncateToBytes(text: string, maxBytes: number): string {
+  const bytes = detailTextEncoder.encode(text)
+  if (bytes.length <= maxBytes) {
+    return text
+  }
+  return detailTextDecoder.decode(bytes.subarray(0, maxBytes))
+}
+
+/**
+ * Persist one caught-scan DETAIL row for an AUTHENTICATED, non-clean scan,
+ * best-effort. Records the scanned content (truncated to `config.detailMaxBytes`,
+ * or `null` when unavailable — e.g. a verdict-cache hit recomputed no text) plus
+ * the serialized `{ findings, chains, injections, reputation }` evidence, so an
+ * admin can review what was caught.
+ *
+ * Privacy gate (CLAUDE.md §6): a clean (`ALLOW`) scan or an anonymous (`anon:`)
+ * caller is NEVER detail-persisted — nothing was flagged, so there is nothing to
+ * review, and the per-account review surface excludes anonymous callers. The
+ * `scanId` pairs the detail 1:1 with the just-written `scan_history` row.
+ *
+ * A failure here is caught/logged and must NOT fail the scan (it runs after the
+ * response is computed), exactly like {@link recordScanHistory}.
+ *
+ * Time complexity: O(d) in the content byte length (one truncate + one insert).
+ * Space complexity: O(d).
+ *
+ * @param db - The persistence seam (non-null; the caller gates on it).
+ * @param scanId - The paired `scan_history` row id.
+ * @param subject - The caller's metering subject (user id, or `anon:<ip>`).
+ * @param result - The scan result whose verdict gates persistence + supplies
+ *   the serialized evidence.
+ * @param scannedText - The scanned content, or `null` when unavailable.
+ * @param config - The scanner config (supplies the detail byte cap).
+ */
+async function recordScanDetail(
+  db: Database,
+  scanId: string,
+  subject: string,
+  result: ScanResult,
+  scannedText: string | null,
+  config: ScannerConfig,
+): Promise<void> {
+  if (subject.startsWith(ANON_SUBJECT_PREFIX) || result.verdict === CLEAN_VERDICT) {
+    return
+  }
+  try {
+    const resultJson = JSON.stringify({
+      findings: result.findings,
+      chains: result.chains,
+      injections: result.injections,
+      reputation: result.reputation,
+    })
+    await insertScanDetail(db, {
+      scanId,
+      content: scannedText === null ? null : truncateToBytes(scannedText, config.detailMaxBytes),
+      resultJson,
+      createdAt: result.scannedAt,
+    })
+  } catch (error: unknown) {
+    const className = error instanceof Error ? error.constructor.name : typeof error
+    console.warn(`[handleScan] scan-detail insert failed (${className}); continuing`)
   }
 }
 
@@ -167,6 +248,13 @@ async function recordScanHistory(
  * `anon:` subjects are skipped), one `scan_history` row is inserted best-effort.
  * It records only the source LABEL (never the scanned content); a failure here
  * is caught/logged and must NOT fail the scan response.
+ *
+ * Caught-scan detail: for an AUTHENTICATED NON-clean scan (verdict != `ALLOW`),
+ * one `scan_details` row is ALSO inserted best-effort, paired to the history row
+ * by the same minted id. It stores the scanned content (truncated to
+ * `config.detailMaxBytes`, or `null` on a cache hit that recomputed no text) plus
+ * the serialized evidence, so an admin can review what was flagged. Clean and
+ * anonymous scans are never detail-persisted (CLAUDE.md §6 privacy).
  *
  * Time complexity: dominated by `runScan` (O(U·H + R + F)); a cache hit is O(1)
  * plus the metering write. Space complexity: O(result size).
@@ -220,7 +308,7 @@ export async function handleScan(
     // cache. The cache wraps ONLY the `runScan` compute — auth/caps already ran,
     // and metering + history below STILL run for this caller on a hit.
     const cacheKv = env.KV !== undefined && env.KV !== null ? (env.KV as VerdictCacheKv) : null
-    const { result } = await resolveCachedScan(
+    const { result, scannedText } = await resolveCachedScan(
       body,
       cacheKv,
       config.verdictCacheTtlSeconds,
@@ -246,9 +334,14 @@ export async function handleScan(
         ai: inference !== null,
       })
 
-      // Recent-scans history (authenticated callers only). Best-effort: a
-      // failure here is logged and never fails the scan response.
-      await recordScanHistory(db, ctx.subject, result, flaggedCount)
+      // Recent-scans history + caught-scan detail (authenticated callers only).
+      // Both are best-effort: a failure is logged and never fails the scan
+      // response. The detail is paired to the history row by a single minted id,
+      // and is persisted ONLY for a non-clean (non-ALLOW) scan (the recorder
+      // gates on the verdict + the anonymous prefix).
+      const scanId = crypto.randomUUID()
+      await recordScanHistory(db, scanId, ctx.subject, result, flaggedCount)
+      await recordScanDetail(db, scanId, ctx.subject, result, scannedText, config)
     }
 
     return Response.json(result, { status: STATUS_OK })

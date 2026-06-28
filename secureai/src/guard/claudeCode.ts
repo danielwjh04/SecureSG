@@ -205,7 +205,7 @@ export async function guardDecision(
       return { decision: 'allow', reason: 'no scannable indicators', verdict: null }
     }
 
-    const result = await runScan({ content }, deps)
+    const { result } = await runScan({ content }, deps)
     const decision = verdictToDecision(result.verdict)
     const reason = buildReason(result.verdict, result.findings, result.injections)
 

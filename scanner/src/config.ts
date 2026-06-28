@@ -37,6 +37,16 @@ export const API = {
   adminThreats: `${API_BASE}/api/admin/threats`,
 } as const
 
+/**
+ * The admin per-scan detail endpoint, `GET /api/admin/scans/<id>`. Parameterized
+ * by the scan id (the {@link AdminThreat} row's `id`), so it is a builder rather
+ * than a static path. The id is percent-encoded so an unexpected character in a
+ * stored id can never break out of the path segment.
+ */
+export function adminScanDetailPath(id: string): string {
+  return `${API_BASE}/api/admin/scans/${encodeURIComponent(id)}`
+}
+
 /** Where to email enterprise sales when the Pricing page Contact CTA is used. */
 export const ENTERPRISE_CONTACT_EMAIL = 'sales@secureai.example' as const
 
@@ -84,16 +94,35 @@ export const BACKGROUND_VIDEO_SRC =
 export const REPO_URL = 'https://github.com/danielwjh04/SecureAI' as const
 
 /**
- * The SecureAI Guard install surface on the landing page. `GUARD_DOWNLOAD_PATH`
- * is the same-origin path the Guard hook script is served from (a static public
- * asset), and `GUARD_INSTALL_COMMAND` is the one-line installer users run to wire
- * the PreToolUse hook into Claude Code. The installer's hosted origin lives in
- * the command string itself (it must be absolute for `curl`); it is the public
- * SecureAI host, not a secret.
+ * The SecureAI Guard install surface. `GUARD_DOWNLOAD_PATH` is the same-origin
+ * path the Guard hook script is served from (a static public asset), so the
+ * member dashboard's "Download the Guard" button resolves it against the current
+ * origin. `GUARD_INSTALL_URL` is the absolute URL of the one-line installer
+ * (`install.sh`) that wires the PreToolUse hook into Claude Code; it must be
+ * absolute because `curl` runs it from the user's own shell, and it is the
+ * public SecureAI host, not a secret.
  */
 export const GUARD_DOWNLOAD_PATH = '/secureai-guard.mjs' as const
-export const GUARD_INSTALL_COMMAND =
-  'curl -fsSL https://secureai.zurielst.com/install.sh | bash' as const
+export const GUARD_INSTALL_URL =
+  'https://secureai.zurielst.com/install.sh' as const
+
+/**
+ * Build the key-embedded one-line Guard installer the member dashboard reveals
+ * after minting a fresh API key. The installer reads the key from the
+ * `SECUREAI_API_KEY` environment variable, so it is exported into the piped
+ * `bash` rather than passed as an argument (which would leak it into the process
+ * list). The raw key is only ever available at mint time, so this command is the
+ * single moment it can be embedded.
+ *
+ * The key is wrapped in double quotes so a shell never word-splits or globs it;
+ * minted keys are an opaque token alphabet (no quotes), so no further escaping is
+ * required.
+ *
+ * Time complexity: O(1). Space complexity: O(1).
+ */
+export function guardInstallCommand(apiKey: string): string {
+  return `curl -fsSL ${GUARD_INSTALL_URL} | SECUREAI_API_KEY="${apiKey}" bash`
+}
 
 /**
  * The three skill-input modes offered by the hero's segmented control. The

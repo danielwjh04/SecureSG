@@ -26,6 +26,7 @@ import {
 import {
   Check,
   Copy,
+  Download,
   FileText,
   Key,
   Link2,
@@ -33,8 +34,10 @@ import {
   RefreshCw,
   ScanLine,
   ShieldAlert,
+  ShieldCheck,
   ShieldX,
   Sparkles,
+  Terminal,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import {
@@ -44,7 +47,12 @@ import {
   rotateApiKey,
   startCheckout,
 } from '../api/client'
-import { RECENT_SCANS_LIMIT, STATS_TREND_DAYS } from '../config'
+import {
+  GUARD_DOWNLOAD_PATH,
+  guardInstallCommand,
+  RECENT_SCANS_LIMIT,
+  STATS_TREND_DAYS,
+} from '../config'
 import { zeroFillDaily } from '../lib/stats'
 import { hostname, relativeTime } from '../lib/format'
 import type { Verdict } from '../api/types'
@@ -138,6 +146,8 @@ export function Dashboard({ user, auth }: DashboardProps) {
         <RecentScans />
 
         <ApiKeyCard apiKeyPrefix={user.apiKeyPrefix} />
+
+        <GuardSetupCard />
       </div>
     </section>
   )
@@ -635,6 +645,120 @@ function ApiKeyCard({ apiKeyPrefix }: { apiKeyPrefix: string }) {
       )}
 
       {error && <p className="text-block/90 font-mono text-[12px]">{error}</p>}
+    </motion.div>
+  )
+}
+
+/**
+ * The "Set up the Guard" card: the runtime side of the account. It offers the
+ * Guard hook as a direct download and, separately, the one-line installer with
+ * the member's API key embedded.
+ *
+ * The raw key is never stored (the backend keeps a hash only), so it can only be
+ * embedded at the moment a fresh one is minted. "Generate install command" calls
+ * `POST /api/key/rotate`, which returns a brand-new key once and revokes every
+ * prior key; the returned key is woven into {@link guardInstallCommand} and shown
+ * in a copy box with an explicit warning that older keys are now dead and this is
+ * the only time the command is shown. Before generating, a hint makes the
+ * key-rotation side effect plain so the operator is never surprised.
+ */
+function GuardSetupCard() {
+  const [command, setCommand] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleGenerate = async (): Promise<void> => {
+    setBusy(true)
+    setError(null)
+    try {
+      const { apiKey } = await rotateApiKey()
+      setCommand(guardInstallCommand(apiKey))
+    } catch {
+      setError('Could not generate the install command. Please try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay: 0.07, ease: [0.16, 1, 0.3, 1] }}
+      className="liquid-glass rounded-2xl p-5 flex flex-col gap-5"
+    >
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-allow" />
+          <h3 className="text-[12px] font-mono uppercase tracking-[0.14em] text-white/55">
+            Set up the Guard
+          </h3>
+        </div>
+        <p className="text-white/55 text-[13px] leading-relaxed">
+          Screen every tool call your agent makes — fail-closed, so a call is
+          denied unless the Guard clears it. Drop it in as a PreToolUse hook.
+        </p>
+      </div>
+
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="flex flex-col">
+          <span className="text-white text-[14px] font-semibold">
+            SecureAI Guard
+          </span>
+          <span className="text-white/50 text-[12px]">
+            A zero-dependency hook for your agent.
+          </span>
+        </div>
+        <a
+          href={GUARD_DOWNLOAD_PATH}
+          download
+          className="inline-flex items-center justify-center gap-2 rounded-full bg-white px-5 py-2.5 text-[13px] font-semibold text-black hover:bg-white/90 transition-colors cursor-pointer shrink-0"
+        >
+          <Download className="w-4 h-4" />
+          Download the Guard
+        </a>
+      </div>
+
+      <div className="flex flex-col gap-2 border-t border-white/[0.06] pt-5">
+        <div className="flex items-center gap-2 text-white/55 text-[11px] font-mono uppercase tracking-[0.14em]">
+          <Terminal className="w-3.5 h-3.5" />
+          One-line install with your key
+        </div>
+
+        {command === null ? (
+          <>
+            <p className="text-white/45 text-[12px] leading-relaxed">
+              Your key is stored hashed and shown only once, so generating the
+              command mints a fresh API key and revokes your previous keys.
+            </p>
+            <button
+              type="button"
+              onClick={handleGenerate}
+              disabled={busy}
+              className="glass-pill self-start inline-flex items-center gap-1.5 px-4 py-2 text-[13px] font-medium text-white/80 hover:text-white transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${busy ? 'animate-spin' : ''}`} />
+              Generate install command
+            </button>
+          </>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-stretch gap-2">
+              <code className="flex-1 min-w-0 overflow-x-auto rounded-xl bg-white/[0.04] border border-white/10 px-3.5 py-2.5 font-mono text-[12px] sm:text-[13px] text-allow whitespace-nowrap">
+                <span className="text-allow/60 select-none">$ </span>
+                {command}
+              </code>
+              <CopyButton value={command} label="Copy install command" />
+            </div>
+            <p className="text-review/90 font-mono text-[11px] leading-snug">
+              This generated a fresh API key — your previous keys are now revoked.
+              Copy this command now; the key isn't shown again.
+            </p>
+          </div>
+        )}
+
+        {error && <p className="text-block/90 font-mono text-[12px]">{error}</p>}
+      </div>
     </motion.div>
   )
 }

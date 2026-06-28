@@ -10,6 +10,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { KeyboardEvent } from 'react'
 import { motion } from 'motion/react'
 import {
   Area,
@@ -52,6 +53,7 @@ import {
 } from '../config'
 import { relativeTime } from '../lib/format'
 import { zeroFillSignups } from '../lib/stats'
+import { ThreatDetailModal } from './ThreatDetailModal'
 import type {
   AdminMember,
   AdminOverview,
@@ -537,9 +539,12 @@ function MembersSection({
       <SearchInput
         value={query}
         onChange={setQuery}
-        placeholder="Search members by email"
-        ariaLabel="Search members by email"
+        placeholder="Search members by email or plan"
+        ariaLabel="Search members by email or plan"
       />
+      <p className="-mt-2 text-white/35 font-mono text-[10px]">
+        Tip: type a plan to filter by tier — free / pro / enterprise.
+      </p>
 
       {state.phase === 'loading' && (
         <p className="text-white/45 font-mono text-sm py-8 text-center">Loading members…</p>
@@ -774,6 +779,8 @@ function ThreatsSection() {
   const [query, setQuery] = useState('')
   const debouncedQuery = useDebouncedValue(query.trim(), ADMIN_SEARCH_DEBOUNCE_MS)
   const [limit, setLimit] = useState(ADMIN_THREATS_LIMIT)
+  /** The threat row whose detail modal is open, or null when none is open. */
+  const [openThreat, setOpenThreat] = useState<AdminThreat | null>(null)
 
   // A new search resets the page size so a filtered view starts from the first
   // page rather than carrying an expanded limit from the previous query.
@@ -841,7 +848,7 @@ function ThreatsSection() {
           </p>
         ) : (
           <>
-            <ThreatsTable threats={state.threats} />
+            <ThreatsTable threats={state.threats} onOpen={setOpenThreat} />
             {total > shown && (
               <button
                 type="button"
@@ -853,15 +860,31 @@ function ThreatsSection() {
             )}
           </>
         ))}
+
+      {openThreat !== null && (
+        <ThreatDetailModal
+          scanId={openThreat.id}
+          email={openThreat.email}
+          onClose={() => setOpenThreat(null)}
+        />
+      )}
     </motion.div>
   )
 }
 
 /**
  * The scrollable blocked-threats table. Columns: Member, Source, Flagged, When.
- * Every row carries a red BLOCK pill (the report lists only blocked threats).
+ * Every row carries a red BLOCK pill (the report lists only blocked threats) and
+ * is clickable: selecting a row calls `onOpen` with that threat so the parent can
+ * open its malicious-artifact detail view.
  */
-function ThreatsTable({ threats }: { threats: AdminThreat[] }) {
+function ThreatsTable({
+  threats,
+  onOpen,
+}: {
+  threats: AdminThreat[]
+  onOpen: (threat: AdminThreat) => void
+}) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left border-collapse">
@@ -875,7 +898,7 @@ function ThreatsTable({ threats }: { threats: AdminThreat[] }) {
         </thead>
         <tbody>
           {threats.map((threat) => (
-            <ThreatRow key={threat.headHash} threat={threat} />
+            <ThreatRow key={threat.headHash} threat={threat} onOpen={onOpen} />
           ))}
         </tbody>
       </table>
@@ -892,13 +915,38 @@ function BlockPill() {
   )
 }
 
-/** One blocked-threat row: member email, source, flagged count, relative time. */
-function ThreatRow({ threat }: { threat: AdminThreat }) {
+/**
+ * One blocked-threat row: member email, source, flagged count, relative time.
+ * The whole row is an activatable control (click, Enter, or Space) that opens the
+ * malicious-artifact detail view for this scan; `role="button"` + `tabIndex` keep
+ * it reachable and operable from the keyboard.
+ */
+function ThreatRow({
+  threat,
+  onOpen,
+}: {
+  threat: AdminThreat
+  onOpen: (threat: AdminThreat) => void
+}) {
   const isUrl = threat.source.kind === 'url'
   const SourceIcon = isUrl ? Link2 : FileText
   const sourceLabel = isUrl ? truncateUrl(threat.source.ref) : 'Pasted skill'
+  const open = (): void => onOpen(threat)
+  const onKeyDown = (event: KeyboardEvent<HTMLTableRowElement>): void => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      open()
+    }
+  }
   return (
-    <tr className="border-t border-white/5 text-[13px] text-white/80 align-middle">
+    <tr
+      role="button"
+      tabIndex={0}
+      aria-label={`View scan detail for ${threat.email}`}
+      onClick={open}
+      onKeyDown={onKeyDown}
+      className="border-t border-white/5 text-[13px] text-white/80 align-middle cursor-pointer transition-colors hover:bg-white/[0.03] focus:outline-none focus-visible:bg-white/[0.05]"
+    >
       <td className="py-2.5 pr-4">
         <div className="flex items-center gap-2">
           <BlockPill />

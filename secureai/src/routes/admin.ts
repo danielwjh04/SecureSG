@@ -17,10 +17,18 @@
 import type { ScannerConfig } from '../config/env'
 import type { Database } from '../db/database'
 import type { MemberRow, SignupDay, ThreatRow, TierCounts, UsageTotals } from '../db/admin'
+import type { ScanDetail } from '../db/scans'
+import type {
+  InjectionFinding,
+  LinkChain,
+  ReputationReport,
+  RuleFinding,
+} from '../schemas/contract'
 import type { Role } from '../auth/roles'
 import { ParseError } from '../errors'
 import { authenticate } from '../middleware/auth'
 import { findRoleByUserId, getAccountProfile } from '../db/accounts'
+import { getScanDetail } from '../db/scans'
 import { canManageRoles, canViewAdmin, effectiveRole, parseAssignableRole } from '../auth/roles'
 import {
   adminSearchQuerySchema,
@@ -112,6 +120,37 @@ export interface AdminThreat {
 export interface AdminThreatsPage {
   readonly threats: readonly AdminThreat[]
   readonly total: number
+}
+
+/**
+ * The 200 body of `GET /api/admin/scans/:id` — the full caught-scan detail: the
+ * recorded scan's verdict/source/proof + owner email, plus the scanned `content`
+ * (or `null` when unavailable, e.g. a verdict-cache hit) and the structured
+ * evidence parsed back from the stored `result_json`.
+ */
+export interface AdminScanDetail {
+  readonly id: string
+  readonly email: string
+  readonly verdict: string
+  readonly source: { readonly kind: string; readonly ref: string }
+  readonly scannedAt: string
+  /** The flagged-indicator count carried on the recorded scan-history row. */
+  readonly flagged: number
+  readonly headHash: string
+  /** The scanned skill/artifact text (truncated at write time), or `null`. */
+  readonly content: string | null
+  readonly findings: readonly RuleFinding[]
+  readonly chains: readonly LinkChain[]
+  readonly injections: readonly InjectionFinding[]
+  readonly reputation: readonly ReputationReport[]
+}
+
+/** The parsed shape of a `scan_details.result_json` payload. */
+interface StoredScanEvidence {
+  readonly findings: readonly RuleFinding[]
+  readonly chains: readonly LinkChain[]
+  readonly injections: readonly InjectionFinding[]
+  readonly reputation: readonly ReputationReport[]
 }
 
 /**
@@ -285,9 +324,10 @@ function toAdminMember(row: MemberRow, adminEmails: ReadonlySet<string>): AdminM
  * Handle `GET /api/admin/members?q&limit&offset`. Authenticates the caller and
  * requires the effective role to be owner OR admin ({@link canViewAdmin}; 403
  * otherwise), then returns a page of the members directory plus the total count
- * for pagination. An optional `q` filters by a case-insensitive email substring;
- * the `total` reflects the filtered count, and an over-length `q` is a 422. Each
- * row carries its effective (owner-aware) role. Requires `env.DB` (503 otherwise).
+ * for pagination. An optional `q` filters by a case-insensitive substring on the
+ * email OR the tier/plan (so `pro` / `free` / `enterprise` filters by plan); the
+ * `total` reflects the filtered count, and an over-length `q` is a 422. Each row
+ * carries its effective (owner-aware) role. Requires `env.DB` (503 otherwise).
  *
  * Time complexity: O(p log p) in the page size p (the ordered LIMIT/OFFSET page).
  * Space complexity: O(p).
@@ -392,6 +432,99 @@ export async function handleAdminThreats(request: Request, deps: AdminDeps): Pro
     const className = error instanceof Error ? error.constructor.name : typeof error
     console.error(`[handleAdminThreats] ${className}`)
     return Response.json({ error: 'admin_threats_failed' }, { status: STATUS_SERVER_ERROR })
+  }
+}
+
+/**
+ * Parse a stored `result_json` string into the structured evidence shape. A
+ * corrupt / non-object payload yields empty arrays for every field rather than
+ * throwing — a malformed evidence blob must not 500 the detail read; the rest of
+ * the row (verdict, source, proof, content) is still useful for review.
+ *
+ * Time complexity: O(n) in the JSON length. Space complexity: O(n).
+ */
+function parseStoredEvidence(resultJson: string): StoredScanEvidence {
+  let raw: unknown
+  try {
+    raw = JSON.parse(resultJson)
+  } catch (error: unknown) {
+    const className = error instanceof Error ? error.constructor.name : typeof error
+    console.warn(`[handleAdminScanDetail] unparseable result_json (${className}); empty evidence`)
+    return { findings: [], chains: [], injections: [], reputation: [] }
+  }
+  const obj = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {}
+  const asArray = <T>(value: unknown): readonly T[] => (Array.isArray(value) ? (value as T[]) : [])
+  return {
+    findings: asArray<RuleFinding>(obj['findings']),
+    chains: asArray<LinkChain>(obj['chains']),
+    injections: asArray<InjectionFinding>(obj['injections']),
+    reputation: asArray<ReputationReport>(obj['reputation']),
+  }
+}
+
+/**
+ * Project a stored {@link ScanDetail} to the {@link AdminScanDetail} response,
+ * parsing the `result_json` evidence back into typed arrays.
+ *
+ * Time complexity: O(n) in the stored evidence length. Space complexity: O(n).
+ */
+function toAdminScanDetail(detail: ScanDetail): AdminScanDetail {
+  const evidence = parseStoredEvidence(detail.resultJson)
+  return {
+    id: detail.id,
+    email: detail.email,
+    verdict: detail.verdict,
+    source: detail.source,
+    scannedAt: detail.scannedAt,
+    flagged: detail.flagged,
+    headHash: detail.headHash,
+    content: detail.content,
+    findings: evidence.findings,
+    chains: evidence.chains,
+    injections: evidence.injections,
+    reputation: evidence.reputation,
+  }
+}
+
+/**
+ * Handle `GET /api/admin/scans/:id`. Authenticates the caller and requires the
+ * effective role to be owner OR admin ({@link canViewAdmin}; a member is 403, an
+ * anonymous caller is 401), then returns the full {@link AdminScanDetail} for the
+ * caught scan with id `scanId` — the recorded verdict/source/proof + owner email,
+ * the scanned content (or `null`), and the structured evidence parsed from the
+ * stored `result_json`. A scan id with no detail row (a clean / anonymous scan
+ * was never detail-persisted, or the id is unknown) is a 404. Requires `env.DB`
+ * (503 otherwise).
+ *
+ * Time complexity: O(1) gate + O(d) in the stored evidence length. Space
+ * complexity: O(d).
+ *
+ * @param scanId - The scan id extracted from the request path by the entry point.
+ */
+export async function handleAdminScanDetail(
+  request: Request,
+  deps: AdminDeps,
+  scanId: string,
+): Promise<Response> {
+  if (deps.db === null) {
+    return unavailable()
+  }
+  const db = deps.db
+  try {
+    const viewer = await resolveViewer(request, deps, db, canViewAdmin)
+    if (viewer instanceof Response) {
+      return viewer
+    }
+
+    const detail = await getScanDetail(db, scanId)
+    if (detail === null) {
+      return Response.json({ error: 'not_found' }, { status: STATUS_NOT_FOUND })
+    }
+    return Response.json(toAdminScanDetail(detail), { status: STATUS_OK })
+  } catch (error: unknown) {
+    const className = error instanceof Error ? error.constructor.name : typeof error
+    console.error(`[handleAdminScanDetail] ${className}`)
+    return Response.json({ error: 'admin_scan_detail_failed' }, { status: STATUS_SERVER_ERROR })
   }
 }
 

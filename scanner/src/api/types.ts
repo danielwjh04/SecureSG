@@ -12,7 +12,14 @@
 export type * from '../../shared/contract'
 export * from '../../shared/proof'
 
-import type { ScanResult, Verdict } from '../../shared/contract'
+import type {
+  InjectionFinding,
+  LinkChain,
+  ReputationReport,
+  RuleFinding,
+  ScanResult,
+  Verdict,
+} from '../../shared/contract'
 
 /** One entry in the curated scan gallery (a recorded benign or attack scan). */
 export interface GalleryEntry {
@@ -240,4 +247,29 @@ export interface AdminThreat {
 export interface AdminThreatsPage {
   threats: AdminThreat[]
   total: number
+}
+
+/**
+ * The full per-scan detail an admin opens from a {@link AdminThreat} row, served
+ * by `GET /api/admin/scans/<id>`. It mirrors a {@link ScanResult}'s evidence —
+ * deterministic rule findings, traced redirect chains, reputation reports, and
+ * injection findings — plus the owning member's `email`, the verdict, the scan
+ * `source`, the `headHash` that proves the sealed (re-verifiable) proof chain,
+ * and `flagged` (the indicator count). `content` is the scanned skill/artifact
+ * text the verdict was reached on, or `null` when it was not retained server-side
+ * (rendered as "content not stored").
+ */
+export interface AdminScanDetail {
+  id: string
+  email: string
+  verdict: Verdict
+  source: { kind: 'paste' | 'url'; ref: string }
+  scannedAt: string
+  flagged: number
+  headHash: string
+  content: string | null
+  findings: RuleFinding[]
+  chains: LinkChain[]
+  injections: InjectionFinding[]
+  reputation: ReputationReport[]
 }

@@ -28,6 +28,7 @@
  */
 
 import type { ScanRequest, ScanResult } from '../schemas/contract'
+import type { ScanOutcome } from './runScan'
 import { canonicalJson } from '../audit/chain'
 
 /** Namespaced, versioned prefix for every verdict-cache key. */
@@ -111,16 +112,19 @@ function parseCached(value: string): ScanResult | null {
  *
  * Resolution:
  *   - Cache disabled (no KV, or `ttlSeconds <= 0`): always run `compute()`; no
- *     KV access at all.
+ *     KV access at all. `scannedText` is the freshly-scanned text.
  *   - HIT: return the cached result with a FRESH `scannedAt` stamped from
  *     `freshScannedAt` (the proof is unchanged because `scannedAt` is outside
- *     it). `cached` is `true`.
- *   - MISS: run `compute()`, write the serialized result to KV with
- *     `expirationTtl = ttlSeconds`, and return it. `cached` is `false`.
+ *     it). `cached` is `true` and `scannedText` is `null` — the cache stores ONLY
+ *     the `ScanResult`, never the scanned content (CLAUDE.md §6 privacy), so a hit
+ *     recomputes no text.
+ *   - MISS: run `compute()`, write the serialized RESULT (never the text) to KV
+ *     with `expirationTtl = ttlSeconds`, and return it with the fresh
+ *     `scannedText`. `cached` is `false`.
  *
- * The function does NOT meter, record history, or enforce caps — those are the
- * caller's per-request responsibilities and must run on a HIT just as on a MISS.
- * Only the `compute()` (i.e. `runScan`) work is skipped on a HIT.
+ * The function does NOT meter, record history, persist detail, or enforce caps —
+ * those are the caller's per-request responsibilities and must run on a HIT just
+ * as on a MISS. Only the `compute()` (i.e. `runScan`) work is skipped on a HIT.
  *
  * Idempotency: the PUT is keyed by the content hash, so a concurrent miss simply
  * overwrites an identical value — never corrupting the entry.
@@ -135,18 +139,19 @@ function parseCached(value: string): ScanResult | null {
  * @param compute - Runs the real scan (`runScan`) on a miss. Must already be
  *   bound to a `scannedAt`; this function overwrites it with `freshScannedAt`
  *   so the returned timestamp is always the current edge time.
- * @returns The resolved result and whether it came from the cache.
+ * @returns The resolved result, the freshly-scanned text (or `null` on a hit),
+ *   and whether it came from the cache.
  */
 export async function resolveCachedScan(
   request: ScanRequest,
   kv: VerdictCacheKv | null,
   ttlSeconds: number,
   freshScannedAt: string,
-  compute: () => Promise<ScanResult>,
-): Promise<{ result: ScanResult; cached: boolean }> {
+  compute: () => Promise<ScanOutcome>,
+): Promise<{ result: ScanResult; scannedText: string | null; cached: boolean }> {
   if (kv === null || ttlSeconds <= 0) {
-    const result = await compute()
-    return { result, cached: false }
+    const outcome = await compute()
+    return { result: outcome.result, scannedText: outcome.scannedText, cached: false }
   }
 
   const key = await cacheKeyForRequest(request)
@@ -156,12 +161,17 @@ export async function resolveCachedScan(
     const parsed = parseCached(hit)
     if (parsed !== null) {
       // Stamp a fresh edge timestamp; `scannedAt` is outside the hashed proof,
-      // so the proof stays valid.
-      return { result: { ...parsed, scannedAt: freshScannedAt }, cached: true }
+      // so the proof stays valid. The cache never stored the scanned text, so a
+      // hit carries no `scannedText` (no detail is re-persisted on a hit).
+      return {
+        result: { ...parsed, scannedAt: freshScannedAt },
+        scannedText: null,
+        cached: true,
+      }
     }
   }
 
-  const result = await compute()
-  await kv.put(key, JSON.stringify(result), { expirationTtl: ttlSeconds })
-  return { result, cached: false }
+  const outcome = await compute()
+  await kv.put(key, JSON.stringify(outcome.result), { expirationTtl: ttlSeconds })
+  return { result: outcome.result, scannedText: outcome.scannedText, cached: false }
 }

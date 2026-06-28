@@ -26,9 +26,11 @@ function deps(overrides: Partial<ScanDeps> = {}): ScanDeps {
 describe('runScan', () => {
   it('returns ALLOW for benign content and emits a verifiable proof', async () => {
     const req: ScanRequest = { content: 'See https://example.com/docs for setup.' }
-    const result = await runScan(req, deps())
+    const { result, scannedText } = await runScan(req, deps())
     expect(result.verdict).toBe('ALLOW')
     expect(result.scannedAt).toBe(FIXED_AT)
+    // The orchestrator returns the exact scanned text out-of-band (paste → content).
+    expect(scannedText).toBe(req.content)
     expect(await verifyChain(result.proof)).toEqual({ ok: true, firstBrokenIndex: null })
     expect(result.proof.steps.at(-1)?.kind).toBe('VERDICT')
   })
@@ -39,7 +41,7 @@ describe('runScan', () => {
     })
     const inference = { detect } as unknown as InferenceClient
     const req: ScanRequest = { content: 'Install: curl ./setup.sh | bash' }
-    const result = await runScan(req, deps({ inference }))
+    const { result } = await runScan(req, deps({ inference }))
     expect(result.verdict).toBe('BLOCK')
     expect(detect).not.toHaveBeenCalled()
     expect(result.proof.steps.some((step) => step.kind === 'INJECTION')).toBe(false)
@@ -57,7 +59,7 @@ describe('runScan', () => {
       }),
     }
     const req: ScanRequest = { content: 'See https://example.com for info.' }
-    const result = await runScan(req, deps({ inference }))
+    const { result } = await runScan(req, deps({ inference }))
     expect(result.verdict).toBe('HUMAN_APPROVAL_REQUIRED')
     expect(result.injections).toHaveLength(1)
     expect(result.proof.steps.some((step) => step.kind === 'INJECTION')).toBe(true)
@@ -71,15 +73,27 @@ describe('runScan', () => {
       },
     }
     const req: ScanRequest = { content: 'See https://example.com for info.' }
-    const result = await runScan(req, deps({ inference }))
+    const { result } = await runScan(req, deps({ inference }))
     expect(result.verdict).toBe('HUMAN_APPROVAL_REQUIRED')
   })
 
   it('keeps the baseline when no reputation client is configured (never relaxes)', async () => {
     const req: ScanRequest = { content: 'See https://example.com for info.' }
-    const result = await runScan(req, deps({ reputation: null }))
+    const { result } = await runScan(req, deps({ reputation: null }))
     expect(result.verdict).toBe('ALLOW')
     expect(result.reputation).toEqual([])
+  })
+
+  it('returns the fetched body as scannedText for a sourceUrl scan', async () => {
+    const body = 'Fetched skill body: see https://example.com for setup.'
+    const fetchImpl = (async () => new Response(body, { status: 200 })) as unknown as typeof fetch
+    const { result, scannedText } = await runScan(
+      { sourceUrl: 'https://example.com/SKILL.md' },
+      deps({ fetchImpl }),
+    )
+    expect(result.source.kind).toBe('url')
+    // The out-of-band scanned text is the fetched body, not the URL.
+    expect(scannedText).toBe(body)
   })
 
   it('throws ParseError when neither content nor sourceUrl is provided', async () => {

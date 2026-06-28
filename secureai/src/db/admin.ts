@@ -223,15 +223,18 @@ export async function activeSubscriptions(db: Database): Promise<number> {
 /**
  * Read a page of the members directory: `limit` accounts from `offset`, ordered
  * oldest-first (stable signup order), each with its summed lifetime scan count.
- * An optional `q` filters to accounts whose email contains `q` (case-insensitive
- * substring) — absent/empty `q` returns every account (the directory's default).
+ * An optional `q` filters to accounts whose email OR tier contains `q`
+ * (case-insensitive substring) — so searching `pro` / `free` / `enterprise`
+ * filters by plan; absent/empty `q` returns every account (the directory's
+ * default).
  *
  * The scan total is a LEFT JOIN + `SUM` over `usage` keyed by the user id as the
  * `subject`, so an account that has never scanned still appears with `scans = 0`
  * (an INNER join would silently drop zero-scan accounts). `GROUP BY` collapses
  * the per-day usage rows to one total per user. The `q` filter is a parameterized
- * `lower(email) LIKE '%'||lower(?)||'%'` — `q` is bound, never interpolated. The
- * role column is returned verbatim; the route derives the effective role.
+ * `(lower(email) LIKE '%'||lower(?)||'%' OR lower(tier) LIKE '%'||lower(?)||'%')`
+ * — `q` is bound TWICE, never interpolated. The role column is returned verbatim;
+ * the route derives the effective role.
  *
  * Time complexity: O(p log p) for the ordered page of size p = `limit` (the
  * index on `created_at` is unavailable, so SQLite sorts the page). Space
@@ -240,7 +243,7 @@ export async function activeSubscriptions(db: Database): Promise<number> {
  * @param db - The persistence seam.
  * @param limit - Max rows to return (caller-clamped to a sane bound).
  * @param offset - Rows to skip (caller-clamped to non-negative).
- * @param q - Optional case-insensitive email substring filter.
+ * @param q - Optional case-insensitive email-OR-tier substring filter.
  * @throws {AdminError} On a database failure (fail-closed).
  */
 export async function listMembers(
@@ -251,16 +254,24 @@ export async function listMembers(
 ): Promise<MemberRow[]> {
   try {
     const filter = q !== undefined && q.length > 0
+    const params: unknown[] = []
+    if (filter) {
+      params.push(q, q)
+    }
+    params.push(limit, offset)
     const rows = await db.queryAll(
       'SELECT u.id AS id, u.email AS email, u.tier AS tier, u.role AS role, ' +
         'u.created_at AS created_at, ' +
         'COALESCE(SUM(g.scans), 0) AS scans ' +
         'FROM users u LEFT JOIN usage g ON g.subject = u.id ' +
-        (filter ? "WHERE lower(u.email) LIKE '%'||lower(?)||'%' " : '') +
+        (filter
+          ? "WHERE (lower(u.email) LIKE '%'||lower(?)||'%' " +
+            "OR lower(u.tier) LIKE '%'||lower(?)||'%') "
+          : '') +
         'GROUP BY u.id ' +
         'ORDER BY u.created_at ASC, u.id ASC ' +
         'LIMIT ? OFFSET ?',
-      filter ? [q, limit, offset] : [limit, offset],
+      params,
     )
     const members: MemberRow[] = []
     for (const row of rows) {
@@ -281,14 +292,15 @@ export async function listMembers(
 
 /**
  * Count registered accounts for the members directory's pagination total. With
- * an optional `q`, counts only accounts whose email contains `q` (the same
- * case-insensitive substring match as {@link listMembers}), so the total
- * reflects the filtered page; absent/empty `q` counts every account.
+ * an optional `q`, counts only accounts whose email OR tier contains `q` (the
+ * same case-insensitive substring match as {@link listMembers}, with `q` bound
+ * TWICE), so the total reflects the filtered page; absent/empty `q` counts every
+ * account.
  *
  * Time complexity: O(1) — single `COUNT(*)` aggregate. Space complexity: O(1).
  *
  * @param db - The persistence seam.
- * @param q - Optional case-insensitive email substring filter.
+ * @param q - Optional case-insensitive email-OR-tier substring filter.
  * @throws {AdminError} On a database failure (fail-closed).
  */
 export async function countMembers(db: Database, q?: string): Promise<number> {
@@ -296,8 +308,11 @@ export async function countMembers(db: Database, q?: string): Promise<number> {
     const filter = q !== undefined && q.length > 0
     const row = await db.queryOne(
       'SELECT COUNT(*) AS total FROM users' +
-        (filter ? " WHERE lower(email) LIKE '%'||lower(?)||'%'" : ''),
-      filter ? [q] : [],
+        (filter
+          ? " WHERE (lower(email) LIKE '%'||lower(?)||'%'" +
+            " OR lower(tier) LIKE '%'||lower(?)||'%')"
+          : ''),
+      filter ? [q, q] : [],
     )
     return readCount(row, 'total')
   } catch (error: unknown) {

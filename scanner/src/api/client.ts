@@ -1,7 +1,8 @@
-import { API } from '../config'
+import { adminScanDetailPath, API } from '../config'
 import type {
   AdminMembersPage,
   AdminOverview,
+  AdminScanDetail,
   AdminThreatsPage,
   AssignableRole,
   AuthCredentials,
@@ -254,6 +255,17 @@ export async function fetchThreats(
   const query = params.toString()
   const path = query.length > 0 ? `${API.adminThreats}?${query}` : API.adminThreats
   return request<AdminThreatsPage>(path, { ...WITH_CREDENTIALS })
+}
+
+/**
+ * Fetch the full detail of one scanned skill/artifact for the admin detail view,
+ * keyed by the scan id from an {@link AdminThreat} row. Throws
+ * {@link ApiError}(404) when the scan id is unknown or its detail is no longer
+ * available, (403) when the signed-in account may not view the admin surface, or
+ * (401) when logged out.
+ */
+export async function fetchScanDetail(id: string): Promise<AdminScanDetail> {
+  return request<AdminScanDetail>(adminScanDetailPath(id), { ...WITH_CREDENTIALS })
 }
 
 /**

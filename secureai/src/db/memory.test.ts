@@ -79,6 +79,13 @@ interface ScanHistoryRecord {
   scanned_at: string
 }
 
+interface ScanDetailRecord {
+  scan_id: string
+  content: string | null
+  result_json: string
+  created_at: string
+}
+
 /** Composite key for the usage map, mirroring the `(subject, day)` PK. */
 function usageKey(subject: string, day: string): string {
   return `${subject} ${day}`
@@ -102,6 +109,8 @@ export class MemoryStore {
   public readonly otpChallenges = new Map<string, OtpChallengeRecord>()
   /** Keyed by scan-history row `id` (the per-user recent-scans store). */
   public readonly scanHistory = new Map<string, ScanHistoryRecord>()
+  /** Keyed by `scan_id` (= scan_history.id); the caught-scan detail store. */
+  public readonly scanDetails = new Map<string, ScanDetailRecord>()
 
   /** Per-statement failure injection: when armed, the next call throws once. */
   public failNext = false
@@ -211,12 +220,16 @@ export class MemoryStore {
       return { total }
     }
     if (sql.includes('COUNT(*) AS total FROM users')) {
-      // Members directory count, with an optional `lower(email) LIKE` filter.
+      // Members directory count, with an optional `(lower(email) LIKE q OR
+      // lower(tier) LIKE q)` filter — `q` is bound twice, so both binds equal it.
       if (sql.includes('lower(email) LIKE')) {
         const needle = String(params[0]).toLowerCase()
         let total = 0
         for (const user of this.users.values()) {
-          if (user.email.toLowerCase().includes(needle)) {
+          if (
+            user.email.toLowerCase().includes(needle) ||
+            user.tier.toLowerCase().includes(needle)
+          ) {
             total += 1
           }
         }
@@ -265,6 +278,35 @@ export class MemoryStore {
             attempts: challenge.attempts,
             created_at: challenge.created_at,
           }
+    }
+    // Caught-scan detail: scan_details INNER JOIN scan_history INNER JOIN users
+    // on the scan id / user id. A detail whose scan or owner is gone is excluded
+    // (reads as null → 404), mirroring the INNER JOINs.
+    if (sql.includes('FROM scan_details d')) {
+      const detail = this.scanDetails.get(String(params[0]))
+      if (detail === undefined) {
+        return null
+      }
+      const scan = this.scanHistory.get(detail.scan_id)
+      if (scan === undefined) {
+        return null
+      }
+      const user = this.users.get(scan.user_id)
+      if (user === undefined) {
+        return null
+      }
+      return {
+        id: scan.id,
+        email: user.email,
+        verdict: scan.verdict,
+        source_kind: scan.source_kind,
+        source_ref: scan.source_ref,
+        flagged: scan.flagged,
+        head_hash: scan.head_hash,
+        scanned_at: scan.scanned_at,
+        content: detail.content,
+        result_json: detail.result_json,
+      }
     }
     throw new Error(`MemoryStore: unrecognized queryOne SQL: ${sql}`)
   }
@@ -347,16 +389,20 @@ export class MemoryStore {
     }
     // Admin members directory: each user LEFT JOIN usage, summed to a scan total
     // (zero-scan users still appear), ordered oldest-first, paged by LIMIT/OFFSET.
-    // An optional `lower(email) LIKE '%'||lower(?)||'%'` filter binds `q` FIRST,
-    // so the LIMIT/OFFSET params shift right by one when the filter is present.
+    // An optional `(lower(email) LIKE q OR lower(tier) LIKE q)` filter binds `q`
+    // TWICE first, so the LIMIT/OFFSET params shift right by two when present.
     if (sql.includes('FROM users u LEFT JOIN usage g ON g.subject = u.id')) {
       const filtered = sql.includes('lower(u.email) LIKE')
       const needle = filtered ? String(params[0]).toLowerCase() : ''
-      const limit = Number(params[filtered ? 1 : 0])
-      const offset = Number(params[filtered ? 2 : 1])
+      const limit = Number(params[filtered ? 2 : 0])
+      const offset = Number(params[filtered ? 3 : 1])
       const rows: Record<string, unknown>[] = []
       for (const user of this.users.values()) {
-        if (filtered && !user.email.toLowerCase().includes(needle)) {
+        if (
+          filtered &&
+          !user.email.toLowerCase().includes(needle) &&
+          !user.tier.toLowerCase().includes(needle)
+        ) {
           continue
         }
         let scans = 0
@@ -605,6 +651,20 @@ export class MemoryStore {
       })
       return { changes: 1 }
     }
+    if (sql.startsWith('INSERT INTO scan_details')) {
+      const scanId = String(params[0])
+      // ON CONFLICT (scan_id) DO NOTHING: a replay for the same id is a no-op.
+      if (this.scanDetails.has(scanId)) {
+        return { changes: 0 }
+      }
+      this.scanDetails.set(scanId, {
+        scan_id: scanId,
+        content: params[1] === null ? null : String(params[1]),
+        result_json: String(params[2]),
+        created_at: String(params[3]),
+      })
+      return { changes: 1 }
+    }
     if (sql.startsWith('INSERT INTO otp_challenges')) {
       const id = String(params[0])
       this.otpChallenges.set(id, {
@@ -770,6 +830,49 @@ describe('MemoryD1', () => {
     // Only u1's rows, newest first, capped at 1 → the BLOCK at 02:00 (id 'b').
     expect(results).toHaveLength(1)
     expect(results[0]?.id).toBe('b')
+  })
+
+  it('stores a scan_details row (ON CONFLICT DO NOTHING) and joins it back with the owner', async () => {
+    const { db, store } = memoryDatabase()
+    // A scan_history row + its owner, so the detail join resolves.
+    await db.execute('INSERT INTO users (id, email, tier, stripe_customer_id, created_at) VALUES (?, ?, ?, ?, ?)', [
+      'u1',
+      'owner@x.test',
+      'pro',
+      null,
+      '2026-06-28T00:00:00.000Z',
+    ])
+    await db.execute(
+      'INSERT INTO scan_history (id, user_id, verdict, source_kind, source_ref, flagged, head_hash, scanned_at) ' +
+        'VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      ['scan-1', 'u1', 'BLOCK', 'paste', 'paste', 1, 'head-1', '2026-06-28T01:00:00.000Z'],
+    )
+    const insert =
+      'INSERT INTO scan_details (scan_id, content, result_json, created_at) ' +
+      'VALUES (?, ?, ?, ?) ON CONFLICT (scan_id) DO NOTHING'
+    const first = await db.execute(insert, ['scan-1', 'malicious body', '{"findings":[]}', '2026-06-28T01:00:00.000Z'])
+    expect(first.changes).toBe(1)
+    // A replay on the same scan_id is a no-op (ON CONFLICT DO NOTHING).
+    const replay = await db.execute(insert, ['scan-1', 'other', '{}', '2026-06-28T02:00:00.000Z'])
+    expect(replay.changes).toBe(0)
+    expect(store.scanDetails.size).toBe(1)
+
+    const select =
+      'SELECT s.id AS id, u.email AS email, s.verdict AS verdict, s.source_kind AS source_kind, ' +
+      's.source_ref AS source_ref, s.flagged AS flagged, s.head_hash AS head_hash, ' +
+      's.scanned_at AS scanned_at, d.content AS content, d.result_json AS result_json ' +
+      'FROM scan_details d JOIN scan_history s ON s.id = d.scan_id ' +
+      'JOIN users u ON u.id = s.user_id WHERE d.scan_id = ?'
+    const row = await db.queryOne(select, ['scan-1'])
+    expect(row).toMatchObject({
+      id: 'scan-1',
+      email: 'owner@x.test',
+      verdict: 'BLOCK',
+      content: 'malicious body',
+      result_json: '{"findings":[]}',
+    })
+    // An unknown id joins to nothing.
+    expect(await db.queryOne(select, ['ghost'])).toBeNull()
   })
 
   it('throws on an unrecognized statement', async () => {

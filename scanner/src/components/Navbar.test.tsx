@@ -58,6 +58,29 @@ describe('Navbar admin link', () => {
   })
 })
 
+describe('Navbar guard link removal', () => {
+  it('does not render a Guard nav link in the desktop links', () => {
+    render(<Navbar auth={authState()} />)
+    expect(screen.queryByRole('link', { name: 'Guard' })).toBeNull()
+    // No #guard anchor remains anywhere in the bar.
+    expect(
+      document.querySelector('a[href="#guard"]'),
+    ).toBeNull()
+    // The neighbouring links it sat between still render.
+    expect(screen.getByRole('link', { name: 'How it works' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Pricing' })).toBeInTheDocument()
+  })
+
+  it('does not render a Guard link in the mobile dropdown', () => {
+    render(<Navbar auth={authState()} />)
+    fireEvent.click(screen.getByRole('button', { name: /Open menu/ }))
+    // The dropdown is open (a second How it works link appears) but carries no Guard.
+    expect(screen.getAllByRole('link', { name: 'How it works' })).toHaveLength(2)
+    expect(screen.queryByRole('link', { name: 'Guard' })).toBeNull()
+    expect(document.querySelector('a[href="#guard"]')).toBeNull()
+  })
+})
+
 describe('Navbar mobile menu', () => {
   it('keeps the inline links hidden below md and a hamburger toggle visible', () => {
     render(<Navbar auth={authState()} />)

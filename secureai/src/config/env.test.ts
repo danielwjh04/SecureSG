@@ -30,6 +30,17 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ SCANNER_VERDICT_CACHE_TTL_S: '86401' })).toThrow(ConfigError)
   })
 
+  it('defaults the caught-scan detail byte cap to 16384 and parses an in-range override', () => {
+    expect(loadConfig({}).detailMaxBytes).toBe(16384)
+    expect(loadConfig({ SCANNER_DETAIL_MAX_BYTES: '256' }).detailMaxBytes).toBe(256)
+    expect(loadConfig({ SCANNER_DETAIL_MAX_BYTES: '262144' }).detailMaxBytes).toBe(262144)
+  })
+
+  it('rejects an out-of-range caught-scan detail byte cap', () => {
+    expect(() => loadConfig({ SCANNER_DETAIL_MAX_BYTES: '255' })).toThrow(ConfigError)
+    expect(() => loadConfig({ SCANNER_DETAIL_MAX_BYTES: '262145' })).toThrow(ConfigError)
+  })
+
   it('rejects review >= block thresholds', () => {
     expect(() =>
       loadConfig({ SCANNER_REVIEW_THRESHOLD: '0.8', SCANNER_BLOCK_THRESHOLD: '0.5' }),
