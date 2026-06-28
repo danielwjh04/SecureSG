@@ -13,8 +13,8 @@
  * Safety posture (CLAUDE.md §1, §6):
  *   - Fail-closed: any unexpected internal fault (scanner crash, inference
  *     transport error, malformed dependency) yields `deny`, never `allow`. The
- *     exact error class is logged via `console.error`; the agent is never let
- *     through on a fault.
+ *     exact error class is logged via the structured logger; the agent is never
+ *     let through on a fault.
  *   - "Nothing to scan" is NOT a fault: a tool call with no URLs and no
  *     download-execute pattern carries no supply-chain indicator the scanner can
  *     reason about, so it is `allow` with a `null` verdict — distinguished from a
@@ -33,6 +33,7 @@ import type { PreToolUsePayload } from '../schemas/validate'
 import { ParseError } from '../errors'
 import { parseSkill } from '../pipeline/parse'
 import { runScan } from '../scanner/runScan'
+import { log } from '../observability/logger'
 
 /**
  * The Claude Code permission decision a PreToolUse hook may return.
@@ -214,7 +215,7 @@ export async function guardDecision(
     // Fail-closed (CLAUDE.md §1, §6): an unexpected fault must never ALLOW. Log
     // the exact class so the fault is never swallowed silently.
     const className = error instanceof Error ? error.constructor.name : typeof error
-    console.error(`[guardDecision] ${className}: failing closed (deny)`)
+    log.error('guardDecision', ': failing closed (deny)', { errorClass: className })
     return FAIL_CLOSED_DECISION
   }
 }

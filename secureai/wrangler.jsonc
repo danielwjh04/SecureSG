@@ -1,155 +1,185 @@
 {
-  // SecureAI scanner Worker. All tunables live here as vars and are read through
-  // a typed Env in src/config/env.ts — never hardcoded in source.
-  //
-  // Infra IDs below (D1 database_id, KV id) are created during the Cloudflare
-  // setup step and must be filled before `wrangler deploy`:
-  //   wrangler d1 create secureai           -> paste database_id
-  //   wrangler kv namespace create SECUREAI  -> paste id
-  //   wrangler d1 migrations apply secureai  (applies migrations/0001_init.sql)
-  // The Worker degrades gracefully when DB is absent (anonymous, unmetered), so
-  // local `vitest` (in-memory fake) needs none of this. The AI binding needs no
-  // key — it uses the account's Workers AI.
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "secureai-scanner",
-  "main": "src/index.ts",
-  "compatibility_date": "2026-06-01",
-  "compatibility_flags": ["nodejs_compat"],
-  "routes": [
-    { "pattern": "secureai.zurielst.com", "custom_domain": true }
-  ],
-  "ai": { "binding": "AI" },
-  "d1_databases": [
-    { "binding": "DB", "database_name": "secureai", "database_id": "bf2be342-138a-4367-beea-fad391461259" }
-  ],
-  "kv_namespaces": [
-    { "binding": "KV", "id": "359931a308c640fdb90a2989912d6c4f" }
-  ],
-  // The rebranded React SPA (built from ../scanner) is served as static assets;
-  // the Worker runs first only for /api/*, so the SPA owns every other path and
-  // the whole product is one origin (same-origin /api calls). Build the SPA
-  // before deploy with `npm run build:web` (runs the scanner vite build).
-  "assets": {
-    "directory": "../scanner/dist/client",
-    "binding": "ASSETS",
-    "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
-  },
-  "vars": {
-    "SCANNER_GENESIS_SEED": "secureai-scanner-genesis-v1",
-    "SCANNER_GRAPH_PATH": "./graph.json",
-    "SCANNER_MAX_URLS": "4",
-    "SCANNER_MAX_REDIRECT_HOPS": "10",
-    "SCANNER_REDIRECT_TIMEOUT_MS": "5000",
-    "SCANNER_ALLOWED_SCHEMES": "https",
-    "SCANNER_URL_SHORTENERS": "bit.ly,tinyurl.com,t.co,goo.gl,ow.ly,buff.ly,is.gd,rebrand.ly,cutt.ly",
-    // Curated known-bad host/domain denylist for the reputation stage (comma
-    // list, lowercased). An entry like "evil.com" flags evil.com and every
-    // subdomain of it. Default empty. Hosts can ALSO be added dynamically at
-    // runtime in KV under the key `host:<hostname>` (any non-null value flags),
-    // without redeploying.
-    "SCANNER_BAD_HOSTS": "",
-    "SCANNER_AI_MODEL": "@cf/meta/llama-3.2-1b-instruct",
-    "SCANNER_AI_TIMEOUT_MS": "8000",
-    "SCANNER_REVIEW_THRESHOLD": "0.30",
-    "SCANNER_BLOCK_THRESHOLD": "0.70",
-    "SCANNER_SKILL_MAX_BYTES": "262144",
-    // Max bytes of caught-scan content persisted in scan_details for admin review
-    // (default 16384 = 16 KiB; range 256..262144). Only non-ALLOW authenticated
-    // scans are stored, truncated to this bound; clean/anonymous scans are never
-    // persisted (privacy).
-    "SCANNER_DETAIL_MAX_BYTES": "16384",
-    "SCANNER_SUBREQUEST_CAP": "50",
-    "SCANNER_CAP_ANONYMOUS_PER_DAY": "10",
-    "SCANNER_CAP_FREE_PER_DAY": "100",
-    "SCANNER_CAP_PRO_PER_DAY": "5000",
-    "SCANNER_AI_TIERS": "pro",
-    // Edge verdict cache (KV-backed). A repeated identical scan within the TTL
-    // returns the cached result without re-tracing redirects or re-running the
-    // AI stage — auth, caps, metering, and history still run for the caller. Kept
-    // short (default 300s = 5 min); 0 disables it; range 0..86400. Tradeoff: a
-    // changed indicator/feed can be briefly masked within the window.
-    "SCANNER_VERDICT_CACHE_TTL_S": "300",
-    // Billing (Stripe). STRIPE_PRICE_PRO is the $12/mo recurring Price id —
-    // create it in the Stripe dashboard and replace the placeholder before the
-    // billing routes function. The secrets STRIPE_SECRET_KEY and
-    // STRIPE_WEBHOOK_SECRET are NOT vars; set them with `wrangler secret put`.
-    "STRIPE_PRICE_PRO": "price_1TnAF0FJWAOFEgFe37bi8IFf",
-    "SCANNER_APP_BASE_URL": "https://secureai.zurielst.com",
-    // Email/password auth tunables (non-secret). The SESSION_SECRET that signs
-    // session cookies is a SECRET, not a var — set it with
-    // `wrangler secret put SESSION_SECRET`; without it the /api/register and
-    // /api/login routes return 503 and only Bearer API-key auth works.
-    // SCANNER_PBKDF2_ITERATIONS is the password-hash cost (raise as hardware
-    // improves; default 210000, min 100000). SCANNER_SESSION_TTL_SECONDS is the
-    // session lifetime (default 7 days).
-    "SCANNER_PBKDF2_ITERATIONS": "100000",
-    "SCANNER_SESSION_TTL_SECONDS": "604800",
-    // Admin allowlist for the analytics dashboard (comma list, lowercased). An
-    // account whose email is here sees `isAdmin: true` from /api/me and may read
-    // GET /api/admin/overview; every other caller is forbidden. Default empty.
-    "SCANNER_ADMIN_EMAILS": "zuriel.shanley@gmail.com",
-    // Email two-factor (2FA) tunables (non-secret). 2FA activates ONLY when the
-    // RESEND_API_KEY SECRET is set (set it with `wrangler secret put
-    // RESEND_API_KEY`); without it login issues a session immediately as before.
-    // SCANNER_EMAIL_FROM must be on a domain verified with Resend for delivery to
-    // succeed. SCANNER_OTP_TTL_SECONDS is the emailed code's validity window
-    // (default 10 min, range 60..3600). SCANNER_OTP_MAX_ATTEMPTS caps verify
-    // tries before a code is spent (default 5, range 1..20).
-    "SCANNER_EMAIL_FROM": "SecureAI <SecureAI-noreply@zurielst.com>",
-    "SCANNER_OTP_TTL_SECONDS": "600",
-    "SCANNER_OTP_MAX_ATTEMPTS": "5",
-    // Contact-sales inquiry routing (server-side only; the public form never
-    // carries these). SCANNER_CONTACT_RECIPIENTS is the comma list of inboxes a
-    // POST /api/contact inquiry is emailed to (trimmed/lowercased/deduped; at
-    // least one required). It reuses the RESEND_API_KEY secret + SCANNER_EMAIL_FROM
-    // sender, so without the key the endpoint returns 503. SCANNER_CONTACT_RATE_PER_HOUR
-    // is the per-client-IP hourly cap, enforced via KV (default 5, range 1..100);
-    // when KV is unbound the limit is skipped.
-    "SCANNER_CONTACT_RECIPIENTS": "zuriel.shanley@gmail.com,danielwjh04@gmail.com",
-    "SCANNER_CONTACT_RATE_PER_HOUR": "5",
-    // Auth hardening (non-secret). SCANNER_AUTH_RATE_PER_HOUR is the per-client-IP
-    // hourly attempt cap on login / register / OTP verify+resend (each endpoint
-    // its own bucket), enforced via KV; when KV is unbound the limit is skipped
-    // (default 20, range 1..1000). SCANNER_PASSWORD_MIN_CLASSES is how many of
-    // {lowercase, uppercase, digit, symbol} a new password must mix (default 3,
-    // range 1..4); length is enforced by the register schema. SCANNER_PWNED_CHECK_ENABLED
-    // toggles the online HIBP k-anonymity leaked-password check at registration
-    // (default true; it fails OPEN, and the offline common-password denylist runs
-    // regardless). SCANNER_PWNED_TIMEOUT_MS bounds that HIBP fetch (default 2500,
-    // range 100..60000).
-    "SCANNER_AUTH_RATE_PER_HOUR": "20",
-    "SCANNER_PASSWORD_MIN_CLASSES": "3",
-    "SCANNER_PWNED_CHECK_ENABLED": "true",
-    "SCANNER_PWNED_TIMEOUT_MS": "2500",
-    // Per-scan writes (metering + history + detail) run as one atomic D1 batch by
-    // default; set to "false" to fall back to the legacy sequential writes.
-    "SCANNER_SCAN_WRITE_ATOMIC": "true",
-    // Resilience (non-secret). Outbound-dependency timeouts: SCANNER_EMAIL_TIMEOUT_MS
-    // bounds the Resend send fetch; SCANNER_STRIPE_TIMEOUT_MS + SCANNER_STRIPE_MAX_NETWORK_RETRIES
-    // bound each Stripe API call (retries multiply worst-case wall time, so keep
-    // them low). The KV-backed circuit breaker around Resend / Stripe / Workers AI
-    // is on by default (SCANNER_BREAKER_ENABLED); it trips after
-    // SCANNER_BREAKER_FAILURE_THRESHOLD failures and short-circuits for
-    // SCANNER_BREAKER_COOLDOWN_S seconds. When KV is unbound the breaker is a no-op.
-    "SCANNER_EMAIL_TIMEOUT_MS": "10000",
-    "SCANNER_STRIPE_TIMEOUT_MS": "10000",
-    "SCANNER_STRIPE_MAX_NETWORK_RETRIES": "1",
-    "SCANNER_BREAKER_ENABLED": "true",
-    "SCANNER_BREAKER_FAILURE_THRESHOLD": "5",
-    "SCANNER_BREAKER_COOLDOWN_S": "30",
-    // D1 read replication (read-your-writes via session bookmarks). OFF by default
-    // for safe rollout; flip SCANNER_DB_SESSIONS_ENABLED to "true" once replicas
-    // are provisioned. SCANNER_DB_BOOKMARK_TTL_S bounds the client bookmark cookie.
-    "SCANNER_DB_SESSIONS_ENABLED": "false",
-    "SCANNER_DB_BOOKMARK_TTL_S": "60",
-    // R2 full caught-scan-content offload. OFF by default. To enable: create a
-    // bucket (`wrangler r2 bucket create secureai-scan-content`), declare the
-    // binding below (uncomment `r2_buckets`), then set this to "true". When the
-    // bucket is unbound the offload is a no-op and D1 keeps the truncated preview.
-    "SCANNER_R2_ENABLED": "false"
-  }
-  // ,"r2_buckets": [
-  //   { "binding": "R2", "bucket_name": "secureai-scan-content" }
-  // ]
+	// SecureAI scanner Worker. All tunables live here as vars and are read through
+	// a typed Env in src/config/env.ts — never hardcoded in source.
+	//
+	// Infra IDs below (D1 database_id, KV id) are created during the Cloudflare
+	// setup step and must be filled before `wrangler deploy`:
+	//   wrangler d1 create secureai           -> paste database_id
+	//   wrangler kv namespace create SECUREAI  -> paste id
+	//   wrangler d1 migrations apply secureai  (applies migrations/0001_init.sql)
+	// The Worker degrades gracefully when DB is absent (anonymous, unmetered), so
+	// local `vitest` (in-memory fake) needs none of this. The AI binding needs no
+	// key — it uses the account's Workers AI.
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "secureai-scanner",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-06-01",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"routes": [
+		{
+			"pattern": "secureai.software",
+			"custom_domain": true
+		}
+	],
+	"ai": {
+		"binding": "AI"
+	},
+	// Workers Logs: index the structured JSON log lines this Worker emits so they
+	// are queryable by field (module/level/...). head_sampling_rate 1 = keep all.
+	"observability": {
+		"enabled": true,
+		"head_sampling_rate": 1
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "secureai",
+			"database_id": "e6a79b91-716f-4db9-8955-bc27011b7200"
+		}
+	],
+	"kv_namespaces": [
+		{
+			"binding": "KV",
+			"id": "292ca787c18841efab08309af9728558"
+		}
+	],
+	// The rebranded React SPA (built from ../scanner) is served as static assets;
+	// the Worker runs first only for /api/*, so the SPA owns every other path and
+	// the whole product is one origin (same-origin /api calls). Build the SPA
+	// before deploy with `npm run build:web` (runs the scanner vite build).
+	"assets": {
+		"directory": "../scanner/dist/client",
+		"binding": "ASSETS",
+		"not_found_handling": "single-page-application",
+		"run_worker_first": [
+			"/api/*"
+		]
+	},
+	"vars": {
+		"SCANNER_GENESIS_SEED": "secureai-scanner-genesis-v1",
+		"SCANNER_GRAPH_PATH": "./graph.json",
+		"SCANNER_MAX_URLS": "4",
+		"SCANNER_MAX_REDIRECT_HOPS": "10",
+		"SCANNER_REDIRECT_TIMEOUT_MS": "5000",
+		"SCANNER_ALLOWED_SCHEMES": "https",
+		"SCANNER_URL_SHORTENERS": "bit.ly,tinyurl.com,t.co,goo.gl,ow.ly,buff.ly,is.gd,rebrand.ly,cutt.ly",
+		// Curated known-bad host/domain denylist for the reputation stage (comma
+		// list, lowercased). An entry like "evil.com" flags evil.com and every
+		// subdomain of it. Default empty. Hosts can ALSO be added dynamically at
+		// runtime in KV under the key `host:<hostname>` (any non-null value flags),
+		// without redeploying.
+		"SCANNER_BAD_HOSTS": "",
+		"SCANNER_AI_MODEL": "@cf/meta/llama-3.2-1b-instruct",
+		"SCANNER_AI_TIMEOUT_MS": "8000",
+		"SCANNER_REVIEW_THRESHOLD": "0.30",
+		"SCANNER_BLOCK_THRESHOLD": "0.70",
+		"SCANNER_SKILL_MAX_BYTES": "262144",
+		// Max bytes of caught-scan content persisted in scan_details for admin review
+		// (default 16384 = 16 KiB; range 256..262144). Only non-ALLOW authenticated
+		// scans are stored, truncated to this bound; clean/anonymous scans are never
+		// persisted (privacy).
+		"SCANNER_DETAIL_MAX_BYTES": "16384",
+		"SCANNER_SUBREQUEST_CAP": "50",
+		"SCANNER_CAP_ANONYMOUS_PER_DAY": "10",
+		"SCANNER_CAP_FREE_PER_DAY": "100",
+		"SCANNER_CAP_PRO_PER_DAY": "5000",
+		"SCANNER_AI_TIERS": "pro",
+		// Edge verdict cache (KV-backed). A repeated identical scan within the TTL
+		// returns the cached result without re-tracing redirects or re-running the
+		// AI stage — auth, caps, metering, and history still run for the caller. Kept
+		// short (default 300s = 5 min); 0 disables it; range 0..86400. Tradeoff: a
+		// changed indicator/feed can be briefly masked within the window.
+		"SCANNER_VERDICT_CACHE_TTL_S": "300",
+		// Billing (Stripe). STRIPE_PRICE_PRO is the $12/mo recurring Price id —
+		// create it in the Stripe dashboard and replace the placeholder before the
+		// billing routes function. The secrets STRIPE_SECRET_KEY and
+		// STRIPE_WEBHOOK_SECRET are NOT vars; set them with `wrangler secret put`.
+		"STRIPE_PRICE_PRO": "price_1TnAF0FJWAOFEgFe37bi8IFf",
+		"SCANNER_APP_BASE_URL": "https://secureai.software",
+		// Email/password auth tunables (non-secret). The SESSION_SECRET that signs
+		// session cookies is a SECRET, not a var — set it with
+		// `wrangler secret put SESSION_SECRET`; without it the /api/register and
+		// /api/login routes return 503 and only Bearer API-key auth works.
+		// SCANNER_PBKDF2_ITERATIONS is the password-hash cost (raise as hardware
+		// improves; default 210000, min 100000). SCANNER_SESSION_TTL_SECONDS is the
+		// session lifetime (default 7 days).
+		"SCANNER_PBKDF2_ITERATIONS": "100000",
+		"SCANNER_SESSION_TTL_SECONDS": "604800",
+		// Admin allowlist for the analytics dashboard (comma list, lowercased). An
+		// account whose email is here sees `isAdmin: true` from /api/me and may read
+		// GET /api/admin/overview; every other caller is forbidden. Default empty.
+		"SCANNER_ADMIN_EMAILS": "danielwjh04@gmail.com,zuriel.shanley@gmail.com",
+		// Email two-factor (2FA) tunables (non-secret). 2FA activates ONLY when the
+		// RESEND_API_KEY SECRET is set (set it with `wrangler secret put
+		// RESEND_API_KEY`); without it login issues a session immediately as before.
+		// SCANNER_EMAIL_FROM must be on a domain verified with Resend for delivery to
+		// succeed. SCANNER_OTP_TTL_SECONDS is the emailed code's validity window
+		// (default 10 min, range 60..3600). SCANNER_OTP_MAX_ATTEMPTS caps verify
+		// tries before a code is spent (default 5, range 1..20).
+		"SCANNER_EMAIL_FROM": "SecureAI <noreply@secureai.software>",
+		"SCANNER_OTP_TTL_SECONDS": "600",
+		"SCANNER_OTP_MAX_ATTEMPTS": "5",
+		// Contact-sales inquiry routing (server-side only; the public form never
+		// carries these). SCANNER_CONTACT_RECIPIENTS is the comma list of inboxes a
+		// POST /api/contact inquiry is emailed to (trimmed/lowercased/deduped; at
+		// least one required). It reuses the RESEND_API_KEY secret + SCANNER_EMAIL_FROM
+		// sender, so without the key the endpoint returns 503. SCANNER_CONTACT_RATE_PER_HOUR
+		// is the per-client-IP hourly cap, enforced via KV (default 5, range 1..100);
+		// when KV is unbound the limit is skipped.
+		"SCANNER_CONTACT_RECIPIENTS": "zuriel.shanley@gmail.com,danielwjh04@gmail.com",
+		"SCANNER_CONTACT_RATE_PER_HOUR": "5",
+		// Auth hardening (non-secret). SCANNER_AUTH_RATE_PER_HOUR is the per-client-IP
+		// hourly attempt cap on login / register / OTP verify+resend (each endpoint
+		// its own bucket), enforced via KV; when KV is unbound the limit is skipped
+		// (default 20, range 1..1000). SCANNER_PASSWORD_MIN_CLASSES is how many of
+		// {lowercase, uppercase, digit, symbol} a new password must mix (default 3,
+		// range 1..4); length is enforced by the register schema. SCANNER_PWNED_CHECK_ENABLED
+		// toggles the online HIBP k-anonymity leaked-password check at registration
+		// (default true; it fails OPEN, and the offline common-password denylist runs
+		// regardless). SCANNER_PWNED_TIMEOUT_MS bounds that HIBP fetch (default 2500,
+		// range 100..60000).
+		"SCANNER_AUTH_RATE_PER_HOUR": "20",
+		"SCANNER_PASSWORD_MIN_CLASSES": "3",
+		"SCANNER_PWNED_CHECK_ENABLED": "true",
+		"SCANNER_PWNED_TIMEOUT_MS": "2500",
+		// Per-scan writes (metering + history + detail) run as one atomic D1 batch by
+		// default; set to "false" to fall back to the legacy sequential writes.
+		"SCANNER_SCAN_WRITE_ATOMIC": "true",
+		// Resilience (non-secret). Outbound-dependency timeouts: SCANNER_EMAIL_TIMEOUT_MS
+		// bounds the Resend send fetch; SCANNER_STRIPE_TIMEOUT_MS + SCANNER_STRIPE_MAX_NETWORK_RETRIES
+		// bound each Stripe API call (retries multiply worst-case wall time, so keep
+		// them low). The KV-backed circuit breaker around Resend / Stripe / Workers AI
+		// is on by default (SCANNER_BREAKER_ENABLED); it trips after
+		// SCANNER_BREAKER_FAILURE_THRESHOLD failures and short-circuits for
+		// SCANNER_BREAKER_COOLDOWN_S seconds. When KV is unbound the breaker is a no-op.
+		"SCANNER_EMAIL_TIMEOUT_MS": "10000",
+		"SCANNER_STRIPE_TIMEOUT_MS": "10000",
+		"SCANNER_STRIPE_MAX_NETWORK_RETRIES": "1",
+		"SCANNER_BREAKER_ENABLED": "true",
+		"SCANNER_BREAKER_FAILURE_THRESHOLD": "5",
+		"SCANNER_BREAKER_COOLDOWN_S": "30",
+		// D1 read replication (read-your-writes via session bookmarks). OFF by default
+		// for safe rollout; flip SCANNER_DB_SESSIONS_ENABLED to "true" once replicas
+		// are provisioned. SCANNER_DB_BOOKMARK_TTL_S bounds the client bookmark cookie.
+		"SCANNER_DB_SESSIONS_ENABLED": "false",
+		"SCANNER_DB_BOOKMARK_TTL_S": "60",
+		// R2 full caught-scan-content offload. OFF by default. To enable: create a
+		// bucket (`wrangler r2 bucket create secureai-scan-content`), declare the
+		// binding below (uncomment `r2_buckets`), then set this to "true". When the
+		// bucket is unbound the offload is a no-op and D1 keeps the truncated preview.
+		"SCANNER_R2_ENABLED": "false",
+		// Minimum structured-log level (debug | info | warn | error). Logs are emitted
+		// as JSON lines to Workers Logs (enabled by the `observability` block below).
+		"SCANNER_LOG_LEVEL": "info"
+	}
+	// ,"r2_buckets": [
+	//   { "binding": "R2", "bucket_name": "secureai-scan-content" }
+	// ]
+	// Metrics via Analytics Engine (optional). Uncomment to enable the METRICS
+	// binding (createMetrics no-ops when it is absent):
+	// ,"analytics_engine_datasets": [
+	//   { "binding": "METRICS", "dataset": "secureai_metrics" }
+	// ]
 }

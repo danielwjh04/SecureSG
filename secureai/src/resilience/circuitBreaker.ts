@@ -21,6 +21,8 @@
 
 import type { ScannerConfig } from '../config/env'
 import { CircuitOpenError } from '../errors'
+import { log } from '../observability/logger'
+import { metrics } from '../observability/metrics'
 
 /** The three breaker states. */
 export type CircuitState = 'closed' | 'open' | 'half-open'
@@ -116,7 +118,7 @@ export function createCircuitBreaker(args: {
     } catch (error: unknown) {
       // A KV read fault must not wedge the circuit: treat as closed (allow traffic).
       const className = error instanceof Error ? error.constructor.name : typeof error
-      console.warn(`[breaker:${name}] state read failed (${className}); treating as closed`)
+      log.warn('breaker', 'state read failed; treating as closed', { errorClass: className, name: name })
       return { state: 'closed', failures: 0, openedAt: 0 }
     }
   }
@@ -126,7 +128,7 @@ export function createCircuitBreaker(args: {
       await store!.put(key, JSON.stringify(record), { expirationTtl: ttl })
     } catch (error: unknown) {
       const className = error instanceof Error ? error.constructor.name : typeof error
-      console.warn(`[breaker:${name}] state write failed (${className}); continuing`)
+      log.warn('breaker', 'state write failed; continuing', { errorClass: className, name: name })
     }
   }
 
@@ -153,6 +155,7 @@ export function createCircuitBreaker(args: {
         if (probing || failures >= config.failureThreshold) {
           // A failed probe re-opens; in CLOSED, reaching the threshold trips OPEN.
           await write({ state: 'open', failures, openedAt: now() })
+          metrics.count('breaker.open', { labels: [name] })
         } else {
           await write({ state: 'closed', failures, openedAt: 0 })
         }

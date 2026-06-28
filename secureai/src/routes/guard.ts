@@ -36,6 +36,8 @@ import { d1Database, type Database } from '../db/database'
 import { authenticate } from '../middleware/auth'
 import { aiAllowedForTier, enforceDailyCap } from '../middleware/gate'
 import { recordVerdict } from '../db/usage'
+import { log } from '../observability/logger'
+import { metrics } from '../observability/metrics'
 
 const STATUS_OK = 200
 const STATUS_BAD_REQUEST = 400
@@ -181,6 +183,7 @@ export async function handleGuard(
           githubToken: typeof env.GITHUB_TOKEN === 'string' ? env.GITHUB_TOKEN : undefined,
         }),
     )
+    metrics.count('guard.decision', { labels: [decision.decision] })
 
     if (db !== null) {
       // Meter the guarded call. A `null` decision verdict means "nothing
@@ -194,7 +197,7 @@ export async function handleGuard(
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
     const message = error instanceof Error ? error.message : String(error)
-    console.error(`[handleGuard] ${className}: ${message}`)
+    log.error('handleGuard', 'request failed', { errorClass: className })
     if (error instanceof QuotaExceededError) {
       return Response.json(
         { error: 'quota_exceeded', message },

@@ -9,6 +9,7 @@
  */
 
 import { ConfigError } from '../errors'
+import type { LogLevel } from '../observability/logger'
 
 /**
  * Worker bindings and string vars. Bindings (AI, DB, KV, RATE_LIMITER, ASSETS)
@@ -26,6 +27,11 @@ export interface Env {
    * truncated preview only. Typed as the R2 binding when declared in wrangler.
    */
   R2?: R2Bucket
+  /**
+   * Optional Analytics Engine dataset for metrics (the `METRICS` binding). Absent
+   * → metrics are a no-op. Typed loosely; `metrics.ts` narrows the surface it uses.
+   */
+  METRICS?: unknown
   /**
    * HMAC secret signing stateless session cookies. A SECRET (set via
    * `wrangler secret put SESSION_SECRET`), so it is read from `env` at the route
@@ -197,6 +203,8 @@ export interface ScannerConfig {
    * keeps the truncated preview and R2 holds the full payload for admin review.
    */
   readonly r2Enabled: boolean
+  /** Minimum structured-log level emitted (`debug` | `info` | `warn` | `error`). */
+  readonly logLevel: LogLevel
 }
 
 /**
@@ -311,6 +319,13 @@ export function loadConfig(env: Env): ScannerConfig {
   const dbBookmarkTtlSeconds = readIntInRange(env, 'SCANNER_DB_BOOKMARK_TTL_S', 60, 1, 600)
   // R2 full-content offload (gated; no-op when the bucket is unbound).
   const r2Enabled = readBool(env, 'SCANNER_R2_ENABLED', false)
+  // Structured-log minimum level.
+  const logLevel = readEnum<LogLevel>(
+    env,
+    'SCANNER_LOG_LEVEL',
+    'info',
+    new Set(['debug', 'info', 'warn', 'error']),
+  )
 
   // Cross-field invariants (fail-closed).
   if (!(reviewThreshold < blockThreshold)) {
@@ -379,6 +394,7 @@ export function loadConfig(env: Env): ScannerConfig {
     dbSessionsEnabled,
     dbBookmarkTtlSeconds,
     r2Enabled,
+    logLevel,
   }
 }
 
@@ -433,6 +449,28 @@ function readBool(env: Env, key: string, fallback: boolean): boolean {
     return false
   }
   throw new ConfigError(`${key} must be "true" or "false", got "${raw}"`)
+}
+
+/**
+ * Read a string var constrained to an allowlist, or the fallback when unset. A
+ * value outside the allowlist fails closed with a {@link ConfigError} rather than
+ * silently coercing.
+ */
+function readEnum<T extends string>(
+  env: Env,
+  key: string,
+  fallback: T,
+  allowed: ReadonlySet<string>,
+): T {
+  const raw = readRaw(env, key)
+  if (raw === undefined) {
+    return fallback
+  }
+  const value = raw.trim().toLowerCase()
+  if (!allowed.has(value)) {
+    throw new ConfigError(`${key} must be one of {${[...allowed].join(', ')}}, got "${raw}"`)
+  }
+  return value as T
 }
 
 function readIntInRange(

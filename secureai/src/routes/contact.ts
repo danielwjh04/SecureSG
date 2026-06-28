@@ -25,6 +25,7 @@ import { EmailError, ParseError, ScannerError } from '../errors'
 import { contactSchema } from '../schemas/validate'
 import { clientIp, withinHourlyLimit } from '../middleware/rateLimit'
 import type { RateLimitKv } from '../middleware/rateLimit'
+import { log } from '../observability/logger'
 
 const STATUS_OK = 200
 const STATUS_UNPROCESSABLE = 422
@@ -194,7 +195,7 @@ export async function handleContact(request: Request, deps: ContactDeps): Promis
     return Response.json({ ok: true }, { status: STATUS_OK })
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
-    console.error(`[handleContact] ${className}`)
+    log.error('handleContact', 'request failed', { errorClass: className })
     if (error instanceof ParseError) {
       const message = error.message
       return Response.json({ error: className, message }, { status: STATUS_UNPROCESSABLE })

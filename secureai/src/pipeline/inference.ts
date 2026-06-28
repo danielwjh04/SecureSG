@@ -33,6 +33,7 @@ import type {
 import { InferenceError } from '../errors'
 import { passThroughBreaker, type CircuitBreaker } from '../resilience/circuitBreaker'
 import { escalate, mapProbabilityToVerdict } from '../verdict'
+import { log } from '../observability/logger'
 
 /**
  * Minimal text-generation surface of the Workers AI `env.AI` binding. Defined
@@ -285,7 +286,7 @@ export class WorkersAiInferenceClient {
       // Never swallow a provider exception silently (CLAUDE.md §1): log the
       // exact class, then fail closed by rethrowing as InferenceError.
       const name = error instanceof Error ? error.name : typeof error
-      console.error(`[inference] Workers AI run failed: ${name}`)
+      log.error('inference', 'Workers AI run failed', { errorClass: name })
       if (error instanceof InferenceError) {
         throw error
       }
@@ -357,7 +358,7 @@ export class WorkersAiInferenceClient {
       parsed = JSON.parse(jsonText)
     } catch (error: unknown) {
       const name = error instanceof Error ? error.name : typeof error
-      console.error(`[inference] response JSON parse failed: ${name}`)
+      log.error('inference', 'response JSON parse failed', { errorClass: name })
       throw new InferenceError('Workers AI output was not valid JSON', {
         cause: error,
       })
@@ -365,9 +366,9 @@ export class WorkersAiInferenceClient {
 
     const result = INJECTION_OUTPUT_SCHEMA.safeParse(parsed)
     if (!result.success) {
-      console.error(
-        `[inference] response schema validation failed: ${result.error.name}`,
-      )
+      log.error('inference', 'response schema validation failed', {
+        errorClass: result.error.name,
+      })
       throw new InferenceError(
         `Workers AI output failed schema validation: ${result.error.message}`,
         { cause: result.error },

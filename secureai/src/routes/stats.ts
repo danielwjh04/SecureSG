@@ -14,6 +14,7 @@ import type { Database } from '../db/database'
 import { ScannerError } from '../errors'
 import { authenticate } from '../middleware/auth'
 import { getStats } from '../db/usage'
+import { log } from '../observability/logger'
 
 const STATUS_OK = 200
 const STATUS_UNAUTHORIZED = 401
@@ -77,7 +78,7 @@ export async function handleStats(request: Request, deps: StatsDeps): Promise<Re
     )
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
-    console.error(`[handleStats] ${className}`)
+    log.error('handleStats', 'request failed', { errorClass: className })
     const status = error instanceof ScannerError ? STATUS_SERVER_ERROR : STATUS_SERVER_ERROR
     return Response.json({ error: 'stats_failed' }, { status })
   }

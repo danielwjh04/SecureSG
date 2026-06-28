@@ -26,6 +26,7 @@ import { runScan } from '../scanner/runScan'
 import { buildInferenceClient, type AiRunner } from '../pipeline/inference'
 import { breakerFor, type BreakerStore } from '../resilience/circuitBreaker'
 import { putScanContent, type ObjectStore } from '../storage/r2'
+import { metrics } from '../observability/metrics'
 import { DenylistReputationClient, type IndicatorKv } from '../pipeline/indicators'
 import { scanRequestSchema } from '../schemas/validate'
 import { d1Database } from '../db/database'
@@ -39,6 +40,7 @@ import {
   scanHistoryStatement,
 } from '../db/scans'
 import { resolveCachedScan, type VerdictCacheKv } from '../scanner/verdictCache'
+import { log } from '../observability/logger'
 
 const STATUS_OK = 200
 const STATUS_BAD_REQUEST = 400
@@ -152,7 +154,7 @@ async function recordScanHistory(
     })
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
-    console.warn(`[handleScan] scan-history insert failed (${className}); continuing`)
+    log.warn('handleScan', 'scan-history insert failed; continuing', { errorClass: className })
   }
 }
 
@@ -225,7 +227,7 @@ async function recordScanDetail(
     })
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
-    console.warn(`[handleScan] scan-detail insert failed (${className}); continuing`)
+    log.warn('handleScan', 'scan-detail insert failed; continuing', { errorClass: className })
   }
 }
 
@@ -303,7 +305,7 @@ async function writeScanAtomic(
     }
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
-    console.warn(`[handleScan] scan write batch failed (${className}); continuing`)
+    log.warn('handleScan', 'scan write batch failed; continuing', { errorClass: className })
   }
 }
 
@@ -425,6 +427,7 @@ export async function handleScan(
     )
 
     const flaggedCount = result.reputation.filter((report) => report.flagged).length
+    metrics.count('scan.verdict', { labels: [result.verdict] })
 
     if (db !== null) {
       // Persist metering + recent-scans history + caught-scan detail. The default
@@ -463,7 +466,7 @@ export async function handleScan(
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
     const message = error instanceof Error ? error.message : String(error)
-    console.error(`[handleScan] ${className}: ${message}`)
+    log.error('handleScan', 'request failed', { errorClass: className })
     if (error instanceof QuotaExceededError) {
       return Response.json(
         { error: 'quota_exceeded', message },

@@ -18,7 +18,7 @@ The MVP has shipped and is live at `secureai.zurielst.com`. On top of the scanne
 
 Stack: TypeScript on Cloudflare Workers, D1 (edge SQLite), KV (indicator + verdict cache), Workers AI (small open-weight model for injection detection), Zod for schemas, Stripe for billing, Resend for 2FA email, React 19 SPA. Live at `secureai.zurielst.com`.
 
-Repo: https://github.com/danielwjh04/SecureSG (starts empty, fresh build). Stack is TypeScript on Cloudflare Workers per the proposal.
+Repo: https://github.com/danielwjh04/SecureAI. Stack is TypeScript on Cloudflare Workers per the proposal.
 
 ## Build Context & MVP Targets
 
@@ -119,6 +119,12 @@ The test: every changed line traces to the request.
 **Async I/O.** All DB, fetch, and AI calls are `async`. Never block the event loop. Put an `AbortSignal` timeout on every outbound fetch.
 
 **Typed errors.** Define error classes in `errors.ts`. Never throw a bare `Error`. Examples: `RedirectGuardError`, `ChainIntegrityError`, `InferenceError`.
+
+**Observability — logs, metrics, traces.** Never `console.*` in `src/**` (enforced by the `no-console` lint rule; the only exception is the logger's own sink). Use the structured logger in `observability/logger.ts`: `import { log } from '.../observability/logger'`, then `log.error('<module>', '<static message>', { errorClass: errorClassOf(error), ...scalarFields })`. Every log is one JSON line (`{ts, level, module, msg, ...fields}`) so Workers Logs indexes the fields. Two hard rules:
+- **No PII / content in logs.** The `LogFields` type is scalar-only by design (objects/arrays are a compile error); keep `msg` static and log errors by CLASS (`errorClassOf`), never by message — a message can carry user input.
+- **Level from config.** `setLogLevel(config.logLevel)` is called once per request in `index.ts`; modules just call `log.<level>`.
+
+Metrics go through `observability/metrics.ts` (`import { metrics }`): `metrics.count('<name>', { labels: [...] })` for low-cardinality counters (verdicts, breaker trips, cap rejections) — never PII in a blob/index. It no-ops when the `METRICS` Analytics Engine binding is absent. Request correlation is the per-invocation `cf-ray`, echoed as the `x-request-id` response header; enable Workers Logs with the `observability` block in `wrangler.jsonc`.
 
 ## 5. Security-Specific Rules
 

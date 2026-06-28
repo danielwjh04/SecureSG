@@ -13,6 +13,7 @@
 
 import type { Database, Row } from './database'
 import { BillingError } from '../errors'
+import { log } from '../observability/logger'
 
 /** A user's Stripe customer id, or `null` when none has been provisioned. */
 export interface StripeCustomerLink {
@@ -71,7 +72,7 @@ export async function recordWebhookEvent(
     return result.changes > 0
   } catch (error: unknown) {
     const name = error instanceof Error ? error.name : typeof error
-    console.error(`[billing] recordWebhookEvent failed: ${name}`)
+    log.error('billing', 'recordWebhookEvent failed', { errorClass: name })
     throw new BillingError('failed to record webhook event', { cause: error })
   }
 }
@@ -111,7 +112,7 @@ export async function upsertSubscription(
     )
   } catch (error: unknown) {
     const name = error instanceof Error ? error.name : typeof error
-    console.error(`[billing] upsertSubscription failed: ${name}`)
+    log.error('billing', 'upsertSubscription failed', { errorClass: name })
     throw new BillingError('failed to upsert subscription', { cause: error })
   }
 }
@@ -141,7 +142,7 @@ export async function setStripeCustomerId(
     ])
   } catch (error: unknown) {
     const name = error instanceof Error ? error.name : typeof error
-    console.error(`[billing] setStripeCustomerId failed: ${name}`)
+    log.error('billing', 'setStripeCustomerId failed', { errorClass: name })
     throw new BillingError('failed to set Stripe customer id', { cause: error })
   }
 }

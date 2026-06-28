@@ -11,6 +11,7 @@
 import type { Database, Row } from './database'
 import type { AssignableRole } from '../auth/roles'
 import { AdminError } from '../errors'
+import { log } from '../observability/logger'
 
 /** Per-tier account counts. Absent tiers read as 0, never undefined. */
 export interface TierCounts {
@@ -506,6 +507,6 @@ function requireString(row: Row, column: string): string {
 /** Wrap a store fault as an {@link AdminError}, logging the exact class. */
 function wrap(operation: string, error: unknown): AdminError {
   const name = error instanceof Error ? error.name : typeof error
-  console.error(`[admin] ${operation} failed: ${name}`)
+  log.error('admin', 'failed', { errorClass: name, operation: operation })
   return new AdminError(`admin aggregate '${operation}' failed`, { cause: error })
 }

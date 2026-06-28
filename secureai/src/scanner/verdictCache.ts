@@ -30,6 +30,7 @@
 import type { ScanRequest, ScanResult } from '../schemas/contract'
 import type { ScanOutcome } from './runScan'
 import { canonicalJson } from '../audit/chain'
+import { log } from '../observability/logger'
 
 /** Namespaced, versioned prefix for every verdict-cache key. */
 const CACHE_KEY_PREFIX = 'scan:v1:'
@@ -101,7 +102,7 @@ function parseCached(value: string): ScanResult | null {
     return JSON.parse(value) as ScanResult
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
-    console.warn(`[verdictCache] discarding unparseable cache entry (${className})`)
+    log.warn('verdictCache', 'discarding unparseable cache entry', { errorClass: className })
     return null
   }
 }

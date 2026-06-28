@@ -11,6 +11,7 @@
 
 import type { Database, Row } from './database'
 import { AuthError } from '../errors'
+import { log } from '../observability/logger'
 
 /** A persisted account. `tier` gates the paid AI stage. */
 export interface User {
@@ -221,7 +222,7 @@ export async function createFreeUser(
     apiKey = await insertApiKey(db, id, createdAt)
   } catch (error: unknown) {
     const name = error instanceof Error ? error.name : typeof error
-    console.error(`[accounts] createFreeUser failed: ${name}`)
+    log.error('accounts', 'createFreeUser failed', { errorClass: name })
     throw new AuthError('failed to provision account', { cause: error })
   }
 
@@ -287,7 +288,7 @@ export async function createUserWithPassword(
     apiKey = await insertApiKey(db, id, createdAt)
   } catch (error: unknown) {
     const name = error instanceof Error ? error.name : typeof error
-    console.error(`[accounts] createUserWithPassword failed: ${name}`)
+    log.error('accounts', 'createUserWithPassword failed', { errorClass: name })
     throw new AuthError('failed to provision account', { cause: error })
   }
 
@@ -360,7 +361,7 @@ export async function setTierByStripeCustomer(
     ])
   } catch (error: unknown) {
     const name = error instanceof Error ? error.name : typeof error
-    console.error(`[accounts] setTierByStripeCustomer failed: ${name}`)
+    log.error('accounts', 'setTierByStripeCustomer failed', { errorClass: name })
     throw new AuthError('failed to set tier by Stripe customer', { cause: error })
   }
 }
@@ -384,7 +385,7 @@ export async function setUserTier(
     await db.execute('UPDATE users SET tier = ? WHERE id = ?', [tier, userId])
   } catch (error: unknown) {
     const name = error instanceof Error ? error.name : typeof error
-    console.error(`[accounts] setUserTier failed: ${name}`)
+    log.error('accounts', 'setUserTier failed', { errorClass: name })
     throw new AuthError('failed to set user tier', { cause: error })
   }
 }
@@ -483,7 +484,7 @@ export async function markEmailVerified(db: Database, userId: string): Promise<v
     await db.execute('UPDATE users SET email_verified = 1 WHERE id = ?', [userId])
   } catch (error: unknown) {
     const name = error instanceof Error ? error.name : typeof error
-    console.error(`[accounts] markEmailVerified failed: ${name}`)
+    log.error('accounts', 'markEmailVerified failed', { errorClass: name })
     throw new AuthError('failed to mark email verified', { cause: error })
   }
 }
@@ -566,7 +567,7 @@ export async function deactivateApiKeys(db: Database, userId: string): Promise<v
     )
   } catch (error: unknown) {
     const name = error instanceof Error ? error.name : typeof error
-    console.error(`[accounts] deactivateApiKeys failed: ${name}`)
+    log.error('accounts', 'deactivateApiKeys failed', { errorClass: name })
     throw new AuthError('failed to revoke API keys', { cause: error })
   }
 }
@@ -594,7 +595,7 @@ export async function rotateApiKey(db: Database, userId: string): Promise<string
     return await insertApiKey(db, userId, new Date().toISOString())
   } catch (error: unknown) {
     const name = error instanceof Error ? error.name : typeof error
-    console.error(`[accounts] rotateApiKey failed: ${name}`)
+    log.error('accounts', 'rotateApiKey failed', { errorClass: name })
     throw new AuthError('failed to mint a new API key', { cause: error })
   }
 }

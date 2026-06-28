@@ -14,6 +14,8 @@
  * admin read; the caller falls back to the D1 preview.
  */
 
+import { log } from '../observability/logger'
+
 /**
  * The minimal R2 surface used here (structural subset of `R2Bucket`): `put` a
  * string body and `get` an object whose body can be read as text. Declared
@@ -48,7 +50,7 @@ export async function putScanContent(
     await store.put(contentKey(scanId), content)
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
-    console.warn(`[r2] scan-content put failed (${className}); D1 preview remains the record`)
+    log.warn('r2', 'scan-content put failed; D1 preview remains the record', { errorClass: className })
   }
 }
 
@@ -65,7 +67,7 @@ export async function getScanContent(store: ObjectStore, scanId: string): Promis
     return object === null ? null : await object.text()
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
-    console.warn(`[r2] scan-content get failed (${className}); falling back to the D1 preview`)
+    log.warn('r2', 'scan-content get failed; falling back to the D1 preview', { errorClass: className })
     return null
   }
 }

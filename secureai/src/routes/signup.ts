@@ -18,6 +18,7 @@ import { AuthError, ParseError, ScannerError } from '../errors'
 import { signupSchema } from '../schemas/validate'
 import { d1Database, type Database } from '../db/database'
 import { createFreeUser } from '../db/accounts'
+import { log } from '../observability/logger'
 
 const STATUS_CREATED = 201
 const STATUS_UNPROCESSABLE = 422
@@ -76,7 +77,7 @@ export async function handleSignup(
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
     const message = error instanceof Error ? error.message : String(error)
-    console.error(`[handleSignup] ${className}: ${message}`)
+    log.error('handleSignup', 'request failed', { errorClass: className })
     if (error instanceof ParseError) {
       return Response.json({ error: className, message }, { status: STATUS_UNPROCESSABLE })
     }

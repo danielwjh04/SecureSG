@@ -44,6 +44,7 @@ import { assertSafeUrl, traceRedirects } from '../pipeline/redirects'
 import { evaluateRules } from '../pipeline/rules'
 import { escalate } from '../verdict'
 import { parseGithubWebUrl, resolveGithubSkillUrl } from './github'
+import { log } from '../observability/logger'
 
 /**
  * Injected dependencies for {@link runScan}. Keeping every capability here is
@@ -234,7 +235,7 @@ async function runInferenceStage(
  */
 function logErrorClass(stage: string, error: unknown): void {
   const className = error instanceof Error ? error.constructor.name : typeof error
-  console.warn(`[runScan] ${stage} stage failed (${className}); failing closed`)
+  log.warn('runScan', 'stage failed; failing closed', { errorClass: className, stage: stage })
 }
 
 /**

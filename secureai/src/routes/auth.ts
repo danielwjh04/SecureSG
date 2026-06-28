@@ -64,6 +64,7 @@ import {
   buildSessionCookie,
   signSession,
 } from '../auth/session'
+import { log } from '../observability/logger'
 
 const STATUS_OK = 200
 const STATUS_CREATED = 201
@@ -414,7 +415,7 @@ export async function handleRegister(request: Request, deps: AuthDeps): Promise<
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
     const message = error instanceof Error ? error.message : String(error)
-    console.error(`[handleRegister] ${className}`)
+    log.error('handleRegister', 'request failed', { errorClass: className })
     if (error instanceof ParseError) {
       return Response.json({ error: className, message }, { status: STATUS_UNPROCESSABLE })
     }
@@ -494,7 +495,7 @@ export async function handleLogin(request: Request, deps: AuthDeps): Promise<Res
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
     const message = error instanceof Error ? error.message : String(error)
-    console.error(`[handleLogin] ${className}`)
+    log.error('handleLogin', 'request failed', { errorClass: className })
     if (error instanceof ParseError) {
       return Response.json({ error: className, message }, { status: STATUS_UNPROCESSABLE })
     }
@@ -586,7 +587,7 @@ export async function handleLoginVerify(request: Request, deps: AuthDeps): Promi
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
     const message = error instanceof Error ? error.message : String(error)
-    console.error(`[handleLoginVerify] ${className}`)
+    log.error('handleLoginVerify', 'request failed', { errorClass: className })
     if (error instanceof ParseError) {
       return Response.json({ error: className, message }, { status: STATUS_UNPROCESSABLE })
     }
@@ -650,7 +651,7 @@ export async function handleLoginResend(request: Request, deps: AuthDeps): Promi
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
     const message = error instanceof Error ? error.message : String(error)
-    console.error(`[handleLoginResend] ${className}`)
+    log.error('handleLoginResend', 'request failed', { errorClass: className })
     if (error instanceof ParseError) {
       return Response.json({ error: className, message }, { status: STATUS_UNPROCESSABLE })
     }
@@ -728,7 +729,7 @@ export async function handleMe(request: Request, deps: AuthDeps): Promise<Respon
     )
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
-    console.error(`[handleMe] ${className}`)
+    log.error('handleMe', 'request failed', { errorClass: className })
     return Response.json({ error: 'me_failed' }, { status: statusForError(error) })
   }
 }
@@ -758,7 +759,7 @@ export async function handleKeyRotate(request: Request, deps: AuthDeps): Promise
     return Response.json({ apiKey }, { status: STATUS_OK })
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
-    console.error(`[handleKeyRotate] ${className}`)
+    log.error('handleKeyRotate', 'request failed', { errorClass: className })
     return Response.json({ error: 'rotate_failed' }, { status: statusForError(error) })
   }
 }

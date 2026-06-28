@@ -17,6 +17,7 @@ import { ScannerError } from '../errors'
 import { authenticate } from '../middleware/auth'
 import { listRecentScans } from '../db/scans'
 import { recentScansLimitSchema } from '../schemas/validate'
+import { log } from '../observability/logger'
 
 const STATUS_OK = 200
 const STATUS_BAD_REQUEST = 422
@@ -72,7 +73,7 @@ export async function handleRecentScans(
     return Response.json({ scans }, { status: STATUS_OK })
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
-    console.error(`[handleRecentScans] ${className}`)
+    log.error('handleRecentScans', 'request failed', { errorClass: className })
     const status = error instanceof ScannerError ? STATUS_SERVER_ERROR : STATUS_SERVER_ERROR
     return Response.json({ error: 'recent_scans_failed' }, { status })
   }

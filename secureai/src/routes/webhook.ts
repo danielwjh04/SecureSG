@@ -29,6 +29,7 @@ import {
   recordWebhookEvent,
   upsertSubscription,
 } from '../db/billing'
+import { log } from '../observability/logger'
 
 const STATUS_OK = 200
 const STATUS_BAD_REQUEST = 400
@@ -187,7 +188,7 @@ export async function handleWebhook(
     event = await billing.constructEvent(rawBody, signature)
   } catch (error: unknown) {
     const name = error instanceof Error ? error.name : typeof error
-    console.error(`[handleWebhook] signature verification failed: ${name}`)
+    log.error('handleWebhook', 'signature verification failed', { errorClass: name })
     return Response.json({ error: 'invalid_signature' }, { status: STATUS_BAD_REQUEST })
   }
 
@@ -214,8 +215,7 @@ export async function handleWebhook(
     // effects are individually idempotent (tier set by customer id, subscription
     // upsert by user id), so a retry re-applies them safely.
     const name = error instanceof Error ? error.name : typeof error
-    const message = error instanceof Error ? error.message : String(error)
-    console.error(`[handleWebhook] effect failed: ${name}: ${message}`)
+    log.error('handleWebhook', 'effect failed', { errorClass: name })
     return Response.json({ error: name }, { status: STATUS_SERVER_ERROR })
   }
 }

@@ -19,6 +19,7 @@
 import type { Env, ScannerConfig } from '../config/env'
 import { EmailError, CircuitOpenError } from '../errors'
 import { breakerFor, type BreakerStore, type CircuitBreaker } from '../resilience/circuitBreaker'
+import { log } from '../observability/logger'
 
 /** A single transactional email to deliver. */
 export interface EmailMessage {
@@ -126,11 +127,11 @@ export class ResendEmailSender implements EmailSender {
         })
       } catch (error: unknown) {
         const name = error instanceof Error ? error.constructor.name : typeof error
-        console.error(`[email] Resend request failed: ${name}`)
+        log.error('email', 'Resend request failed', { errorClass: name })
         throw new EmailError('email provider unreachable', { cause: error })
       }
       if (response.status < HTTP_OK_MIN || response.status >= HTTP_OK_MAX_EXCLUSIVE) {
-        console.error(`[email] Resend rejected the send: HTTP ${response.status}`)
+        log.error('email', 'Resend rejected the send: HTTP', { status: response.status })
         throw new EmailError(`email provider returned status ${response.status}`)
       }
     })

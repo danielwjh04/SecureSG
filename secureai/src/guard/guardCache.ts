@@ -18,6 +18,7 @@
 import type { PreToolUsePayload } from '../schemas/validate'
 import type { GuardDecision } from './claudeCode'
 import { canonicalJson } from '../audit/chain'
+import { log } from '../observability/logger'
 
 /** Namespaced, versioned prefix for every guard-decision cache key. */
 const CACHE_KEY_PREFIX = 'guard:v1:'
@@ -58,7 +59,7 @@ function parseCached(value: string): GuardDecision | null {
     return JSON.parse(value) as GuardDecision
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
-    console.warn(`[guardCache] discarding unparseable cache entry (${className})`)
+    log.warn('guardCache', 'discarding unparseable cache entry', { errorClass: className })
     return null
   }
 }

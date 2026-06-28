@@ -53,6 +53,7 @@ import {
   usageTotals,
   usersByTier,
 } from '../db/admin'
+import { log } from '../observability/logger'
 
 const STATUS_OK = 200
 const STATUS_UNAUTHORIZED = 401
@@ -282,7 +283,7 @@ export async function handleAdminOverview(
     return Response.json(body, { status: STATUS_OK })
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
-    console.error(`[handleAdminOverview] ${className}`)
+    log.error('handleAdminOverview', 'request failed', { errorClass: className })
     return Response.json({ error: 'admin_overview_failed' }, { status: STATUS_SERVER_ERROR })
   }
 }
@@ -370,7 +371,7 @@ export async function handleAdminMembers(request: Request, deps: AdminDeps): Pro
     return Response.json(body, { status: STATUS_OK })
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
-    console.error(`[handleAdminMembers] ${className}`)
+    log.error('handleAdminMembers', 'request failed', { errorClass: className })
     return Response.json({ error: 'admin_members_failed' }, { status: STATUS_SERVER_ERROR })
   }
 }
@@ -438,7 +439,7 @@ export async function handleAdminThreats(request: Request, deps: AdminDeps): Pro
     return Response.json(body, { status: STATUS_OK })
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
-    console.error(`[handleAdminThreats] ${className}`)
+    log.error('handleAdminThreats', 'request failed', { errorClass: className })
     return Response.json({ error: 'admin_threats_failed' }, { status: STATUS_SERVER_ERROR })
   }
 }
@@ -457,7 +458,7 @@ function parseStoredEvidence(resultJson: string): StoredScanEvidence {
     raw = JSON.parse(resultJson)
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
-    console.warn(`[handleAdminScanDetail] unparseable result_json (${className}); empty evidence`)
+    log.warn('handleAdminScanDetail', 'unparseable result_json; empty evidence', { errorClass: className })
     return { findings: [], chains: [], injections: [], reputation: [] }
   }
   const obj = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {}
@@ -540,7 +541,7 @@ export async function handleAdminScanDetail(
     return Response.json(toAdminScanDetail(resolved), { status: STATUS_OK })
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
-    console.error(`[handleAdminScanDetail] ${className}`)
+    log.error('handleAdminScanDetail', 'request failed', { errorClass: className })
     return Response.json({ error: 'admin_scan_detail_failed' }, { status: STATUS_SERVER_ERROR })
   }
 }
@@ -614,7 +615,7 @@ export async function handleAdminMemberRole(request: Request, deps: AdminDeps): 
     return Response.json({ id: body.userId, role }, { status: STATUS_OK })
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
-    console.error(`[handleAdminMemberRole] ${className}`)
+    log.error('handleAdminMemberRole', 'request failed', { errorClass: className })
     if (error instanceof ParseError) {
       return Response.json({ error: 'invalid_role' }, { status: STATUS_UNPROCESSABLE })
     }
@@ -689,7 +690,7 @@ export async function handleAdminMemberTier(request: Request, deps: AdminDeps): 
     return Response.json({ id: body.userId, tier }, { status: STATUS_OK })
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
-    console.error(`[handleAdminMemberTier] ${className}`)
+    log.error('handleAdminMemberTier', 'request failed', { errorClass: className })
     if (error instanceof ParseError) {
       return Response.json({ error: 'invalid_tier' }, { status: STATUS_UNPROCESSABLE })
     }
@@ -771,7 +772,7 @@ export async function handleAdminMemberRemove(
     return Response.json({ removed: body.userId }, { status: STATUS_OK })
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
-    console.error(`[handleAdminMemberRemove] ${className}`)
+    log.error('handleAdminMemberRemove', 'request failed', { errorClass: className })
     if (error instanceof ParseError) {
       return Response.json({ error: 'invalid_remove' }, { status: STATUS_UNPROCESSABLE })
     }

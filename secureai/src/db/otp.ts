@@ -11,6 +11,7 @@
 
 import type { Database, Row } from './database'
 import { OtpError } from '../errors'
+import { log } from '../observability/logger'
 
 /** A persisted two-factor challenge, as read back for verification. */
 export interface OtpChallenge {
@@ -73,7 +74,7 @@ export async function createChallenge(db: Database, challenge: NewOtpChallenge):
     )
   } catch (error: unknown) {
     const name = error instanceof Error ? error.name : typeof error
-    console.error(`[otp] createChallenge failed: ${name}`)
+    log.error('otp', 'createChallenge failed', { errorClass: name })
     throw new OtpError('failed to create two-factor challenge', { cause: error })
   }
 }
@@ -98,7 +99,7 @@ export async function getChallenge(db: Database, id: string): Promise<OtpChallen
     )
   } catch (error: unknown) {
     const name = error instanceof Error ? error.name : typeof error
-    console.error(`[otp] getChallenge failed: ${name}`)
+    log.error('otp', 'getChallenge failed', { errorClass: name })
     throw new OtpError('failed to read two-factor challenge', { cause: error })
   }
   if (row === null) {
@@ -132,7 +133,7 @@ export async function incrementAttempt(db: Database, id: string): Promise<void> 
     )
   } catch (error: unknown) {
     const name = error instanceof Error ? error.name : typeof error
-    console.error(`[otp] incrementAttempt failed: ${name}`)
+    log.error('otp', 'incrementAttempt failed', { errorClass: name })
     throw new OtpError('failed to record two-factor attempt', { cause: error })
   }
 }
@@ -151,7 +152,7 @@ export async function deleteChallenge(db: Database, id: string): Promise<void> {
     await db.execute('DELETE FROM otp_challenges WHERE id = ?', [id])
   } catch (error: unknown) {
     const name = error instanceof Error ? error.name : typeof error
-    console.error(`[otp] deleteChallenge failed: ${name}`)
+    log.error('otp', 'deleteChallenge failed', { errorClass: name })
     throw new OtpError('failed to delete two-factor challenge', { cause: error })
   }
 }
@@ -172,7 +173,7 @@ export async function deleteUserChallenges(db: Database, userId: string): Promis
     await db.execute('DELETE FROM otp_challenges WHERE user_id = ?', [userId])
   } catch (error: unknown) {
     const name = error instanceof Error ? error.name : typeof error
-    console.error(`[otp] deleteUserChallenges failed: ${name}`)
+    log.error('otp', 'deleteUserChallenges failed', { errorClass: name })
     throw new OtpError('failed to invalidate prior two-factor challenges', { cause: error })
   }
 }

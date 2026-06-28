@@ -47,6 +47,8 @@ import {
 import { d1Database, d1Session, type SessionDatabase } from './db/database'
 import { readBookmark, withBookmark } from './db/bookmark'
 import type { ObjectStore } from './storage/r2'
+import { log, errorClassOf, setLogLevel } from './observability/logger'
+import { setMetricsDataset, type MetricsDataset } from './observability/metrics'
 import { buildEmailSender } from './email/sender'
 import { buildStripe, StripeBillingGateway } from './billing/stripe'
 import { BillingError, CircuitOpenError, ParseError, ScannerError } from './errors'
@@ -86,28 +88,43 @@ export default {
       return new Response('Not found', { status: 404 })
     }
 
+    // Correlate every log/response with the Cloudflare invocation id (cf-ray),
+    // falling back to a uuid. Echoed as `x-request-id` on DB responses.
+    const requestId = request.headers.get('cf-ray') ?? crypto.randomUUID()
+
     let config
     try {
       config = loadConfig(env)
     } catch (error) {
-      console.error(`config load failed: ${errorName(error)}`)
+      log.error('index', 'config load failed', { errorClass: errorClassOf(error), requestId })
       return jsonError('configuration error', 500)
     }
+
+    // Point the module logger + metrics at this request's config/binding once.
+    setLogLevel(config.logLevel)
+    setMetricsDataset((env.METRICS as MetricsDataset | undefined) ?? null)
 
     // Per-request DB seam. When D1 read replication is enabled (and DB is bound),
     // open a session seeded with the caller's prior bookmark (read-your-writes):
     // their reads see at least their own writes, while others may hit a replica.
     // `stamp` returns the session's post-request bookmark to the client on every
-    // DB-touching response; a non-session db (replication off) is a plain binding
-    // and `stamp` is a no-op.
+    // DB-touching response (and tags it with `x-request-id`); a non-session db
+    // (replication off) is a plain binding and the bookmark merge is a no-op.
     const session: SessionDatabase | null =
       config.dbSessionsEnabled && env.DB !== undefined && env.DB !== null
         ? d1Session(env.DB, readBookmark(request))
         : null
     const db: Database | null =
       session ?? (env.DB !== undefined && env.DB !== null ? d1Database(env.DB) : null)
-    const stamp = async (response: Promise<Response>): Promise<Response> =>
-      withBookmark(await response, session?.getBookmark() ?? null, config.dbBookmarkTtlSeconds)
+    const stamp = async (response: Promise<Response>): Promise<Response> => {
+      const stamped = withBookmark(
+        await response,
+        session?.getBookmark() ?? null,
+        config.dbBookmarkTtlSeconds,
+      )
+      stamped.headers.set('x-request-id', requestId)
+      return stamped
+    }
 
     if (url.pathname === ROUTE_SCAN) {
       if (request.method !== 'POST') {
@@ -392,17 +409,13 @@ function errorResponse(error: unknown): Response {
     return jsonError(error.message, 422)
   }
   if (error instanceof ScannerError) {
-    console.error(`handler fault: ${error.name}: ${error.message}`)
+    log.error('index', 'handler fault', { errorClass: error.name })
     return jsonError(error.message, 400)
   }
-  console.error(`unexpected fault: ${errorName(error)}`)
+  log.error('index', 'unexpected fault', { errorClass: errorClassOf(error) })
   return jsonError('internal error', 500)
 }
 
 function jsonError(message: string, status: number): Response {
   return Response.json({ error: message }, { status })
-}
-
-function errorName(error: unknown): string {
-  return error instanceof Error ? `${error.name}: ${error.message}` : String(error)
 }

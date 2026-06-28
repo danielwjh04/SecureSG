@@ -22,6 +22,7 @@ import Stripe from 'stripe'
 import type { ScannerConfig } from '../config/env'
 import { BillingError } from '../errors'
 import type { CircuitBreaker } from '../resilience/circuitBreaker'
+import { log } from '../observability/logger'
 
 /** Inputs for a subscription Checkout Session. */
 export interface CheckoutSessionParams {
@@ -247,6 +248,6 @@ export class StripeBillingGateway implements BillingGateway {
  */
 function billingFault(operation: string, error: unknown): BillingError {
   const name = error instanceof Error ? error.name : typeof error
-  console.error(`[billing] ${operation} failed: ${name}`)
+  log.error('billing', 'failed', { errorClass: name, operation: operation })
   return new BillingError(`Stripe ${operation} failed`, { cause: error })
 }

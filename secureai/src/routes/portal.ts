@@ -16,6 +16,7 @@ import type { BillingGateway } from '../billing/stripe'
 import { AuthError, BillingError, ParseError, ScannerError } from '../errors'
 import { authenticate } from '../middleware/auth'
 import { getUserById } from '../db/billing'
+import { log } from '../observability/logger'
 
 const STATUS_OK = 200
 const STATUS_UNAUTHORIZED = 401
@@ -110,7 +111,7 @@ export async function handlePortal(
   } catch (error: unknown) {
     const className = error instanceof Error ? error.constructor.name : typeof error
     const message = error instanceof Error ? error.message : String(error)
-    console.error(`[handlePortal] ${className}: ${message}`)
+    log.error('handlePortal', 'request failed', { errorClass: className })
     return Response.json({ error: className, message }, { status: statusForError(error) })
   }
 }
