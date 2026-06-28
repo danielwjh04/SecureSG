@@ -2,7 +2,7 @@
 #
 # SecureAI Guard — one-line installer.
 #
-#   curl -fsSL https://secureai.zurielst.com/install.sh | bash
+#   curl -fsSL https://secureai.software/install.sh | bash
 #
 # Wires the SecureAI Guard into Claude Code as a PreToolUse hook so every tool
 # call is screened (ALLOW / ASK / DENY) before it runs, fail-closed. The script
@@ -14,7 +14,7 @@
 
 set -euo pipefail
 
-API_URL="https://secureai.zurielst.com"
+API_URL="https://secureai.software"
 GUARD_URL="${API_URL}/secureai-guard.mjs"
 SECUREAI_DIR="${HOME}/.secureai"
 GUARD_PATH="${SECUREAI_DIR}/secureai-guard.mjs"

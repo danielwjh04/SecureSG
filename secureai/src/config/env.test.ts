@@ -91,7 +91,7 @@ describe('loadConfig', () => {
   it('exposes billing config with defaults and overrides', () => {
     const defaults = loadConfig({})
     expect(defaults.stripePricePro).toBe('price_REPLACE')
-    expect(defaults.appBaseUrl).toBe('https://secureai.zurielst.com')
+    expect(defaults.appBaseUrl).toBe('https://secureai.software')
 
     const overridden = loadConfig({
       STRIPE_PRICE_PRO: 'price_live_123',
@@ -112,7 +112,7 @@ describe('loadConfig', () => {
 
   it('defaults the email-2FA tunables and accepts in-range overrides', () => {
     const defaults = loadConfig({})
-    expect(defaults.emailFrom).toBe('SecureAI <noreply@zurielst.com>')
+    expect(defaults.emailFrom).toBe('SecureAI <noreply@secureai.software>')
     expect(defaults.otpTtlSeconds).toBe(600)
     expect(defaults.otpMaxAttempts).toBe(5)
 

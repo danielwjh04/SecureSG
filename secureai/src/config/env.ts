@@ -263,7 +263,7 @@ export function loadConfig(env: Env): ScannerConfig {
   // here; they are read from env at the route so a missing secret degrades the
   // billing routes to 503 rather than failing config load for every route.
   const stripePricePro = readString(env, 'STRIPE_PRICE_PRO', 'price_REPLACE')
-  const appBaseUrl = readString(env, 'SCANNER_APP_BASE_URL', 'https://secureai.zurielst.com')
+  const appBaseUrl = readString(env, 'SCANNER_APP_BASE_URL', 'https://secureai.software')
   // Auth tunables (non-secret). IMPORTANT: the Cloudflare Workers runtime caps
   // crypto.subtle PBKDF2 at 100_000 iterations and THROWS above it (the Node test
   // runtime has no cap, which hid this). So 100k is the platform ceiling and our
@@ -282,7 +282,7 @@ export function loadConfig(env: Env): ScannerConfig {
   // to immediate-session (today's behavior) rather than failing config load for
   // every route. emailFrom must be on a Resend-verified domain. The OTP TTL
   // defaults to 10 minutes; the attempt cap to 5 tries before a code is spent.
-  const emailFrom = readString(env, 'SCANNER_EMAIL_FROM', 'SecureAI <noreply@zurielst.com>')
+  const emailFrom = readString(env, 'SCANNER_EMAIL_FROM', 'SecureAI <noreply@secureai.software>')
   const otpTtlSeconds = readIntInRange(env, 'SCANNER_OTP_TTL_SECONDS', 600, 60, 3600)
   const otpMaxAttempts = readIntInRange(env, 'SCANNER_OTP_MAX_ATTEMPTS', 5, 1, 20)
   // Contact-sales recipients (server-side only; never sent to the browser). The

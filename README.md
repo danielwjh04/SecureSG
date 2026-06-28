@@ -2,7 +2,7 @@
 
   <h1>SecureAI</h1>
 
-  [![demo](https://img.shields.io/badge/demo-live-22C55E?style=flat-square)](https://secureai.zurielst.com)
+  [![demo](https://img.shields.io/badge/demo-live-22C55E?style=flat-square)](https://secureai.software)
   [![built with](https://img.shields.io/badge/built%20with-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
   [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?style=flat-square&logo=cloudflare&logoColor=white)](https://workers.cloudflare.com/)
   [![Workers AI](https://img.shields.io/badge/Workers-AI-F38020?style=flat-square&logo=cloudflare&logoColor=white)](https://developers.cloudflare.com/workers-ai/)
@@ -14,7 +14,7 @@
 
 **Verifiable security for AI agents.** SecureAI is an antivirus, a VirusTotal, for AI coding agents. It guards the two places an autonomous agent gets compromised: the skills, tools, and links it ingests (supply chain) and the actions it runs (runtime). Every decision comes with a cryptographic record you can re-check yourself. The idea in one line: don't trust the guard, verify it.
 
-> **Try it live [here](https://secureai.zurielst.com)** Paste a skill or a link, watch it get scanned (redirect cascade, then the SSRF-guarded tracer, then known-bad indicators, then the AI injection judge), then tamper the cryptographic proof in your own browser and watch the chain break.
+> **Try it live [here](https://secureai.software)** Paste a skill or a link, watch it get scanned (redirect cascade, then the SSRF-guarded tracer, then known-bad indicators, then the AI injection judge), then tamper the cryptographic proof in your own browser and watch the chain break.
 
 ---
 
@@ -67,7 +67,7 @@ The scanner is built around its pipeline, not bolted onto it. The cheap, determi
 
 ### Status: live
 
-**https://secureai.zurielst.com**
+**https://secureai.software**
 
 Deployed on Cloudflare (one Worker serves the React SPA via Static Assets plus the API on one origin, no extra service). That single TypeScript Worker serves the site and the `/api/scan` and `/api/verify` endpoints. Paste a skill, get a verdict plus a self-contained proof you can tamper-test in your browser. The Worker and API live in [`secureai/`](secureai/) and the React app in [`scanner/`](scanner/).
 

@@ -14,9 +14,9 @@ Two surfaces, one engine:
 
 The moat is **verifiable enforcement**. Each decision is a SHA-256 hash-chained record. A public `verify` endpoint returns `CHAIN_OK` or `CHAIN_BROKEN`. The line is "Don't trust us, verify."
 
-The MVP has shipped and is live at `secureai.zurielst.com`. On top of the scanner, guard, and proof chain, the product now carries **accounts** (email + password, HMAC-signed session cookies, SHA-256-hashed rotatable API keys, per-tier daily caps), **email 2FA** at login (one-time codes via Resend, gated on `RESEND_API_KEY`), a **user dashboard** (protection stats, 30-day trend, recent scans, API key), **Stripe Pro billing** (checkout, webhooks, portal), and an **admin analytics dashboard** with **role-based access** (owner / admin / member, members directory, promote/demote, plan switching, removal). A KV-backed verdict cache keeps repeat scans O(1). None of this relaxes the rules below; the pipeline order and the security rules are unchanged.
+The MVP has shipped and is live at `secureai.software`. On top of the scanner, guard, and proof chain, the product now carries **accounts** (email + password, HMAC-signed session cookies, SHA-256-hashed rotatable API keys, per-tier daily caps), **email 2FA** at login (one-time codes via Resend, gated on `RESEND_API_KEY`), a **user dashboard** (protection stats, 30-day trend, recent scans, API key), **Stripe Pro billing** (checkout, webhooks, portal), and an **admin analytics dashboard** with **role-based access** (owner / admin / member, members directory, promote/demote, plan switching, removal). A KV-backed verdict cache keeps repeat scans O(1). None of this relaxes the rules below; the pipeline order and the security rules are unchanged.
 
-Stack: TypeScript on Cloudflare Workers, D1 (edge SQLite), KV (indicator + verdict cache), Workers AI (small open-weight model for injection detection), Zod for schemas, Stripe for billing, Resend for 2FA email, React 19 SPA. Live at `secureai.zurielst.com`.
+Stack: TypeScript on Cloudflare Workers, D1 (edge SQLite), KV (indicator + verdict cache), Workers AI (small open-weight model for injection detection), Zod for schemas, Stripe for billing, Resend for 2FA email, React 19 SPA. Live at `secureai.software`.
 
 Repo: https://github.com/danielwjh04/SecureAI. Stack is TypeScript on Cloudflare Workers per the proposal.
 

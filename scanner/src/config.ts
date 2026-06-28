@@ -100,7 +100,7 @@ export const BACKGROUND_VIDEO_SRC =
  */
 export const GUARD_DOWNLOAD_PATH = '/secureai-guard.mjs' as const
 export const GUARD_INSTALL_URL =
-  'https://secureai.zurielst.com/install.sh' as const
+  'https://secureai.software/install.sh' as const
 
 /**
  * Build the key-embedded one-line Guard installer the member dashboard reveals

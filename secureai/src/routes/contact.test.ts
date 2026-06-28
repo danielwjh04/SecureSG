@@ -79,7 +79,7 @@ describe('handleContact', () => {
     expect(message.replyTo).toBe('ada@example.com')
     // The From is the configured sender (asserted via the Resend layer, but the
     // route never overrides it — the sender owns `from`).
-    expect(config.emailFrom).toBe('SecureAI <noreply@zurielst.com>')
+    expect(config.emailFrom).toBe('SecureAI <noreply@secureai.software>')
   })
 
   it('puts the visitor name in the subject and the fields in both bodies', async () => {

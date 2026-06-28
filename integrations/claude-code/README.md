@@ -83,7 +83,7 @@ Everything is configured via the environment — nothing is hardcoded in the hoo
 
 | Variable             | Default                        | Purpose                                            |
 | -------------------- | ------------------------------ | -------------------------------------------------- |
-| `SECUREAI_API_URL`   | `https://secureai.zurielst.com` | Base URL of the SecureAI scanner.                  |
+| `SECUREAI_API_URL`   | `https://secureai.software` | Base URL of the SecureAI scanner.                  |
 | `SECUREAI_API_KEY`   | _(unset)_                      | If set, sent as `Authorization: Bearer <key>`.     |
 | `SECUREAI_TIMEOUT_MS`| `5000`                         | Per-request timeout in milliseconds.               |
 

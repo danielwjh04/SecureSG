@@ -26,7 +26,7 @@
  * exit code, which is how Claude Code expects a PreToolUse hook to communicate.
  */
 
-const DEFAULT_API_URL = 'https://secureai.zurielst.com'
+const DEFAULT_API_URL = 'https://secureai.software'
 const DEFAULT_TIMEOUT_MS = 5000
 const HOOK_EVENT_NAME = 'PreToolUse'
 const GUARD_PATH = '/api/guard'
