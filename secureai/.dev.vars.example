@@ -15,5 +15,12 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 # Price id created in the Stripe dashboard.
 # STRIPE_PRICE_PRO=price_...
 
+# Session signing secret (email/password auth). REQUIRED for the /api/register
+# and /api/login routes; without it they return 503 and cookie auth is disabled
+# (Bearer API-key auth still works). Set it in production with
+#   wrangler secret put SESSION_SECRET
+# Use a long, random value (e.g. `openssl rand -base64 48`). Never commit it.
+SESSION_SECRET=dev-only-change-me-to-a-long-random-string
+
 # Threat-intel feed credentials, if a feed requires one (Spamhaus DROP does not).
 # Workers AI needs no key — it uses the account `AI` binding.

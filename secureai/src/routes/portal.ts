@@ -29,12 +29,17 @@ const RETURN_PATH = '/billing'
 
 /**
  * Resolve the authenticated user id, or throw an {@link AuthError} (→ 401).
- * Billing has no anonymous mode.
+ * Billing has no anonymous mode. Accepts a Bearer key or, when `sessionSecret`
+ * is set, a session cookie.
  *
  * Time complexity: O(1). Space complexity: O(1).
  */
-async function requireUserId(request: Request, db: Database): Promise<string> {
-  const ctx = await authenticate(request, db)
+async function requireUserId(
+  request: Request,
+  db: Database,
+  sessionSecret: string | null,
+): Promise<string> {
+  const ctx = await authenticate(request, db, sessionSecret ?? undefined)
   if (ctx.tier === 'anonymous') {
     throw new AuthError('authentication required for billing')
   }
@@ -77,6 +82,7 @@ export async function handlePortal(
   db: Database | null,
   billing: BillingGateway | null,
   config: ScannerConfig,
+  sessionSecret: string | null = null,
 ): Promise<Response> {
   if (db === null || billing === null) {
     return Response.json(
@@ -85,7 +91,7 @@ export async function handlePortal(
     )
   }
   try {
-    const userId = await requireUserId(request, db)
+    const userId = await requireUserId(request, db, sessionSecret)
 
     const user = await getUserById(db, userId)
     if (user === null) {

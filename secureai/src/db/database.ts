@@ -7,9 +7,10 @@
  * in-memory fake, with no `@cloudflare/vitest-pool-workers` dependency.
  *
  * The surface is deliberately tiny: a parameterized `queryOne` (read a single
- * row) and a parameterized `execute` (run a write). Everything the repos need
- * — `INSERT ... ON CONFLICT DO UPDATE` upserts, joined reads, tier updates —
- * composes from these two primitives.
+ * row), a parameterized `queryAll` (read many rows, for the stats range read),
+ * and a parameterized `execute` (run a write). Everything the repos need
+ * — `INSERT ... ON CONFLICT DO UPDATE` upserts, joined reads, range reads, tier
+ * updates — composes from these primitives.
  */
 
 /** A single row read back from the database, column name → value. */
@@ -40,6 +41,14 @@ export interface Database {
   queryOne(sql: string, params: readonly unknown[]): Promise<Row | null>
 
   /**
+   * Run a read query that may return many rows (e.g. a `(subject, day)` range
+   * read for protection stats).
+   *
+   * @returns Every matching row in query order, or `[]` when none matched.
+   */
+  queryAll(sql: string, params: readonly unknown[]): Promise<Row[]>
+
+  /**
    * Run a write (INSERT / UPDATE / upsert). Returns the row-change count so
    * idempotency gates (e.g. `ON CONFLICT DO NOTHING`) can detect a no-op
    * without a follow-up read. Callers that do not need it simply ignore it.
@@ -65,6 +74,13 @@ export function d1Database(db: D1Database): Database {
         .prepare(sql)
         .bind(...params)
         .first<Row>()
+    },
+    async queryAll(sql: string, params: readonly unknown[]): Promise<Row[]> {
+      const result = await db
+        .prepare(sql)
+        .bind(...params)
+        .all<Row>()
+      return result.results
     },
     async execute(sql: string, params: readonly unknown[]): Promise<WriteResult> {
       const result = await db

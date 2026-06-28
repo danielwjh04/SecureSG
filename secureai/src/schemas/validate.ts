@@ -86,3 +86,42 @@ export const signupSchema = z
 
 /** The validated signup payload `POST /api/signup` operates on. */
 export type SignupPayload = z.infer<typeof signupSchema>
+
+/** Minimum password length (characters). Mirrors the shared API contract. */
+const MIN_PASSWORD_LENGTH = 8
+/** Upper bound on password length, to bound PBKDF2 input and reject abuse. */
+const MAX_PASSWORD_LENGTH = 1024
+
+/**
+ * Body of `POST /api/register`: an account email plus a password. The email is
+ * trimmed/lowercased/validated so the stored value is canonical (matching
+ * {@link signupSchema}); the password is length-bounded but never transformed —
+ * it is hashed verbatim. `.strict()` rejects unexpected fields so a malformed
+ * payload fails closed at the boundary.
+ */
+export const registerSchema = z
+  .object({
+    email: z.string().trim().toLowerCase().email().max(254),
+    password: z.string().min(MIN_PASSWORD_LENGTH).max(MAX_PASSWORD_LENGTH),
+  })
+  .strict()
+
+/** The validated register payload `POST /api/register` operates on. */
+export type RegisterPayload = z.infer<typeof registerSchema>
+
+/**
+ * Body of `POST /api/login`: an account email plus a password. The email is
+ * canonicalized to match how it was stored at registration; the password is only
+ * length-checked (a too-short password cannot match any stored hash anyway). A
+ * generic invalid-credentials response is returned by the route — never a hint
+ * about which field was wrong. `.strict()` rejects unexpected fields.
+ */
+export const loginSchema = z
+  .object({
+    email: z.string().trim().toLowerCase().email().max(254),
+    password: z.string().min(1).max(MAX_PASSWORD_LENGTH),
+  })
+  .strict()
+
+/** The validated login payload `POST /api/login` operates on. */
+export type LoginPayload = z.infer<typeof loginSchema>

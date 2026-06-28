@@ -105,6 +105,63 @@ describe('worker.fetch routing', () => {
     expect(res.status).toBe(405)
   })
 
+  it('routes POST /api/register and returns 503 when DB is unconfigured', async () => {
+    const res = await worker.fetch(
+      req('/api/register', 'POST', { email: 'r@example.com', password: 'password123' }),
+      baseEnv,
+    )
+    expect(res.status).toBe(503)
+  })
+
+  it('registers + logs in + reads /api/me through the worker with DB and a session secret', async () => {
+    const d1 = new MemoryD1(new MemoryStore()) as unknown as D1Database
+    const env: Env = { DB: d1, SESSION_SECRET: 'router-session-secret' }
+
+    const reg = await worker.fetch(
+      req('/api/register', 'POST', { email: 'router-auth@example.com', password: 'password123' }),
+      env,
+    )
+    expect(reg.status).toBe(201)
+    const cookie = reg.headers.get('Set-Cookie')?.split(';')[0] ?? ''
+    expect(cookie).toContain('secureai_session=')
+
+    const me = await worker.fetch(
+      new Request('https://secureai.test/api/me', { headers: { Cookie: cookie } }),
+      env,
+    )
+    expect(me.status).toBe(200)
+    const body = (await me.json()) as { email: string; tier: string }
+    expect(body.email).toBe('router-auth@example.com')
+  })
+
+  it('rejects a non-POST /api/register and non-GET /api/me with 405', async () => {
+    const reg = await worker.fetch(req('/api/register', 'GET'), baseEnv)
+    expect(reg.status).toBe(405)
+    const me = await worker.fetch(req('/api/me', 'POST', {}), baseEnv)
+    expect(me.status).toBe(405)
+  })
+
+  it('routes POST /api/logout to a 200 that clears the cookie (no DB needed)', async () => {
+    const res = await worker.fetch(req('/api/logout', 'POST', {}), baseEnv)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Set-Cookie')).toContain('Max-Age=0')
+  })
+
+  it('routes GET /api/stats and returns 503 when DB is unconfigured', async () => {
+    const res = await worker.fetch(req('/api/stats', 'GET'), baseEnv)
+    expect(res.status).toBe(503)
+  })
+
+  it('rejects a non-GET /api/stats with 405', async () => {
+    const res = await worker.fetch(req('/api/stats', 'POST', {}), baseEnv)
+    expect(res.status).toBe(405)
+  })
+
+  it('routes POST /api/key/rotate and returns 503 when DB is unconfigured', async () => {
+    const res = await worker.fetch(req('/api/key/rotate', 'POST', {}), baseEnv)
+    expect(res.status).toBe(503)
+  })
+
   it('routes POST /api/webhook to a 400 when the gateway is configured but the signature is bad', async () => {
     const d1 = new MemoryD1(new MemoryStore()) as unknown as D1Database
     const env: Env = {

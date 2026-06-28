@@ -43,6 +43,30 @@ export interface ResolvedCredential {
   readonly tier: AccountTier
 }
 
+/**
+ * A user resolved by email for password login. Carries the stored password hash
+ * (or `null` for an API-key-only account that never set one) so the route can
+ * verify credentials. The hash is internal: it is NEVER returned to a client.
+ */
+export interface UserCredentialRecord {
+  readonly id: string
+  readonly email: string
+  readonly tier: AccountTier
+  readonly passwordHash: string | null
+}
+
+/**
+ * The public-facing profile for `GET /api/me`. `apiKeyPrefix` is a short,
+ * non-secret prefix of the caller's active key (enough to recognize it) — never
+ * the full key, which is unrecoverable after mint.
+ */
+export interface AccountProfile {
+  readonly email: string
+  readonly tier: AccountTier
+  readonly createdAt: string
+  readonly apiKeyPrefix: string | null
+}
+
 /** Bytes of entropy in a freshly minted raw API key (256-bit). */
 const API_KEY_ENTROPY_BYTES = 32
 
@@ -109,6 +133,27 @@ function requireString(row: Row, column: string): string {
 }
 
 /**
+ * Insert one fresh active API key for `userId`, returning the raw key.
+ *
+ * Generates a high-entropy raw key, persists ONLY its SHA-256 digest, and
+ * returns the raw key for one-time display. Shared by account provisioning and
+ * key rotation so both mint keys identically.
+ *
+ * Time complexity: O(1) (one insert). Space complexity: O(1).
+ *
+ * @throws Propagates the underlying database error to the caller, which wraps it.
+ */
+async function insertApiKey(db: Database, userId: string, createdAt: string): Promise<string> {
+  const apiKey = generateApiKey()
+  const keyHash = await sha256Hex(apiKey)
+  await db.execute(
+    'INSERT INTO api_keys (key_sha256, user_id, status, created_at) VALUES (?, ?, ?, ?)',
+    [keyHash, userId, 'active', createdAt],
+  )
+  return apiKey
+}
+
+/**
  * Provision a new free-tier user and mint its first API key.
  *
  * Mints a `crypto.randomUUID()` user id and a high-entropy raw key, persists
@@ -132,18 +177,13 @@ export async function createFreeUser(
   const createdAt = new Date().toISOString()
   const tier: AccountTier = 'free'
 
-  const apiKey = generateApiKey()
-  const keyHash = await sha256Hex(apiKey)
-
+  let apiKey: string
   try {
     await db.execute(
       'INSERT INTO users (id, email, tier, stripe_customer_id, created_at) VALUES (?, ?, ?, ?, ?)',
       [id, email, tier, null, createdAt],
     )
-    await db.execute(
-      'INSERT INTO api_keys (key_sha256, user_id, status, created_at) VALUES (?, ?, ?, ?)',
-      [keyHash, id, 'active', createdAt],
-    )
+    apiKey = await insertApiKey(db, id, createdAt)
   } catch (error: unknown) {
     const name = error instanceof Error ? error.name : typeof error
     console.error(`[accounts] createFreeUser failed: ${name}`)
@@ -157,6 +197,49 @@ export async function createFreeUser(
     stripeCustomerId: null,
     createdAt,
   }
+  return { user, apiKey }
+}
+
+/**
+ * Provision a new free-tier user that has a password, and mint its first API key.
+ *
+ * Identical persistence to {@link createFreeUser} (user row first, then key),
+ * but also stores the caller-supplied PBKDF2 `passwordHash` on the user so the
+ * account can later authenticate by email + password OR by Bearer key. The
+ * plaintext password is never seen here — only its already-derived hash.
+ *
+ * Time complexity: O(1) (two single-row inserts). Space complexity: O(1).
+ *
+ * @param db - The persistence seam.
+ * @param email - The account email (caller-validated; UNIQUE in the store).
+ * @param passwordHash - The serialized PBKDF2 hash from `hashPassword`.
+ * @returns The created {@link User} and its one-time raw API key.
+ * @throws {AuthError} If persistence fails (e.g. a duplicate email).
+ */
+export async function createUserWithPassword(
+  db: Database,
+  email: string,
+  passwordHash: string,
+): Promise<MintedAccount> {
+  const id = crypto.randomUUID()
+  const createdAt = new Date().toISOString()
+  const tier: AccountTier = 'free'
+
+  let apiKey: string
+  try {
+    await db.execute(
+      'INSERT INTO users (id, email, tier, stripe_customer_id, created_at, password_hash) ' +
+        'VALUES (?, ?, ?, ?, ?, ?)',
+      [id, email, tier, null, createdAt, passwordHash],
+    )
+    apiKey = await insertApiKey(db, id, createdAt)
+  } catch (error: unknown) {
+    const name = error instanceof Error ? error.name : typeof error
+    console.error(`[accounts] createUserWithPassword failed: ${name}`)
+    throw new AuthError('failed to provision account', { cause: error })
+  }
+
+  const user: User = { id, email, tier, stripeCustomerId: null, createdAt }
   return { user, apiKey }
 }
 
@@ -245,5 +328,149 @@ export async function setUserTier(
     const name = error instanceof Error ? error.name : typeof error
     console.error(`[accounts] setUserTier failed: ${name}`)
     throw new AuthError('failed to set user tier', { cause: error })
+  }
+}
+
+/**
+ * Resolve a user by email for password login, or `null` when no account has that
+ * email. Returns the id, tier, and stored password hash (`null` for an
+ * API-key-only account). A miss is NOT an error — the login route maps both a
+ * miss and a bad password to the same generic 401, never revealing which failed.
+ *
+ * Time complexity: O(1) — unique-index lookup on `email`. Space complexity: O(1).
+ *
+ * @param db - The persistence seam.
+ * @param email - The canonical (trimmed, lowercased) account email.
+ * @returns The credential record, or `null` on a miss.
+ * @throws {AuthError} If a matched record is structurally corrupt.
+ */
+export async function findUserByEmail(
+  db: Database,
+  email: string,
+): Promise<UserCredentialRecord | null> {
+  const row = await db.queryOne(
+    'SELECT id, email, tier, password_hash FROM users WHERE email = ?',
+    [email],
+  )
+  if (row === null) {
+    return null
+  }
+  const passwordHashRaw = row['password_hash']
+  const passwordHash =
+    typeof passwordHashRaw === 'string' && passwordHashRaw.length > 0 ? passwordHashRaw : null
+  return {
+    id: requireString(row, 'id'),
+    email: requireString(row, 'email'),
+    tier: parseTier(row['tier']),
+    passwordHash,
+  }
+}
+
+/**
+ * Resolve a user id to its tier, or `null` when the id is unknown. Used by the
+ * session-cookie auth path to turn a verified session subject into the metering
+ * tier. A miss is `null` (the cookie no longer maps to a live account), not an
+ * error — the auth middleware then downgrades to anonymous.
+ *
+ * Time complexity: O(1) — primary-key lookup. Space complexity: O(1).
+ *
+ * @throws {AuthError} If the matched record has a corrupt (unrecognized) tier.
+ */
+export async function findTierByUserId(
+  db: Database,
+  userId: string,
+): Promise<AccountTier | null> {
+  const row = await db.queryOne('SELECT tier FROM users WHERE id = ?', [userId])
+  if (row === null) {
+    return null
+  }
+  return parseTier(row['tier'])
+}
+
+/**
+ * Read the public {@link AccountProfile} for `userId` (for `GET /api/me`), or
+ * `null` when the id is unknown. `apiKeyPrefix` is the non-secret brand prefix
+ * when the account has at least one ACTIVE key, else `null` — it never exposes
+ * key material (the full key is unrecoverable after mint).
+ *
+ * Time complexity: O(1) — primary-key read plus one indexed key-existence probe.
+ * Space complexity: O(1).
+ *
+ * @param db - The persistence seam.
+ * @param userId - The account id (already authenticated).
+ * @returns The profile, or `null` if the user row is gone.
+ * @throws {AuthError} If a matched record is structurally corrupt.
+ */
+export async function getAccountProfile(
+  db: Database,
+  userId: string,
+): Promise<AccountProfile | null> {
+  const row = await db.queryOne(
+    'SELECT email, tier, created_at FROM users WHERE id = ?',
+    [userId],
+  )
+  if (row === null) {
+    return null
+  }
+  const activeKey = await db.queryOne(
+    "SELECT 1 AS present FROM api_keys WHERE user_id = ? AND status = 'active' LIMIT 1",
+    [userId],
+  )
+  return {
+    email: requireString(row, 'email'),
+    tier: parseTier(row['tier']),
+    createdAt: requireString(row, 'created_at'),
+    apiKeyPrefix: activeKey === null ? null : API_KEY_PREFIX,
+  }
+}
+
+/**
+ * Deactivate (revoke) every currently-active API key for `userId`. Used by key
+ * rotation so the caller's previous key(s) stop authenticating the moment the
+ * new one is minted. Idempotent: a user with no active keys changes zero rows.
+ *
+ * Time complexity: O(k) in the user's active-key count (indexed by `user_id`).
+ * Space complexity: O(1).
+ *
+ * @throws {AuthError} On a database failure.
+ */
+export async function deactivateApiKeys(db: Database, userId: string): Promise<void> {
+  try {
+    await db.execute(
+      "UPDATE api_keys SET status = 'revoked' WHERE user_id = ? AND status = 'active'",
+      [userId],
+    )
+  } catch (error: unknown) {
+    const name = error instanceof Error ? error.name : typeof error
+    console.error(`[accounts] deactivateApiKeys failed: ${name}`)
+    throw new AuthError('failed to revoke API keys', { cause: error })
+  }
+}
+
+/**
+ * Rotate a user's API key: revoke every active key, then mint and persist a
+ * fresh one, returning the new raw key for one-time display.
+ *
+ * Revoke-then-mint ordering means that even if the mint were to fail, the caller
+ * is left with no active key (fail-closed) rather than two. The new key's raw
+ * value is returned exactly once and is otherwise unrecoverable (only its digest
+ * is stored).
+ *
+ * Time complexity: O(k) (one revoke over active keys + one insert).
+ * Space complexity: O(1).
+ *
+ * @param db - The persistence seam.
+ * @param userId - The account whose key is rotated (already authenticated).
+ * @returns The new one-time raw API key.
+ * @throws {AuthError} On a database failure.
+ */
+export async function rotateApiKey(db: Database, userId: string): Promise<string> {
+  await deactivateApiKeys(db, userId)
+  try {
+    return await insertApiKey(db, userId, new Date().toISOString())
+  } catch (error: unknown) {
+    const name = error instanceof Error ? error.name : typeof error
+    console.error(`[accounts] rotateApiKey failed: ${name}`)
+    throw new AuthError('failed to mint a new API key', { cause: error })
   }
 }

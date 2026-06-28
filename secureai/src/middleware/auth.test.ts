@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { memoryDatabase } from '../db/memory.test'
-import { createFreeUser } from '../db/accounts'
+import { createFreeUser, createUserWithPassword } from '../db/accounts'
+import { SESSION_COOKIE_NAME, signSession } from '../auth/session'
 import { authenticate } from './auth'
+
+const SECRET = 'auth-test-secret'
 
 function request(headers: Record<string, string>): Request {
   return new Request('https://secureai.test/api/scan', { method: 'POST', headers })
+}
+
+function nowSeconds(): number {
+  return Math.floor(Date.now() / 1000)
 }
 
 describe('authenticate', () => {
@@ -70,5 +77,66 @@ describe('authenticate', () => {
     }
     const ctx = await authenticate(request({ Authorization: `Bearer ${apiKey}` }), db)
     expect(ctx).toEqual({ subject: user.id, tier: 'pro' })
+  })
+
+  it('resolves a valid session cookie to its user when a secret is supplied', async () => {
+    const { db } = memoryDatabase()
+    const { user } = await createUserWithPassword(db, 'cookie@example.com', 'pbkdf2$1$a$b')
+    const token = await signSession(user.id, nowSeconds(), 3600, SECRET)
+    const ctx = await authenticate(
+      request({ Cookie: `${SESSION_COOKIE_NAME}=${token}` }),
+      db,
+      SECRET,
+    )
+    expect(ctx).toEqual({ subject: user.id, tier: 'free' })
+  })
+
+  it('ignores a session cookie when no secret is configured (anonymous)', async () => {
+    const { db } = memoryDatabase()
+    const { user } = await createUserWithPassword(db, 'nosecret@example.com', 'pbkdf2$1$a$b')
+    const token = await signSession(user.id, nowSeconds(), 3600, SECRET)
+    const ctx = await authenticate(
+      request({ Cookie: `${SESSION_COOKIE_NAME}=${token}`, 'CF-Connecting-IP': '1.1.1.1' }),
+      db,
+    )
+    expect(ctx).toEqual({ subject: 'anon:1.1.1.1', tier: 'anonymous' })
+  })
+
+  it('downgrades an expired session cookie to anonymous', async () => {
+    const { db } = memoryDatabase()
+    const { user } = await createUserWithPassword(db, 'expired@example.com', 'pbkdf2$1$a$b')
+    // Issued an hour ago with a 1s TTL → long expired by now.
+    const token = await signSession(user.id, nowSeconds() - 3600, 1, SECRET)
+    const ctx = await authenticate(
+      request({ Cookie: `${SESSION_COOKIE_NAME}=${token}`, 'CF-Connecting-IP': '2.2.2.2' }),
+      db,
+      SECRET,
+    )
+    expect(ctx).toEqual({ subject: 'anon:2.2.2.2', tier: 'anonymous' })
+  })
+
+  it('prefers a valid Bearer key over a session cookie', async () => {
+    const { db } = memoryDatabase()
+    const { user, apiKey } = await createUserWithPassword(db, 'both@example.com', 'pbkdf2$1$a$b')
+    const token = await signSession('some-other-user', nowSeconds(), 3600, SECRET)
+    const ctx = await authenticate(
+      request({ Authorization: `Bearer ${apiKey}`, Cookie: `${SESSION_COOKIE_NAME}=${token}` }),
+      db,
+      SECRET,
+    )
+    expect(ctx).toEqual({ subject: user.id, tier: 'free' })
+  })
+
+  it('downgrades a cookie whose user no longer exists to anonymous', async () => {
+    const { db, store } = memoryDatabase()
+    const { user } = await createUserWithPassword(db, 'gone@example.com', 'pbkdf2$1$a$b')
+    const token = await signSession(user.id, nowSeconds(), 3600, SECRET)
+    store.users.delete(user.id)
+    const ctx = await authenticate(
+      request({ Cookie: `${SESSION_COOKIE_NAME}=${token}`, 'CF-Connecting-IP': '3.3.3.3' }),
+      db,
+      SECRET,
+    )
+    expect(ctx).toEqual({ subject: 'anon:3.3.3.3', tier: 'anonymous' })
   })
 })

@@ -32,7 +32,7 @@ import { preToolUseSchema } from '../schemas/validate'
 import { d1Database } from '../db/database'
 import { authenticate } from '../middleware/auth'
 import { aiAllowedForTier, enforceDailyCap } from '../middleware/gate'
-import { incrementUsage } from '../db/usage'
+import { recordVerdict } from '../db/usage'
 
 const STATUS_OK = 200
 const STATUS_BAD_REQUEST = 400
@@ -123,8 +123,9 @@ export async function handleGuard(
     const db = env.DB !== undefined && env.DB !== null ? d1Database(env.DB) : null
     const today = new Date().toISOString().slice(0, 10)
 
+    const sessionSecret = typeof env.SESSION_SECRET === 'string' ? env.SESSION_SECRET : undefined
     const ctx = db !== null
-      ? await authenticate(request, db)
+      ? await authenticate(request, db, sessionSecret)
       : ({ subject: 'anon:unmetered', tier: 'anonymous' } as const)
 
     if (db !== null) {
@@ -155,7 +156,11 @@ export async function handleGuard(
     })
 
     if (db !== null) {
-      await incrementUsage(db, ctx.subject, today, { ai: inference !== null })
+      // Meter the guarded call. A `null` decision verdict means "nothing
+      // scannable" — a benign ALLOW for stats purposes. The guard decision does
+      // not surface per-URL reputation, so flagged is 0 here.
+      const meteredVerdict = decision.verdict ?? 'ALLOW'
+      await recordVerdict(db, ctx.subject, today, meteredVerdict, 0, { ai: inference !== null })
     }
 
     return Response.json(decision, { status: STATUS_OK })

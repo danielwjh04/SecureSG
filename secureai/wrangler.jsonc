@@ -64,6 +64,15 @@
     // billing routes function. The secrets STRIPE_SECRET_KEY and
     // STRIPE_WEBHOOK_SECRET are NOT vars; set them with `wrangler secret put`.
     "STRIPE_PRICE_PRO": "price_1TnAF0FJWAOFEgFe37bi8IFf",
-    "SCANNER_APP_BASE_URL": "https://secureai.zurielst.com"
+    "SCANNER_APP_BASE_URL": "https://secureai.zurielst.com",
+    // Email/password auth tunables (non-secret). The SESSION_SECRET that signs
+    // session cookies is a SECRET, not a var — set it with
+    // `wrangler secret put SESSION_SECRET`; without it the /api/register and
+    // /api/login routes return 503 and only Bearer API-key auth works.
+    // SCANNER_PBKDF2_ITERATIONS is the password-hash cost (raise as hardware
+    // improves; default 210000, min 100000). SCANNER_SESSION_TTL_SECONDS is the
+    // session lifetime (default 7 days).
+    "SCANNER_PBKDF2_ITERATIONS": "100000",
+    "SCANNER_SESSION_TTL_SECONDS": "604800"
   }
 }

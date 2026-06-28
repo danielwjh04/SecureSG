@@ -3,7 +3,13 @@ import { memoryDatabase } from './memory.test'
 import { AuthError } from '../errors'
 import {
   createFreeUser,
+  createUserWithPassword,
+  deactivateApiKeys,
+  findTierByUserId,
   findUserByApiKey,
+  findUserByEmail,
+  getAccountProfile,
+  rotateApiKey,
   setTierByStripeCustomer,
   setUserTier,
   sha256Hex,
@@ -126,5 +132,115 @@ describe('tier mutation', () => {
     await expect(setUserTier(db, 'whatever', 'pro')).rejects.toBeInstanceOf(AuthError)
     store.failNext = true
     await expect(setTierByStripeCustomer(db, 'cus_x', 'pro')).rejects.toBeInstanceOf(AuthError)
+  })
+})
+
+describe('createUserWithPassword', () => {
+  it('provisions a free user with a stored password hash and a one-time key', async () => {
+    const { db, store } = memoryDatabase()
+    const { user, apiKey } = await createUserWithPassword(db, 'pw@example.com', 'pbkdf2$1$a$b')
+
+    expect(user.tier).toBe('free')
+    expect(user.email).toBe('pw@example.com')
+    expect(apiKey).toMatch(/^sk_secureai_[0-9a-f]{64}$/)
+    expect(store.users.get(user.id)?.password_hash).toBe('pbkdf2$1$a$b')
+    // The new account also has an active API key.
+    expect(await findUserByApiKey(db, apiKey)).toEqual({ userId: user.id, tier: 'free' })
+  })
+
+  it('rejects a duplicate email as an AuthError', async () => {
+    const { db } = memoryDatabase()
+    await createUserWithPassword(db, 'dup2@example.com', 'pbkdf2$1$a$b')
+    await expect(
+      createUserWithPassword(db, 'dup2@example.com', 'pbkdf2$1$c$d'),
+    ).rejects.toBeInstanceOf(AuthError)
+  })
+})
+
+describe('findUserByEmail', () => {
+  it('resolves an account by email with its password hash', async () => {
+    const { db } = memoryDatabase()
+    const { user } = await createUserWithPassword(db, 'find@example.com', 'pbkdf2$1$a$b')
+    const found = await findUserByEmail(db, 'find@example.com')
+    expect(found).toEqual({
+      id: user.id,
+      email: 'find@example.com',
+      tier: 'free',
+      passwordHash: 'pbkdf2$1$a$b',
+    })
+  })
+
+  it('returns a null password hash for an API-key-only account (no password)', async () => {
+    const { db } = memoryDatabase()
+    await createFreeUser(db, 'keyonly@example.com')
+    const found = await findUserByEmail(db, 'keyonly@example.com')
+    expect(found?.passwordHash).toBeNull()
+  })
+
+  it('returns null on an unknown email (miss, not an error)', async () => {
+    const { db } = memoryDatabase()
+    expect(await findUserByEmail(db, 'nobody@example.com')).toBeNull()
+  })
+})
+
+describe('findTierByUserId', () => {
+  it('resolves a known user id to its tier', async () => {
+    const { db } = memoryDatabase()
+    const { user } = await createFreeUser(db, 'tier@example.com')
+    expect(await findTierByUserId(db, user.id)).toBe('free')
+    await setUserTier(db, user.id, 'pro')
+    expect(await findTierByUserId(db, user.id)).toBe('pro')
+  })
+
+  it('returns null for an unknown user id', async () => {
+    const { db } = memoryDatabase()
+    expect(await findTierByUserId(db, 'no-such-user')).toBeNull()
+  })
+})
+
+describe('getAccountProfile', () => {
+  it('returns the profile with the brand prefix when an active key exists', async () => {
+    const { db } = memoryDatabase()
+    const { user } = await createUserWithPassword(db, 'prof@example.com', 'pbkdf2$1$a$b')
+    const profile = await getAccountProfile(db, user.id)
+    expect(profile?.email).toBe('prof@example.com')
+    expect(profile?.tier).toBe('free')
+    expect(profile?.createdAt).toBe(user.createdAt)
+    expect(profile?.apiKeyPrefix).toBe('sk_secureai_')
+  })
+
+  it('reports a null apiKeyPrefix when the account has no active key', async () => {
+    const { db } = memoryDatabase()
+    const { user } = await createFreeUser(db, 'nokey@example.com')
+    await deactivateApiKeys(db, user.id)
+    const profile = await getAccountProfile(db, user.id)
+    expect(profile?.apiKeyPrefix).toBeNull()
+  })
+
+  it('returns null for an unknown user id', async () => {
+    const { db } = memoryDatabase()
+    expect(await getAccountProfile(db, 'ghost')).toBeNull()
+  })
+})
+
+describe('rotateApiKey / deactivateApiKeys', () => {
+  it('mints a new working key and deactivates the previous one', async () => {
+    const { db } = memoryDatabase()
+    const { user, apiKey: oldKey } = await createFreeUser(db, 'rotate@example.com')
+    expect(await findUserByApiKey(db, oldKey)).not.toBeNull()
+
+    const newKey = await rotateApiKey(db, user.id)
+    expect(newKey).toMatch(/^sk_secureai_[0-9a-f]{64}$/)
+    expect(newKey).not.toBe(oldKey)
+    // The old key no longer authenticates; the new one does.
+    expect(await findUserByApiKey(db, oldKey)).toBeNull()
+    expect(await findUserByApiKey(db, newKey)).toEqual({ userId: user.id, tier: 'free' })
+  })
+
+  it('deactivateApiKeys on a user with no active keys is a no-op', async () => {
+    const { db } = memoryDatabase()
+    const { user } = await createFreeUser(db, 'noop@example.com')
+    await deactivateApiKeys(db, user.id)
+    await expect(deactivateApiKeys(db, user.id)).resolves.toBeUndefined()
   })
 })

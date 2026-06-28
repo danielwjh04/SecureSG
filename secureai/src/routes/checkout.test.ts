@@ -4,9 +4,11 @@ import { createFreeUser } from '../db/accounts'
 import { getUserById } from '../db/billing'
 import { FakeBillingGateway } from '../billing/fake.test'
 import { loadConfig } from '../config/env'
+import { SESSION_COOKIE_NAME, signSession } from '../auth/session'
 import { handleCheckout } from './checkout'
 
 const config = loadConfig({ STRIPE_PRICE_PRO: 'price_pro_12' })
+const SESSION_SECRET = 'checkout-cookie-secret'
 
 function post(apiKey?: string): Request {
   const headers: Record<string, string> = {}
@@ -84,6 +86,36 @@ describe('handleCheckout', () => {
     store.users.delete(user.id)
     const gw = new FakeBillingGateway()
     const res = await handleCheckout(post(apiKey), db, gw, config)
+    expect(res.status).toBe(401)
+  })
+
+  it('authenticates via a session cookie when a secret is supplied', async () => {
+    const { db } = memoryDatabase()
+    const { user } = await createFreeUser(db, 'cookie-checkout@example.com')
+    const gw = new FakeBillingGateway()
+    gw.ensuredCustomerId = 'cus_cookie'
+    const token = await signSession(user.id, Math.floor(Date.now() / 1000), 3600, SESSION_SECRET)
+
+    const req = new Request('https://secureai.test/api/checkout', {
+      method: 'POST',
+      headers: { Cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    })
+    const res = await handleCheckout(req, db, gw, config, SESSION_SECRET)
+    expect(res.status).toBe(200)
+    expect(gw.lastEnsure?.userId).toBe(user.id)
+  })
+
+  it('rejects a session cookie with 401 when no secret is supplied', async () => {
+    const { db } = memoryDatabase()
+    const { user } = await createFreeUser(db, 'no-secret-checkout@example.com')
+    const gw = new FakeBillingGateway()
+    const token = await signSession(user.id, Math.floor(Date.now() / 1000), 3600, SESSION_SECRET)
+    const req = new Request('https://secureai.test/api/checkout', {
+      method: 'POST',
+      headers: { Cookie: `${SESSION_COOKIE_NAME}=${token}` },
+    })
+    // No sessionSecret passed → cookie ignored → anonymous → 401.
+    const res = await handleCheckout(req, db, gw, config)
     expect(res.status).toBe(401)
   })
 

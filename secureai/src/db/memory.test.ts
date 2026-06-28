@@ -23,6 +23,7 @@ interface UserRecord {
   tier: string
   stripe_customer_id: string | null
   created_at: string
+  password_hash: string | null
 }
 
 interface ApiKeyRecord {
@@ -37,6 +38,10 @@ interface UsageRecord {
   day: string
   scans: number
   ai_scans: number
+  allows: number
+  reviews: number
+  blocks: number
+  flagged: number
 }
 
 interface SubscriptionRecord {
@@ -98,6 +103,41 @@ export class MemoryStore {
       const record = this.usage.get(usageKey(String(params[0]), String(params[1])))
       return record === undefined ? null : { scans: record.scans, ai_scans: record.ai_scans }
     }
+    if (sql.includes('FROM api_keys WHERE user_id')) {
+      // Active-key existence probe (getAccountProfile).
+      const userId = String(params[0])
+      for (const key of this.apiKeys.values()) {
+        if (key.user_id === userId && key.status === 'active') {
+          return { present: 1 }
+        }
+      }
+      return null
+    }
+    if (sql.includes('email, tier, password_hash FROM users WHERE email')) {
+      const email = String(params[0])
+      for (const user of this.users.values()) {
+        if (user.email === email) {
+          return {
+            id: user.id,
+            email: user.email,
+            tier: user.tier,
+            password_hash: user.password_hash,
+          }
+        }
+      }
+      return null
+    }
+    if (sql.includes('SELECT tier FROM users WHERE id')) {
+      const user = this.users.get(String(params[0]))
+      return user === undefined ? null : { tier: user.tier }
+    }
+    if (sql.includes('email, tier, created_at FROM users WHERE id')) {
+      // getAccountProfile user read.
+      const user = this.users.get(String(params[0]))
+      return user === undefined
+        ? null
+        : { email: user.email, tier: user.tier, created_at: user.created_at }
+    }
     if (sql.includes('FROM users WHERE id')) {
       const user = this.users.get(String(params[0]))
       return user === undefined
@@ -116,6 +156,32 @@ export class MemoryStore {
     throw new Error(`MemoryStore: unrecognized queryOne SQL: ${sql}`)
   }
 
+  /** Apply a read that may return many rows (the stats range read). */
+  public queryAll(sql: string, params: readonly unknown[]): Record<string, unknown>[] {
+    this.maybeFail()
+    if (sql.includes('FROM usage') && sql.includes('day >=')) {
+      const subject = String(params[0])
+      const sinceDay = String(params[1])
+      const rows: Record<string, unknown>[] = []
+      for (const record of this.usage.values()) {
+        if (record.subject === subject && record.day >= sinceDay) {
+          rows.push({
+            day: record.day,
+            scans: record.scans,
+            allows: record.allows,
+            reviews: record.reviews,
+            blocks: record.blocks,
+            flagged: record.flagged,
+          })
+        }
+      }
+      // ORDER BY day ASC.
+      rows.sort((a, b) => String(a['day']).localeCompare(String(b['day'])))
+      return rows
+    }
+    throw new Error(`MemoryStore: unrecognized queryAll SQL: ${sql}`)
+  }
+
   /** Apply a write (insert / update / upsert), returning the row-change count. */
   public execute(sql: string, params: readonly unknown[]): WriteResult {
     this.maybeFail()
@@ -127,12 +193,16 @@ export class MemoryStore {
           throw new Error('UNIQUE constraint failed: users.email')
         }
       }
+      // createUserWithPassword passes a 6th param (password_hash); createFreeUser
+      // passes 5 and leaves it null.
+      const passwordHash = params.length > 5 && params[5] !== null ? String(params[5]) : null
       this.users.set(id, {
         id,
         email,
         tier: String(params[2]),
         stripe_customer_id: params[3] === null ? null : String(params[3]),
         created_at: String(params[4]),
+        password_hash: passwordHash,
       })
       return { changes: 1 }
     }
@@ -146,6 +216,40 @@ export class MemoryStore {
       })
       return { changes: 1 }
     }
+    if (sql.startsWith('INSERT INTO usage') && sql.includes('allows')) {
+      // recordVerdict: scans + ai_scans + the verdict column + flagged.
+      // Params: subject, day, aiDelta, allowsDelta, reviewsDelta, blocksDelta,
+      //         flaggedDelta, aiDelta(update), flaggedDelta(update).
+      const subject = String(params[0])
+      const day = String(params[1])
+      const aiDelta = Number(params[2])
+      const allowsDelta = Number(params[3])
+      const reviewsDelta = Number(params[4])
+      const blocksDelta = Number(params[5])
+      const flaggedDelta = Number(params[6])
+      const composite = usageKey(subject, day)
+      const existing = this.usage.get(composite)
+      if (existing === undefined) {
+        this.usage.set(composite, {
+          subject,
+          day,
+          scans: 1,
+          ai_scans: aiDelta,
+          allows: allowsDelta,
+          reviews: reviewsDelta,
+          blocks: blocksDelta,
+          flagged: flaggedDelta,
+        })
+      } else {
+        existing.scans += 1
+        existing.ai_scans += aiDelta
+        existing.allows += allowsDelta
+        existing.reviews += reviewsDelta
+        existing.blocks += blocksDelta
+        existing.flagged += flaggedDelta
+      }
+      return { changes: 1 }
+    }
     if (sql.startsWith('INSERT INTO usage')) {
       const subject = String(params[0])
       const day = String(params[1])
@@ -153,7 +257,16 @@ export class MemoryStore {
       const composite = usageKey(subject, day)
       const existing = this.usage.get(composite)
       if (existing === undefined) {
-        this.usage.set(composite, { subject, day, scans: 1, ai_scans: aiDelta })
+        this.usage.set(composite, {
+          subject,
+          day,
+          scans: 1,
+          ai_scans: aiDelta,
+          allows: 0,
+          reviews: 0,
+          blocks: 0,
+          flagged: 0,
+        })
       } else {
         existing.scans += 1
         existing.ai_scans += aiDelta
@@ -213,6 +326,17 @@ export class MemoryStore {
       user.stripe_customer_id = customerId
       return { changes: 1 }
     }
+    if (sql.startsWith("UPDATE api_keys SET status = 'revoked' WHERE user_id")) {
+      const userId = String(params[0])
+      let changes = 0
+      for (const key of this.apiKeys.values()) {
+        if (key.user_id === userId && key.status === 'active') {
+          key.status = 'revoked'
+          changes += 1
+        }
+      }
+      return { changes }
+    }
     throw new Error(`MemoryStore: unrecognized execute SQL: ${sql}`)
   }
 }
@@ -232,6 +356,10 @@ class MemoryStatement {
 
   public async first<T = Record<string, unknown>>(): Promise<T | null> {
     return this.store.queryOne(this.sql, this.params) as T | null
+  }
+
+  public async all<T = Record<string, unknown>>(): Promise<{ results: T[] }> {
+    return { results: this.store.queryAll(this.sql, this.params) as T[] }
   }
 
   public async run(): Promise<{ meta: { changes: number } }> {

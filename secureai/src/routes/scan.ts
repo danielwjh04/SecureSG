@@ -27,7 +27,7 @@ import { scanRequestSchema } from '../schemas/validate'
 import { d1Database } from '../db/database'
 import { authenticate } from '../middleware/auth'
 import { aiAllowedForTier, enforceDailyCap } from '../middleware/gate'
-import { incrementUsage } from '../db/usage'
+import { recordVerdict } from '../db/usage'
 
 const STATUS_OK = 200
 const STATUS_BAD_REQUEST = 400
@@ -121,9 +121,11 @@ export async function handleScan(
     const db = env.DB !== undefined && env.DB !== null ? d1Database(env.DB) : null
     const today = new Date().toISOString().slice(0, 10)
 
-    // Anonymous-by-default when there is no store to resolve a key against.
+    // Anonymous-by-default when there is no store to resolve a credential
+    // against. With a store, accept either a Bearer key or a session cookie.
+    const sessionSecret = typeof env.SESSION_SECRET === 'string' ? env.SESSION_SECRET : undefined
     const ctx = db !== null
-      ? await authenticate(request, db)
+      ? await authenticate(request, db, sessionSecret)
       : ({ subject: 'anon:unmetered', tier: 'anonymous' } as const)
 
     if (db !== null) {
@@ -154,7 +156,13 @@ export async function handleScan(
     })
 
     if (db !== null) {
-      await incrementUsage(db, ctx.subject, today, { ai: inference !== null })
+      // Meter the scan: scans + the verdict column + flagged-indicator count +
+      // ai_scans, in one atomic upsert, so the protection stats stay consistent
+      // with the scan count.
+      const flaggedCount = result.reputation.filter((report) => report.flagged).length
+      await recordVerdict(db, ctx.subject, today, result.verdict, flaggedCount, {
+        ai: inference !== null,
+      })
     }
 
     return Response.json(result, { status: STATUS_OK })

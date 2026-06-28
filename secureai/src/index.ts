@@ -6,9 +6,11 @@
  * returns 500 before a handler runs, never entering the request path.
  */
 
-import type { Env } from './config/env'
+import type { Env, ScannerConfig } from './config/env'
 import type { Database } from './db/database'
 import type { BillingGateway } from './billing/stripe'
+import type { AuthDeps } from './routes/auth'
+import type { StatsDeps } from './routes/stats'
 import { loadConfig } from './config/env'
 import { handleGuard } from './routes/guard'
 import { handleScan } from './routes/scan'
@@ -17,6 +19,14 @@ import { handleVerify } from './routes/verify'
 import { handleCheckout } from './routes/checkout'
 import { handlePortal } from './routes/portal'
 import { handleWebhook } from './routes/webhook'
+import {
+  handleKeyRotate,
+  handleLogin,
+  handleLogout,
+  handleMe,
+  handleRegister,
+} from './routes/auth'
+import { handleStats } from './routes/stats'
 import { d1Database } from './db/database'
 import { buildStripe, StripeBillingGateway } from './billing/stripe'
 import { ParseError, ScannerError } from './errors'
@@ -28,6 +38,12 @@ const ROUTE_SIGNUP = '/api/signup'
 const ROUTE_CHECKOUT = '/api/checkout'
 const ROUTE_PORTAL = '/api/portal'
 const ROUTE_WEBHOOK = '/api/webhook'
+const ROUTE_REGISTER = '/api/register'
+const ROUTE_LOGIN = '/api/login'
+const ROUTE_LOGOUT = '/api/logout'
+const ROUTE_ME = '/api/me'
+const ROUTE_STATS = '/api/stats'
+const ROUTE_KEY_ROTATE = '/api/key/rotate'
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -85,7 +101,13 @@ export default {
         return jsonError('method not allowed', 405)
       }
       // handleCheckout owns its own error→status mapping and never throws.
-      return await handleCheckout(request, billingDatabase(env), billingGateway(env), config)
+      return await handleCheckout(
+        request,
+        billingDatabase(env),
+        billingGateway(env),
+        config,
+        sessionSecretOf(env),
+      )
     }
 
     if (url.pathname === ROUTE_PORTAL) {
@@ -93,7 +115,13 @@ export default {
         return jsonError('method not allowed', 405)
       }
       // handlePortal owns its own error→status mapping and never throws.
-      return await handlePortal(request, billingDatabase(env), billingGateway(env), config)
+      return await handlePortal(
+        request,
+        billingDatabase(env),
+        billingGateway(env),
+        config,
+        sessionSecretOf(env),
+      )
     }
 
     if (url.pathname === ROUTE_WEBHOOK) {
@@ -106,6 +134,48 @@ export default {
       return await handleWebhook(request, billingDatabase(env), billingGateway(env), day)
     }
 
+    if (url.pathname === ROUTE_REGISTER) {
+      if (request.method !== 'POST') {
+        return jsonError('method not allowed', 405)
+      }
+      return await handleRegister(request, authDeps(env, config))
+    }
+
+    if (url.pathname === ROUTE_LOGIN) {
+      if (request.method !== 'POST') {
+        return jsonError('method not allowed', 405)
+      }
+      return await handleLogin(request, authDeps(env, config))
+    }
+
+    if (url.pathname === ROUTE_LOGOUT) {
+      if (request.method !== 'POST') {
+        return jsonError('method not allowed', 405)
+      }
+      return handleLogout()
+    }
+
+    if (url.pathname === ROUTE_ME) {
+      if (request.method !== 'GET') {
+        return jsonError('method not allowed', 405)
+      }
+      return await handleMe(request, authDeps(env, config))
+    }
+
+    if (url.pathname === ROUTE_STATS) {
+      if (request.method !== 'GET') {
+        return jsonError('method not allowed', 405)
+      }
+      return await handleStats(request, statsDeps(env, config))
+    }
+
+    if (url.pathname === ROUTE_KEY_ROTATE) {
+      if (request.method !== 'POST') {
+        return jsonError('method not allowed', 405)
+      }
+      return await handleKeyRotate(request, authDeps(env, config))
+    }
+
     return jsonError('not found', 404)
   },
 } satisfies ExportedHandler<Env>
@@ -116,6 +186,26 @@ export default {
  */
 function billingDatabase(env: Env): Database | null {
   return env.DB !== undefined && env.DB !== null ? d1Database(env.DB) : null
+}
+
+/**
+ * Read `SESSION_SECRET` from env, or `null` when unset/empty. Cookie auth is
+ * disabled (Bearer still works) when this is `null`; the register/login routes
+ * return 503.
+ */
+function sessionSecretOf(env: Env): string | null {
+  const secret = env.SESSION_SECRET
+  return typeof secret === 'string' && secret.length > 0 ? secret : null
+}
+
+/** Assemble the auth routes' dependencies (DB seam, session secret, config). */
+function authDeps(env: Env, config: ScannerConfig): AuthDeps {
+  return { db: billingDatabase(env), sessionSecret: sessionSecretOf(env), config }
+}
+
+/** Assemble the stats route's dependencies (DB seam, session secret, config). */
+function statsDeps(env: Env, config: ScannerConfig): StatsDeps {
+  return { db: billingDatabase(env), sessionSecret: sessionSecretOf(env), config }
 }
 
 /**

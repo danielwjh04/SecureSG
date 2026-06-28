@@ -32,15 +32,20 @@ const CANCEL_PATH = '/billing/cancel'
 
 /**
  * Resolve the authenticated user id, or throw an {@link AuthError}. Billing has
- * no anonymous mode: a caller without a key, or with an unknown key, resolves to
- * the anonymous pseudo-tier and is rejected here (mapped to 401).
+ * no anonymous mode: a caller without a credential, or with an unknown one,
+ * resolves to the anonymous pseudo-tier and is rejected here (mapped to 401).
+ * Accepts either a Bearer key or, when `sessionSecret` is set, a session cookie.
  *
  * Time complexity: O(1). Space complexity: O(1).
  *
  * @throws {AuthError} When the caller is not an authenticated account.
  */
-async function requireUserId(request: Request, db: Database): Promise<string> {
-  const ctx = await authenticate(request, db)
+async function requireUserId(
+  request: Request,
+  db: Database,
+  sessionSecret: string | null,
+): Promise<string> {
+  const ctx = await authenticate(request, db, sessionSecret ?? undefined)
   if (ctx.tier === 'anonymous') {
     throw new AuthError('authentication required for billing')
   }
@@ -87,6 +92,7 @@ export async function handleCheckout(
   db: Database | null,
   billing: BillingGateway | null,
   config: ScannerConfig,
+  sessionSecret: string | null = null,
 ): Promise<Response> {
   if (db === null || billing === null) {
     return Response.json(
@@ -95,7 +101,7 @@ export async function handleCheckout(
     )
   }
   try {
-    const userId = await requireUserId(request, db)
+    const userId = await requireUserId(request, db, sessionSecret)
 
     const user = await getUserById(db, userId)
     if (user === null) {

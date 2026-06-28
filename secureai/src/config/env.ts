@@ -20,6 +20,14 @@ export interface Env {
   AI?: unknown // Workers AI binding; typed at the inference call site.
   DB?: D1Database
   KV?: KVNamespace
+  /**
+   * HMAC secret signing stateless session cookies. A SECRET (set via
+   * `wrangler secret put SESSION_SECRET`), so it is read from `env` at the route
+   * — never folded into {@link ScannerConfig}, and never in source. When absent,
+   * cookie auth is simply unavailable and the register/login routes return 503;
+   * Bearer API-key auth keeps working without it.
+   */
+  SESSION_SECRET?: string
   // SCANNER_* string vars (see wrangler.jsonc). Indexed for forward-compat.
   [key: string]: unknown
 }
@@ -59,6 +67,15 @@ export interface ScannerConfig {
   readonly stripePricePro: string
   /** Public base URL for billing redirect (success/cancel) and portal returns. */
   readonly appBaseUrl: string
+  /**
+   * PBKDF2-HMAC-SHA256 iteration count for password hashing. A non-secret cost
+   * tunable (raise it as hardware improves); the per-hash salt and iteration
+   * count are serialized INTO each stored hash, so raising this never breaks
+   * verification of already-stored passwords.
+   */
+  readonly pbkdf2Iterations: number
+  /** Lifetime, in seconds, of a minted session cookie (signed token + cookie Max-Age). */
+  readonly sessionTtlSeconds: number
 }
 
 /**
@@ -103,6 +120,15 @@ export function loadConfig(env: Env): ScannerConfig {
   // billing routes to 503 rather than failing config load for every route.
   const stripePricePro = readString(env, 'STRIPE_PRICE_PRO', 'price_REPLACE')
   const appBaseUrl = readString(env, 'SCANNER_APP_BASE_URL', 'https://secureai.zurielst.com')
+  // Auth tunables (non-secret). IMPORTANT: the Cloudflare Workers runtime caps
+  // crypto.subtle PBKDF2 at 100_000 iterations and THROWS above it (the Node test
+  // runtime has no cap, which hid this). So 100k is the platform ceiling and our
+  // default; the max is pinned to 100_000 so an out-of-range value fails closed at
+  // config load rather than at the first register. (To exceed 100k effective cost
+  // on Workers you must chain multiple deriveBits calls — a future hardening.)
+  // Session TTL defaults to 7 days (604800s), matching the cookie the frontend expects.
+  const pbkdf2Iterations = readIntInRange(env, 'SCANNER_PBKDF2_ITERATIONS', 100000, 10000, 100000)
+  const sessionTtlSeconds = readIntInRange(env, 'SCANNER_SESSION_TTL_SECONDS', 604800, 60, 31536000)
 
   // Cross-field invariants (fail-closed).
   if (!(reviewThreshold < blockThreshold)) {
@@ -144,6 +170,8 @@ export function loadConfig(env: Env): ScannerConfig {
     aiTiers,
     stripePricePro,
     appBaseUrl,
+    pbkdf2Iterations,
+    sessionTtlSeconds,
   }
 }
 

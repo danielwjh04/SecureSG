@@ -44,6 +44,28 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ SCANNER_MAX_URLS: '3.5' })).toThrow(ConfigError)
   })
 
+  it('exposes auth tunables with defaults and overrides', () => {
+    const defaults = loadConfig({})
+    // Default = the Cloudflare Workers PBKDF2 ceiling (100k); anything higher
+    // throws at runtime in the Workers crypto, so the config caps it here.
+    expect(defaults.pbkdf2Iterations).toBe(100000)
+    expect(defaults.sessionTtlSeconds).toBe(604800)
+
+    const overridden = loadConfig({
+      SCANNER_PBKDF2_ITERATIONS: '50000',
+      SCANNER_SESSION_TTL_SECONDS: '3600',
+    })
+    expect(overridden.pbkdf2Iterations).toBe(50000)
+    expect(overridden.sessionTtlSeconds).toBe(3600)
+  })
+
+  it('rejects a PBKDF2 iteration count outside the Workers-safe range', () => {
+    // Above the Workers 100k cap (would throw in the live crypto) -> fail closed.
+    expect(() => loadConfig({ SCANNER_PBKDF2_ITERATIONS: '200000' })).toThrow(ConfigError)
+    // Below the practical floor.
+    expect(() => loadConfig({ SCANNER_PBKDF2_ITERATIONS: '5000' })).toThrow(ConfigError)
+  })
+
   it('exposes billing config with defaults and overrides', () => {
     const defaults = loadConfig({})
     expect(defaults.stripePricePro).toBe('price_REPLACE')
