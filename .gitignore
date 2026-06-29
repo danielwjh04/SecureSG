@@ -37,5 +37,8 @@ graphify-out/
 graphify/
 .graphify_detect.json
 
+# Local code-graph index helper (superseded by graphify-out/; never pushed)
+secureai/graph.json
+
 # Local Obsidian vault config (repo opened as a vault; personal, never pushed)
 .obsidian/
