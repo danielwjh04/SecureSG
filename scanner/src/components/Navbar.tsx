@@ -67,8 +67,8 @@ export function Navbar({ onHome, auth }: NavbarProps) {
     setMenuOpen(false)
   }
   const closeMenu = (): void => setMenuOpen(false)
-  // Mirrors the Settings/Dashboard sign-out: clear the cookie, re-read the
-  // (now anonymous) session, and land on the login screen. Fail-closed: the
+  // Mirrors the Settings sign-out: clear the cookie, re-read the (now
+  // anonymous) session, and land on the login screen. Fail-closed: the
   // redirect runs even if the logout request itself fails.
   const handleLogout = async (): Promise<void> => {
     try {
