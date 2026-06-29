@@ -27,32 +27,17 @@
  */
 
 import type { ScanDeps } from '../scanner/runScan'
-import type { Proof, Verdict } from '../schemas/contract'
+import type { GuardDecision, GuardPermissionDecision, Verdict } from '../schemas/contract'
 import type { PreToolUsePayload } from '../schemas/validate'
 import { parseSkill } from '../pipeline/parse'
 import { runScan } from '../scanner/runScan'
 import { log } from '../observability/logger'
 
-/**
- * The Claude Code permission decision a PreToolUse hook may return.
- *   - `allow`, the tool call proceeds without prompting the user.
- *   - `ask`, Claude Code prompts the user for approval before proceeding.
- *   - `deny`, the tool call is blocked and the reason is fed back to the agent.
- */
-export type GuardPermissionDecision = 'allow' | 'ask' | 'deny'
-
-/**
- * The guard's decision for one tool call. `verdict` is the underlying scanner
- * verdict, or `null` when nothing scannable was present (the decision is then a
- * benign `allow`). `proof` is the tamper-evident scan proof when a scan ran, so
- * the decision can be independently re-verified (omitted when no scan ran).
- */
-export interface GuardDecision {
-  decision: GuardPermissionDecision
-  reason: string
-  verdict: Verdict | null
-  proof?: Proof
-}
+// GuardPermissionDecision and GuardDecision are defined once in @secureai/contract
+// (the server and the SDK share that single definition, re-exported via
+// ../schemas/contract) so the guard response shape can never drift between them.
+// Re-exported here so the route layer keeps importing them from this module.
+export type { GuardDecision, GuardPermissionDecision } from '../schemas/contract'
 
 /**
  * Map a scanner {@link Verdict} to the corresponding Claude Code permission

@@ -151,7 +151,9 @@ function parseProofStep(value: unknown): ProofStep | null {
   }
   return {
     index: value.index,
-    kind: value.kind,
+    // Carried through verbatim for re-verification: the server only emits valid
+    // ProofStepKind values and the SDK never switches on the kind.
+    kind: value.kind as ProofStep['kind'],
     payload: value.payload as ProofStep['payload'],
     prevHash: value.prevHash,
     currHash: value.currHash,
