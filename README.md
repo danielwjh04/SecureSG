@@ -31,10 +31,10 @@ SecureAI covers both, and makes each decision provable instead of asking you to 
 
 ## 🔗 Two surfaces, one proof
 
-| | Scanner (the hosted scanner) | Guard (Claude Code) |
+| | Scanner (the hosted scanner) | Guard (Claude Code, Cursor, and Codex) |
 |---|---|---|
-| Boundary | Supply chain, before an agent trusts a skill, tool, or link | Runtime, every tool call an agent makes |
-| Form | Hosted web app plus API (paste a skill or link, get a verdict) | A Claude Code PreToolUse hook you install in one line |
+| Boundary | Supply chain, before an agent trusts a skill, tool, or link | Runtime, every supported tool call an agent makes |
+| Form | Hosted web app plus API (paste a skill or link, get a verdict) | Claude Code, Cursor, and Codex hooks that call `/api/guard` |
 | Shared proof | A SHA-256 proof you re-verify in-browser | The same SHA-256 hash-chained proof, re-verified on demand |
 
 Both run the same engine and the same thesis: a tamper-evident cryptographic chain that lets anyone confirm the guard was correct.
@@ -56,13 +56,13 @@ No security team required: sign up, drop in one line, and every tool call your a
      -d '{"sourceUrl":"https://github.com/owner/some-skill"}'
    ```
 
-4. **Install the Guard** for Claude Code with the key-embedded one-liner from your dashboard:
+4. **Install the Guard** with the key-embedded one-liner from your dashboard:
 
    ```bash
    curl -fsSL https://secureai.software/install.sh | SECUREAI_API_KEY=sk_... bash
    ```
 
-   It wires a PreToolUse hook into `~/.claude/settings.json` (re-run anytime, idempotent). From then on every tool call is screened **ALLOW / ASK / DENY**, fail-closed.
+   It can wire Claude Code, Cursor, Codex, and browser pairing. Re-run anytime, it replaces prior SecureAI hook entries instead of duplicating them.
 
 ---
 
@@ -86,7 +86,7 @@ The scanner is built around its pipeline, not bolted onto it. The cheap, determi
 
 - **The SSRF-guarded tracer is the floor.** Before every hop the destination host is resolved and re-checked, and private, loopback, link-local, and cloud-metadata addresses are refused. We never let the scanner reach internal infrastructure, and we re-verify after each redirect rather than trusting the prior hop.
 - **Known-bad indicators and structural rules decide first.** A hash-set indicator lookup and a small set of structural rules catch raw-IP hosts, look-alikes, shorteners, and embedded execution in the cheap path, so the typical scan never needs a model.
-- **The AI judge can only tighten.** A small open-weight model on Cloudflare Workers AI scores text for injection only when the earlier layers are ambiguous, and may only raise caution. It can never overturn a deterministic block. The deterministic rules are the floor, and the model only adds caution. It is reserved for the Pro tier and fails closed.
+- **The AI judge can only tighten.** A small open-weight model on Cloudflare Workers AI scores text for injection only when the earlier layers are ambiguous, and may only raise caution. It can never overturn a deterministic block. The deterministic rules are the floor, and the model only adds caution. It is reserved for paid tiers and fails closed.
 
 > Privacy note: the model only ever sees stripped scan text on the untrusted-content path, never your account secrets, and the cryptographic verification runs entirely in your browser.
 
@@ -100,7 +100,18 @@ Deployed on Cloudflare (one Worker serves the React SPA via Static Assets plus t
 
 ## 🧱 Guard (defense in depth)
 
-Once an agent is running, the same verifiable-enforcement principle guards every action it takes. The Guard is a zero-dependency Claude Code PreToolUse hook you install in one line from your member dashboard. The installer embeds your API key, so every tool call is routed through SecureAI before it runs. A known-bad destination or an injection payload returns a real `deny` inline, and if the check cannot run the action is denied, not allowed (fail-closed). The dashboard hands you both the download and the one-line installer, and Cursor (`beforeShellExecution` / `beforeMCPExecution`) is the documented fast-follow.
+Once an agent is running, the same verifiable-enforcement principle guards supported actions before they run. The Claude Code Guard is a zero-dependency PreToolUse hook you install in one line from your member dashboard. Cursor support now lives in `integrations/cursor/` for `beforeShellExecution` and `beforeMCPExecution` hooks. Codex support now lives in `integrations/codex/` for `PreToolUse` hooks. These adapters route actions through SecureAI before they run. A known-bad destination or an injection payload returns a real `deny` inline, and if the check cannot run the action is denied, not allowed (fail-closed).
+
+## Browser extension (Chrome and Edge MV3)
+
+The browser extension lives in `extensions/chrome/`. It adds "Scan with SecureAI" on supported GitHub and raw GitHub pages, scans selected or pasted text, and guards supported browser AI pages before content is sent.
+
+The browser protection boundary is explicit:
+
+- **Ingestion protection:** scan browser-visible pages, links, selected text, pasted text, and submitted text before a browser-visible AI agent reads it.
+- **Egress protection:** turn risky destinations learned from the user's own scan results into Chrome `declarativeNetRequest` dynamic block rules.
+- **Honest limitation:** the extension cannot see or block actions that OpenAI, Anthropic, Perplexity, or another provider runs only on its own servers.
+- **Feed licensing:** the extension never downloads raw abuse.ch or other raw threat-feed rows. DNR rules are derived only from the user's own scan results.
 
 ---
 
@@ -108,17 +119,18 @@ Once an agent is running, the same verifiable-enforcement principle guards every
 
 Sign up with email + password (hashed with PBKDF2, 100,000 iterations) and, when `RESEND_API_KEY` is set, confirm a one-time 6-digit code emailed via Resend (2FA), valid for 10 minutes (max 5 attempts). A login issues an HMAC-signed session cookie that lasts 7 days. Every account carries a rotatable API key, stored only as its SHA-256 hash, for `Authorization: Bearer` calls to `POST /api/scan`.
 
-Each tier has a daily scan cap, and the AI injection judge is reserved for Pro:
+Each tier has a daily scan cap, and the AI injection judge is reserved for paid tiers:
 
 | Tier | Daily scan cap | AI injection judge |
 |---|---|---|
 | Anonymous | 10 / day | No |
 | Free | 100 / day | No |
+| Personal (S$4.90/mo) | 1,000 / day | Yes |
 | Pro (S$9.90/mo) | 5,000 / day | Yes |
 
-> These caps and the Pro price mirror `secureai/wrangler.jsonc`, they're config, not code, so change them there and keep this table in sync.
+> These caps and paid price ids mirror `secureai/wrangler.jsonc`. They are config, not code, so change them there and keep this table in sync.
 
-Pro is sold through Stripe Checkout (idempotent webhooks + billing portal) at S$9.90/mo. Your dashboard shows protection stats, a 30-day trend, recent scans, your API key (with one-click rotation), and the one-line Guard installer.
+Personal and Pro are sold through Stripe Checkout (idempotent webhooks + billing portal). Your app navigation is Dashboard, Scan, Protection, Activity, Integrations, and Settings. The dashboard shows protection stats, a 30-day trend, recent scans, your API key (with one-click rotation), and the one-line Guard installer.
 
 ## 👥 Team & admin
 
@@ -131,7 +143,7 @@ Accounts carry one of three roles, **owner**, **admin**, or **member**. Admins a
 The AI judge runs on Cloudflare Workers AI, and the deterministic layers run fully without it.
 
 - **Workers AI, no per-request key.** Injection detection calls a small open-weight model through the `env.AI` binding, so there is no GPU, no local setup, and no key to ship per request. The model id is config, so you can point it at a different Workers AI model without touching code.
-- **Deterministic without a model.** Redirect tracing, the SSRF guard, structural rules, known-bad indicators, and the proof chain need no model at all, so the Free tier and every offline check run on them alone. The model is gated to the Pro tier and to remaining budget, and only runs when the earlier layers are ambiguous.
+- **Deterministic without a model.** Redirect tracing, the SSRF guard, structural rules, known-bad indicators, and the proof chain need no model at all, so the Free tier and every offline check run on them alone. The model is gated to configured paid tiers and to remaining budget, and only runs when the earlier layers are ambiguous.
 
 Either way the judge can only ever make a verdict stricter, never weaker.
 
@@ -150,11 +162,15 @@ Both produce the same artifact: a SHA-256 hash-chained proof you can re-verify. 
 
 ## 🧰 Tech stack
 
-Built entirely on Cloudflare's serverless platform, no OpenAI and no Exa.
+Built entirely on Cloudflare's serverless platform with Workers AI, D1, KV, Stripe, and Resend.
 
-**Scanner:** TypeScript on Cloudflare Workers (one Worker serves the SPA via Static Assets plus the API on one origin), Workers AI for the Pro-gated injection model (no per-request key), D1 (edge SQLite) for accounts, roles, API keys, usage and verdict metering, billing, scan history, and the proof rows, KV for the indicator and verdict cache, Stripe for Checkout, idempotent webhooks, and the portal (Pro at S$9.90/mo), Resend for the one-time 6-digit login codes, Web Crypto (`crypto.subtle`) for the SHA-256 proof re-verified client-side plus PBKDF2 password hashing, HMAC-signed session cookies, and SHA-256-hashed API keys, and a React 19 + Vite + Tailwind v4 + recharts front end.
+**Scanner:** TypeScript on Cloudflare Workers (one Worker serves the SPA via Static Assets plus the API on one origin), Workers AI for paid-tier injection checks (no per-request key), D1 (edge SQLite) for accounts, roles, API keys, usage and verdict metering, billing, scan history, and the proof rows, KV for the indicator and verdict cache, Stripe for Checkout, idempotent webhooks, and the portal, Resend for the one-time 6-digit login codes, Web Crypto (`crypto.subtle`) for the SHA-256 proof re-verified client-side plus PBKDF2 password hashing, HMAC-signed session cookies, and SHA-256-hashed API keys, and a React 19 + Vite + Tailwind v4 + recharts front end.
 
-**Guard:** a zero-dependency Claude Code PreToolUse hook that routes each tool call through the same `/api/scan` engine and proof chain, returning a real inline `deny` and failing closed.
+**Guard:** zero-dependency Claude Code, Cursor, and Codex adapters that route supported tool calls through the same `/api/guard` engine and proof chain, returning a real inline `deny` and failing closed.
+
+**Browser extension:** Chrome and Edge MV3 package in `extensions/chrome/`, calling `/api/scan` for browser-visible content and enforcing learned risky destinations locally through DNR.
+
+**SDK:** zero-runtime-dependency TypeScript client in `packages/sdk/` for `scan`, `verify`, and `guard` calls with typed errors and timeouts.
 
 ---
 
