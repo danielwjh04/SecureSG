@@ -1,9 +1,9 @@
 /**
  * Glassmorphism navbar for the dark hero. Animates in from the top, carries the
- * SecureAI mark, and routes between the scanner, Pricing, and the Enterprise page
- * with hash links. The mark calls `onHome` so it always returns to a fresh
+ * SecureAI mark, and routes between public pages or the authenticated Personal
+ * app with hash links. The mark calls `onHome` so it always returns to a fresh
  * scanner landing. The right side is session-aware: a "Log in / Sign up" link
- * when logged out, a "Dashboard" link once a session cookie is present.
+ * when logged out, and app links once a session cookie is present.
  *
  * On phones the primary nav links collapse behind a hamburger toggle: tapping it
  * drops a glass menu with the same links, so every destination stays reachable on
@@ -13,8 +13,21 @@
 
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { BarChart3, LayoutDashboard, Menu, ShieldCheck, X } from 'lucide-react'
+import {
+  Activity,
+  BarChart3,
+  LayoutDashboard,
+  Menu,
+  PlugZap,
+  ScanLine,
+  Settings,
+  Shield,
+  ShieldCheck,
+  X,
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { useHashRoute } from '../hooks/useHashRoute'
+import type { Route } from '../hooks/useHashRoute'
 import type { AuthState } from '../hooks/useAuth'
 
 interface NavbarProps {
@@ -23,6 +36,22 @@ interface NavbarProps {
   /** App-level session state; drives the right-side Log in / Dashboard link. */
   auth: AuthState
 }
+
+interface NavLink {
+  href: string
+  label: string
+  route: Route
+  Icon: LucideIcon
+}
+
+const APP_LINKS: readonly NavLink[] = [
+  { href: '#dashboard', label: 'Dashboard', route: 'dashboard', Icon: LayoutDashboard },
+  { href: '#scan', label: 'Scan', route: 'scanner', Icon: ScanLine },
+  { href: '#protection', label: 'Protection', route: 'protection', Icon: Shield },
+  { href: '#activity', label: 'Activity', route: 'activity', Icon: Activity },
+  { href: '#integrations', label: 'Integrations', route: 'integrations', Icon: PlugZap },
+  { href: '#settings', label: 'Settings', route: 'settings', Icon: Settings },
+]
 
 export function Navbar({ onHome, auth }: NavbarProps) {
   const { route, target } = useHashRoute()
@@ -53,20 +82,33 @@ export function Navbar({ onHome, auth }: NavbarProps) {
                 SecureAI
               </span>
             </a>
-            <div className="hidden md:flex items-center gap-7 text-sm font-medium">
-              <a
-                href="#how"
-                onClick={handleScannerSectionClick}
-                className={linkClass(route === 'scanner' && target === 'how')}
-              >
-                How it works
-              </a>
-              <a href="#pricing" className={linkClass(route === 'pricing')}>
-                Pricing
-              </a>
-              <a href="#enterprise" className={linkClass(route === 'enterprise')}>
-                Enterprise
-              </a>
+            <div className="hidden md:flex items-center gap-5 text-sm font-medium">
+              {auth.status === 'authenticated' ? (
+                APP_LINKS.map(({ href, label, route: itemRoute, Icon }) => (
+                  <a
+                    key={href}
+                    href={href}
+                    onClick={itemRoute === 'scanner' ? handleScannerSectionClick : closeMenu}
+                    className={`inline-flex items-center gap-1.5 ${linkClass(route === itemRoute)}`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {label}
+                  </a>
+                ))
+              ) : (
+                <>
+                  <a
+                    href="#how"
+                    onClick={handleScannerSectionClick}
+                    className={linkClass(route === 'scanner' && target === 'how')}
+                  >
+                    How it works
+                  </a>
+                  <a href="#pricing" className={linkClass(route === 'pricing')}>
+                    Pricing
+                  </a>
+                </>
+              )}
             </div>
           </div>
 
@@ -84,15 +126,6 @@ export function Navbar({ onHome, auth }: NavbarProps) {
                     <span className="hidden sm:inline">Admin</span>
                   </a>
                 )}
-                <a
-                  href="#dashboard"
-                  className={`glass-pill inline-flex items-center gap-1.5 px-3 sm:px-4 py-1.5 ${
-                    route === 'dashboard' ? 'text-white' : 'text-white/70 hover:text-white'
-                  } transition-colors`}
-                >
-                  <LayoutDashboard className="w-4 h-4" />
-                  <span className="hidden sm:inline">Dashboard</span>
-                </a>
               </>
             ) : auth.status === 'anonymous' ? (
               <a
@@ -132,27 +165,36 @@ export function Navbar({ onHome, auth }: NavbarProps) {
               className="md:hidden overflow-hidden"
             >
               <div className="flex flex-col gap-1 pt-3 mt-3 border-t border-white/10 text-sm font-medium">
-                <a
-                  href="#how"
-                  onClick={handleScannerSectionClick}
-                  className="px-2 py-2.5 rounded-xl hover:bg-white/5 text-white/80 hover:text-white transition-colors"
-                >
-                  How it works
-                </a>
-                <a
-                  href="#pricing"
-                  onClick={closeMenu}
-                  className="px-2 py-2.5 rounded-xl hover:bg-white/5 text-white/80 hover:text-white transition-colors"
-                >
-                  Pricing
-                </a>
-                <a
-                  href="#enterprise"
-                  onClick={closeMenu}
-                  className="px-2 py-2.5 rounded-xl hover:bg-white/5 text-white/80 hover:text-white transition-colors"
-                >
-                  Enterprise
-                </a>
+                {auth.status === 'authenticated' ? (
+                  APP_LINKS.map(({ href, label, route: itemRoute, Icon }) => (
+                    <a
+                      key={href}
+                      href={href}
+                      onClick={itemRoute === 'scanner' ? handleScannerSectionClick : closeMenu}
+                      className="px-2 py-2.5 rounded-xl hover:bg-white/5 text-white/80 hover:text-white transition-colors inline-flex items-center gap-2"
+                    >
+                      <Icon className="w-4 h-4" />
+                      {label}
+                    </a>
+                  ))
+                ) : (
+                  <>
+                    <a
+                      href="#how"
+                      onClick={handleScannerSectionClick}
+                      className="px-2 py-2.5 rounded-xl hover:bg-white/5 text-white/80 hover:text-white transition-colors"
+                    >
+                      How it works
+                    </a>
+                    <a
+                      href="#pricing"
+                      onClick={closeMenu}
+                      className="px-2 py-2.5 rounded-xl hover:bg-white/5 text-white/80 hover:text-white transition-colors"
+                    >
+                      Pricing
+                    </a>
+                  </>
+                )}
               </div>
             </motion.div>
           )}

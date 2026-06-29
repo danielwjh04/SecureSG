@@ -12,12 +12,12 @@ function dispatchHash(hash: string): void {
 }
 
 describe('useHashRoute', () => {
-  it('maps the enterprise hash to the enterprise route at the top target', () => {
+  it('treats the old enterprise hash as the scanner route', () => {
     replaceHash('#enterprise')
 
     const { result } = renderHook(() => useHashRoute())
 
-    expect(result.current).toEqual({ route: 'enterprise', target: 'top' })
+    expect(result.current).toEqual({ route: 'scanner', target: 'top' })
   })
 
   it('maps the how-it-works hash to the scanner route and how target', () => {
@@ -43,6 +43,11 @@ describe('useHashRoute', () => {
     ['#login', 'login'],
     ['#register', 'register'],
     ['#dashboard', 'dashboard'],
+    ['#scan', 'scanner'],
+    ['#protection', 'protection'],
+    ['#activity', 'activity'],
+    ['#integrations', 'integrations'],
+    ['#settings', 'settings'],
     ['#admin', 'admin'],
   ])('maps %s to the %s route at the top target', (hash, route) => {
     replaceHash('')

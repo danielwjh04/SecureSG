@@ -6,8 +6,6 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "deploy": "wrangler deploy",
-    "build:gallery": "tsx scripts/build-gallery.ts",
     "lint": "oxlint",
     "typecheck": "tsc -b",
     "test": "vitest",
@@ -16,11 +14,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "exa-js": "^1",
     "hls.js": "^1.6.16",
     "lucide-react": "^1.21.0",
     "motion": "^12.42.0",
-    "openai": "^6",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "recharts": "^3.9.0"

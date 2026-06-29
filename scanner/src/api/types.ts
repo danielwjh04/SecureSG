@@ -36,7 +36,7 @@ export interface GalleryData {
 }
 
 /** The account tier returned by the auth + stats endpoints. */
-export type AccountTier = 'free' | 'pro' | 'enterprise'
+export type AccountTier = 'free' | 'personal' | 'pro' | 'enterprise'
 
 /** The minimal user identity returned by register/login. */
 export interface AuthUser {
@@ -178,7 +178,7 @@ export interface RotateKeyResponse {
 export interface RecentScan {
   id: string
   verdict: Verdict
-  source: { kind: 'paste' | 'url'; ref: string }
+  source: { kind: 'paste' | 'url' | 'mcp'; ref: string }
   flagged: number
   headHash: string
   scannedAt: string
@@ -213,6 +213,7 @@ export interface ContactResponse {
 /** Per-tier account counts in the admin overview. */
 export interface AdminTierCounts {
   free: number
+  personal: number
   pro: number
   enterprise: number
 }
@@ -290,7 +291,7 @@ export interface AdminThreat {
   id: string
   email: string
   verdict: 'BLOCK'
-  source: { kind: 'paste' | 'url'; ref: string }
+  source: { kind: 'paste' | 'url' | 'mcp'; ref: string }
   flagged: number
   headHash: string
   scannedAt: string
@@ -316,7 +317,7 @@ export interface AdminScanDetail {
   id: string
   email: string
   verdict: Verdict
-  source: { kind: 'paste' | 'url'; ref: string }
+  source: { kind: 'paste' | 'url' | 'mcp'; ref: string }
   scannedAt: string
   flagged: number
   headHash: string

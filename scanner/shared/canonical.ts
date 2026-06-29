@@ -15,7 +15,7 @@
  * produced by the proof layer, payloads serialize floats as strings upstream.
  */
 
-import { CanonicalizationError } from '../worker/errors'
+import { CanonicalizationError } from './errors'
 
 /**
  * Serialize a JSON value to its canonical string form: object keys sorted

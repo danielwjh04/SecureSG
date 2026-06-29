@@ -14,7 +14,7 @@ import * as client from '../api/client'
 function overview(partial: Partial<AdminOverview> = {}): AdminOverview {
   return {
     totalUsers: 42,
-    usersByTier: { free: 30, pro: 10, enterprise: 2 },
+    usersByTier: { free: 24, personal: 6, pro: 10, enterprise: 2 },
     signupsDaily: [{ day: '2026-06-27', count: 5 }],
     usageTotals: { scans: 120, allows: 80, reviews: 25, blocks: 15, flagged: 9 },
     activeSubscriptions: 7,
@@ -26,7 +26,7 @@ function overview(partial: Partial<AdminOverview> = {}): AdminOverview {
 function emptyOverview(): AdminOverview {
   return {
     totalUsers: 0,
-    usersByTier: { free: 0, pro: 0, enterprise: 0 },
+    usersByTier: { free: 0, personal: 0, pro: 0, enterprise: 0 },
     signupsDaily: [],
     usageTotals: { scans: 0, allows: 0, reviews: 0, blocks: 0, flagged: 0 },
     activeSubscriptions: 0,
@@ -262,8 +262,9 @@ describe('AdminDashboard · members', () => {
       name: 'Plan for a@securesg.test',
     })
     expect(planSelect).toHaveValue('pro')
-    // It offers all three plans.
+    // It offers all account plans.
     expect(screen.getByRole('option', { name: 'Free' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Personal' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Pro' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Enterprise' })).toBeInTheDocument()
   })
@@ -394,7 +395,7 @@ describe('AdminDashboard · member search', () => {
     // spells out the typeable plan names so an admin discovers the tier filter.
     const search = screen.getByPlaceholderText('Search members by email or plan')
     expect(search).toBeInTheDocument()
-    expect(screen.getByText(/free \/ pro \/ enterprise/)).toBeInTheDocument()
+    expect(screen.getByText(/free \/ personal \/ pro \/ enterprise/)).toBeInTheDocument()
     await waitFor(() => expect(screen.getByText('a@securesg.test')).toBeInTheDocument())
     // The initial load runs with no query (the first unfiltered page).
     expect(fetchSpy).toHaveBeenCalledWith('')

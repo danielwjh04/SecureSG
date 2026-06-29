@@ -16,7 +16,7 @@
 import type { Proof, ProofStep, ProofStepKind } from './contract'
 import { canonicalJson } from './canonical'
 import { computeLinkHash } from './hash'
-import { ProofError } from '../worker/errors'
+import { ProofError } from './errors'
 
 const textEncoder = new TextEncoder()
 

@@ -188,7 +188,7 @@ function DashboardHeader({ email, firstName, tier, onLogout, onUpgrade }: Dashbo
       </div>
       <div className="flex items-center gap-2.5">
         <TierBadge tier={tier} />
-        {tier === 'free' && (
+        {(tier === 'free' || tier === 'personal') && (
           <button
             type="button"
             onClick={onUpgrade}
@@ -216,6 +216,8 @@ function TierBadge({ tier }: { tier: AccountTier }) {
   const tint =
     tier === 'pro'
       ? 'text-allow'
+      : tier === 'personal'
+        ? 'text-sky-300'
       : tier === 'enterprise'
         ? 'text-white'
         : 'text-white/55'
@@ -701,8 +703,8 @@ function GuardSetupCard() {
           </h3>
         </div>
         <p className="text-white/55 text-[13px] leading-relaxed">
-          Screen every tool call your agent makes, fail-closed, so a call is
-          denied unless the Guard clears it. Drop it in as a PreToolUse hook.
+          Screen supported Claude Code, Cursor, and Codex actions before they run.
+          Browser pairing opens the extension flow for visible-content scans and local DNR blocks.
         </p>
       </div>
 
@@ -712,7 +714,7 @@ function GuardSetupCard() {
             SecureAI Guard
           </span>
           <span className="text-white/50 text-[12px]">
-            A zero-dependency hook for your agent.
+            Zero-dependency adapters for your local agents.
           </span>
         </div>
         <a
@@ -735,7 +737,8 @@ function GuardSetupCard() {
           <>
             <p className="text-white/45 text-[12px] leading-relaxed">
               Your key is stored hashed and shown only once, so generating the
-              command mints a fresh API key and revokes your previous keys.
+              command mints a fresh API key and revokes your previous keys. The
+              installer asks which endpoints to wire when run in a terminal.
             </p>
             <button
               type="button"

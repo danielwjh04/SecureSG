@@ -341,9 +341,11 @@ export async function rotateApiKey(): Promise<RotateKeyResponse> {
 }
 
 /** Start a Stripe checkout session and return the URL to redirect to. */
-export async function startCheckout(): Promise<CheckoutResponse> {
+export async function startCheckout(tier: 'personal' | 'pro' = 'pro'): Promise<CheckoutResponse> {
   return request<CheckoutResponse>(API.checkout, {
     method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ tier }),
     ...WITH_CREDENTIALS,
   })
 }

@@ -44,42 +44,34 @@ afterEach(() => {
 })
 
 describe('Pricing', () => {
-  it('renders the three plans with prices and a recommended Pro badge', () => {
+  it('renders the consumer plans with prices and a recommended Personal badge', () => {
     render(<Pricing auth={authState()} />)
 
     expect(screen.getByText('Free')).toBeInTheDocument()
+    expect(screen.getByText('Personal')).toBeInTheDocument()
     expect(screen.getByText('Pro')).toBeInTheDocument()
-    expect(screen.getByText('Enterprise')).toBeInTheDocument()
+    expect(screen.queryByText('Enterprise')).toBeNull()
 
     expect(screen.getByText('S$0')).toBeInTheDocument()
+    expect(screen.getByText('S$4.90')).toBeInTheDocument()
     expect(screen.getByText('S$9.90')).toBeInTheDocument()
     expect(screen.getByText('Recommended')).toBeInTheDocument()
   })
 
-  it('sends an anonymous visitor to register when they click Subscribe', () => {
+  it('sends an anonymous visitor to register when they click a paid plan', () => {
     const { calls } = stubAssign()
     const checkout = vi.spyOn(client, 'startCheckout')
     render(<Pricing auth={authState({ status: 'anonymous' })} />)
 
-    fireEvent.click(screen.getByRole('button', { name: /Subscribe/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Start Personal/ }))
 
     expect(calls).toContain('#register')
     expect(checkout).not.toHaveBeenCalled()
   })
 
-  it('opens the contact form when the Enterprise CTA is clicked', () => {
-    render(<Pricing auth={authState()} />)
-
-    expect(screen.queryByRole('dialog', { name: 'Contact sales' })).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('button', { name: /Contact sales/ }))
-
-    expect(screen.getByRole('dialog', { name: 'Contact sales' })).toBeInTheDocument()
-  })
-
   it('starts Stripe checkout for a signed-in visitor and redirects to the URL', async () => {
     const { calls } = stubAssign()
-    vi.spyOn(client, 'startCheckout').mockResolvedValue({
+    const checkout = vi.spyOn(client, 'startCheckout').mockResolvedValue({
       url: 'https://checkout.stripe.test/session',
     })
     render(
@@ -101,8 +93,9 @@ describe('Pricing', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: /Subscribe/ }))
+    fireEvent.click(screen.getByRole('button', { name: /Start Personal/ }))
 
+    await waitFor(() => expect(checkout).toHaveBeenCalledWith('personal'))
     await waitFor(() =>
       expect(calls).toContain('https://checkout.stripe.test/session'),
     )

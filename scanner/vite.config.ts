@@ -11,7 +11,7 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   plugins: [react(), tailwindcss(), cloudflare()],
   test: {
-    // Vitest 4 multi-project layout. Worker/shared logic runs in a plain Node
+    // Vitest 4 multi-project layout. Shared proof logic runs in a plain Node
     // environment; the React SPA runs in jsdom with the testing-library setup.
     // NOTE: the `test.projects` shape is the documented Vitest 4 API; if the
     // installed Vitest minor diverges, this block may need a small adjustment.
@@ -21,7 +21,7 @@ export default defineConfig({
           name: 'node',
           environment: 'node',
           globals: true,
-          include: ['shared/**/*.test.ts', 'worker/**/*.test.ts'],
+          include: ['shared/**/*.test.ts'],
         },
       },
       {

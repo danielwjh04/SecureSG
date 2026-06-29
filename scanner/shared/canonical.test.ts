@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { canonicalJson } from './canonical'
-import { CanonicalizationError } from '../worker/errors'
+import { CanonicalizationError } from './errors'
 
 describe('canonicalJson', () => {
   it('sorts object keys lexicographically', () => {

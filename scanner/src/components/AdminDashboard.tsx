@@ -65,7 +65,7 @@ import type {
 } from '../api/types'
 
 /** The plans an owner may assign from the members directory, in display order. */
-const ASSIGNABLE_TIERS: readonly AccountTier[] = ['free', 'pro', 'enterprise']
+const ASSIGNABLE_TIERS: readonly AccountTier[] = ['free', 'personal', 'pro', 'enterprise']
 
 /** The shared palette, so cards and charts use exact, consistent colors. */
 const COLOR = {
@@ -75,6 +75,7 @@ const COLOR = {
   signups: 'rgba(255,255,255,0.7)',
   axis: 'rgba(255,255,255,0.35)',
   free: 'rgba(255,255,255,0.45)',
+  personal: '#38bdf8',
   pro: '#34d399',
   enterprise: '#60a5fa',
 } as const
@@ -345,10 +346,11 @@ function SignupsTrend({
   )
 }
 
-/** Tier breakdown as a donut (free / pro / enterprise). */
+/** Tier breakdown as a donut for all account tiers. */
 function TierBreakdown({ tiers, total }: { tiers: AdminTierCounts; total: number }) {
   const data = [
     { name: 'Free', value: tiers.free, color: COLOR.free },
+    { name: 'Personal', value: tiers.personal, color: COLOR.personal },
     { name: 'Pro', value: tiers.pro, color: COLOR.pro },
     { name: 'Enterprise', value: tiers.enterprise, color: COLOR.enterprise },
   ]
@@ -452,7 +454,7 @@ type MembersState =
  * Joined, Scans) loaded from `GET /api/admin/members`. A search input filters by
  * email via the server-side `q` param (debounced ~300ms so a fast typist sends
  * one request, not one per character); the heading count reflects the filtered
- * total. An owner (`canManageRoles`) gets a per-row free/pro/enterprise plan
+ * total. An owner (`canManageRoles`) gets a per-row plan
  * select, a Member/Admin role select, plus a Remove action on non-owner rows;
  * owners' rows show a static "Owner" role badge (but their plan stays
  * switchable), and a non-owner viewer sees every plan and role read-only with no
@@ -598,7 +600,7 @@ function MembersSection({
         ariaLabel="Search members by email or plan"
       />
       <p className="-mt-2 text-white/35 font-mono text-[10px]">
-        Tip: type a plan to filter by tier, free / pro / enterprise.
+        Tip: type a plan to filter by tier, free / personal / pro / enterprise.
       </p>
 
       {state.phase === 'loading' && (
@@ -785,8 +787,8 @@ interface TierCellProps {
 }
 
 /**
- * The plan/tier cell. An owner viewer (`canManageRoles`) gets a free/pro/
- * enterprise select to switch any member's plan; everyone else sees the static
+ * The plan/tier cell. An owner viewer (`canManageRoles`) gets a plan select to
+ * switch any member's plan; everyone else sees the static
  * tier label. Mirrors {@link RoleCell}'s control exactly (styling, pending +
  * refetch), with no owner carve-out, an owner's own plan is switchable too,
  * since plan is not access control.

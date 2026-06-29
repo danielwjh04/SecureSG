@@ -2,7 +2,7 @@
  * The SecureAI Skill Safety Scanner SPA shell: a dark, cinematic surface with a
  * fullscreen background video behind a glass navbar. `useScan` owns the scan
  * lifecycle and `useHashRoute` selects the top-level surface:
- *   - #enterprise        -> the Enterprise page
+ *   - #pricing           -> the pricing page
  *   - scanner, idle/scan -> the scrollable landing (hero + how-it-works + examples)
  *   - scanner, done      -> the full result report (scrolls; video dimmed behind)
  *   - scanner, error     -> a fail-closed error card
@@ -21,11 +21,14 @@ import { EaseOfUse } from './components/EaseOfUse'
 import { VerifyIt } from './components/VerifyIt'
 import { Gallery } from './components/Gallery'
 import { ResultView } from './components/ResultView'
-import { Enterprise } from './components/Enterprise'
 import { Pricing } from './components/Pricing'
 import { Auth } from './components/Auth'
 import { Dashboard } from './components/Dashboard'
 import { AdminDashboard } from './components/AdminDashboard'
+import { Protection } from './components/Protection'
+import { Activity } from './components/Activity'
+import { Integrations } from './components/Integrations'
+import { Settings } from './components/Settings'
 import { useScan } from './scan/useScan'
 import { useHashRoute } from './hooks/useHashRoute'
 import { useAuth } from './hooks/useAuth'
@@ -48,8 +51,8 @@ function Footer(): ReactNode {
           <a href="#" className="hover:text-white transition-colors">
             Scanner
           </a>
-          <a href="#enterprise" className="hover:text-white transition-colors">
-            Enterprise
+          <a href="#pricing" className="hover:text-white transition-colors">
+            Pricing
           </a>
         </div>
       </div>
@@ -117,6 +120,14 @@ function ErrorSurface({
   )
 }
 
+function LoadingSurface({ label }: { label: string }): ReactNode {
+  return (
+    <section className="relative z-10 flex-1 flex items-center justify-center px-6 py-20">
+      <p className="text-white/45 font-mono text-sm">{label}</p>
+    </section>
+  )
+}
+
 function App(): ReactNode {
   const { route, target } = useHashRoute()
   const controller = useScan()
@@ -174,18 +185,6 @@ function App(): ReactNode {
     }
   }, [route, target])
 
-  // Enterprise surface.
-  if (route === 'enterprise') {
-    return (
-      <main id="top" className={SHELL}>
-        <BackgroundVideo />
-        <Navbar onHome={controller.reset} auth={auth} />
-        <Enterprise />
-        <Footer />
-      </main>
-    )
-  }
-
   // Pricing surface.
   if (route === 'pricing') {
     return (
@@ -225,6 +224,70 @@ function App(): ReactNode {
           <section className="relative z-10 flex-1 flex items-center justify-center px-6 py-20">
             <p className="text-white/45 font-mono text-sm">Loading your dashboard…</p>
           </section>
+        )}
+        <Footer />
+      </main>
+    )
+  }
+
+  if (route === 'protection') {
+    return (
+      <main id="top" className={SHELL}>
+        <BackgroundVideo />
+        <div className="fixed inset-0 bg-black/55" aria-hidden="true" />
+        <Navbar onHome={controller.reset} auth={auth} />
+        {auth.status === 'authenticated' && auth.user !== null ? (
+          <Protection />
+        ) : (
+          <LoadingSurface label="Loading protection..." />
+        )}
+        <Footer />
+      </main>
+    )
+  }
+
+  if (route === 'activity') {
+    return (
+      <main id="top" className={SHELL}>
+        <BackgroundVideo />
+        <div className="fixed inset-0 bg-black/55" aria-hidden="true" />
+        <Navbar onHome={controller.reset} auth={auth} />
+        {auth.status === 'authenticated' && auth.user !== null ? (
+          <Activity />
+        ) : (
+          <LoadingSurface label="Loading activity..." />
+        )}
+        <Footer />
+      </main>
+    )
+  }
+
+  if (route === 'integrations') {
+    return (
+      <main id="top" className={SHELL}>
+        <BackgroundVideo />
+        <div className="fixed inset-0 bg-black/55" aria-hidden="true" />
+        <Navbar onHome={controller.reset} auth={auth} />
+        {auth.status === 'authenticated' && auth.user !== null ? (
+          <Integrations />
+        ) : (
+          <LoadingSurface label="Loading integrations..." />
+        )}
+        <Footer />
+      </main>
+    )
+  }
+
+  if (route === 'settings') {
+    return (
+      <main id="top" className={SHELL}>
+        <BackgroundVideo />
+        <div className="fixed inset-0 bg-black/55" aria-hidden="true" />
+        <Navbar onHome={controller.reset} auth={auth} />
+        {auth.status === 'authenticated' && auth.user !== null ? (
+          <Settings user={auth.user} auth={auth} />
+        ) : (
+          <LoadingSurface label="Loading settings..." />
         )}
         <Footer />
       </main>
@@ -278,7 +341,7 @@ function App(): ReactNode {
 
   // Landing (idle / scanning): the cinematic hero over the video, then the
   // translucent-black content sections that scroll up over it (the background
-  // video stays faintly visible through them, matching the Enterprise page).
+  // video stays faintly visible through them, matching the rest of the app).
   return (
     <main id="top" className={SHELL}>
       <BackgroundVideo />

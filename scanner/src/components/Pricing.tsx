@@ -1,30 +1,28 @@
 /**
- * The Pricing page: three citadel-style plan cards in the shared dark/glass
+ * The Pricing page: three consumer plan cards in the shared dark/glass
  * shell. It renders inside the scanner shell (the parent supplies the fixed
  * background video and navbar); this component owns the pricing hero over the
  * video and the solid lower band with the plan cards.
  *
- * The Pro CTA is session-aware: a signed-in visitor goes straight to Stripe
- * checkout; an anonymous one is routed to `#register` first. Enterprise opens an
- * on-brand contact form that POSTs to `/api/contact` so a real conversation can
- * start. Nothing here is mocked.
+ * Paid CTAs are session-aware: a signed-in visitor goes straight to Stripe
+ * checkout; an anonymous one is routed to `#register` first. Nothing here is
+ * mocked.
  */
 
 import { useState } from 'react'
 import { motion } from 'motion/react'
 import {
   ArrowRight,
-  Building2,
   Check,
   Rocket,
   ShieldCheck,
+  Sparkles,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { startCheckout } from '../api/client'
-import { ContactModal } from './ContactModal'
 import type { AuthState } from '../hooks/useAuth'
 
-/** Shared entrance transition, matching the Enterprise page's easing. */
+/** Shared entrance transition for pricing sections. */
 const RISE = {
   initial: { opacity: 0, y: 20 },
   whileInView: { opacity: 1, y: 0 },
@@ -34,13 +32,12 @@ const RISE = {
 
 /** How a plan's primary call to action behaves. */
 type PlanAction =
-  | { kind: 'subscribe' }
+  | { kind: 'subscribe'; tier: 'personal' | 'pro' }
   | { kind: 'link'; href: string }
-  | { kind: 'contact' }
 
 /** One pricing plan descriptor. */
 interface Plan {
-  id: 'free' | 'pro' | 'enterprise'
+  id: 'free' | 'personal' | 'pro'
   Icon: LucideIcon
   name: string
   price: string
@@ -72,38 +69,39 @@ const PLANS: Plan[] = [
     featured: false,
   },
   {
+    id: 'personal',
+    Icon: Sparkles,
+    name: 'Personal',
+    price: 'S$4.90',
+    cadence: '/ month',
+    tagline: 'Personal protection for everyday agent work.',
+    features: [
+      'Everything in Free',
+      'AI prompt-injection detection',
+      'Browser-visible content scans',
+      'Local browser destination blocking',
+      'Personal dashboard and scan history',
+    ],
+    cta: 'Start Personal',
+    action: { kind: 'subscribe', tier: 'personal' },
+    featured: true,
+  },
+  {
     id: 'pro',
     Icon: Rocket,
     name: 'Pro',
     price: 'S$9.90',
     cadence: '/ month',
-    tagline: 'AI-grade detection and your own dashboard.',
+    tagline: 'Higher-volume protection for active builders.',
     features: [
-      'Everything in Free',
-      'AI prompt-injection detection',
-      'Private scans (never published)',
+      'Everything in Personal',
       'Higher daily quota',
-      'Scan history & protection dashboard',
+      'Priority AI checks',
+      'Claude Code, Cursor, and Codex hooks',
+      'SDK access for personal tools',
     ],
-    cta: 'Subscribe',
-    action: { kind: 'subscribe' },
-    featured: true,
-  },
-  {
-    id: 'enterprise',
-    Icon: Building2,
-    name: 'Enterprise',
-    price: 'Contact',
-    cadence: 'us',
-    tagline: 'Run it inside your own perimeter.',
-    features: [
-      'SSO & role-based access',
-      'Self-hosted deployment',
-      'Dedicated SLA & support',
-      'Audit export & retention',
-    ],
-    cta: 'Contact sales',
-    action: { kind: 'contact' },
+    cta: 'Upgrade to Pro',
+    action: { kind: 'subscribe', tier: 'pro' },
     featured: false,
   },
 ]
@@ -115,26 +113,27 @@ interface PricingProps {
 export function Pricing({ auth }: PricingProps) {
   const [checkoutError, setCheckoutError] = useState<string | null>(null)
   const [checkoutBusy, setCheckoutBusy] = useState(false)
-  // Whether the enterprise "Contact sales" form modal is open.
-  const [contactOpen, setContactOpen] = useState(false)
+  const [busyTier, setBusyTier] = useState<'personal' | 'pro' | null>(null)
 
   /**
-   * Drive the Pro CTA. A signed-in visitor goes to Stripe checkout; an anonymous
+   * Drive a paid CTA. A signed-in visitor goes to Stripe checkout; an anonymous
    * one is sent to register first (they can subscribe from the dashboard after).
    */
-  const handleSubscribe = async (): Promise<void> => {
+  const handleSubscribe = async (tier: 'personal' | 'pro'): Promise<void> => {
     if (auth.status !== 'authenticated') {
       window.location.assign('#register')
       return
     }
     setCheckoutBusy(true)
+    setBusyTier(tier)
     setCheckoutError(null)
     try {
-      const { url } = await startCheckout()
+      const { url } = await startCheckout(tier)
       window.location.assign(url)
     } catch {
       setCheckoutError('Could not start checkout. Please try again.')
       setCheckoutBusy(false)
+      setBusyTier(null)
     }
   }
 
@@ -171,8 +170,8 @@ export function Pricing({ auth }: PricingProps) {
             className="text-white/75 text-[15px] md:text-base leading-relaxed max-w-xl"
           >
             Start free with link, IOC, and rule screening backed by a proof you
-            can re-verify. Upgrade for AI prompt-injection detection, private
-            scans, and your own protection dashboard.
+            can re-verify. Upgrade for AI prompt-injection detection, local
+            browser blocking, and your own protection dashboard.
           </motion.p>
         </div>
       </section>
@@ -188,9 +187,8 @@ export function Pricing({ auth }: PricingProps) {
               <PlanCard
                 key={plan.id}
                 plan={plan}
-                busy={plan.id === 'pro' && checkoutBusy}
+                busy={checkoutBusy && busyTier === plan.id}
                 onSubscribe={handleSubscribe}
-                onContact={() => setContactOpen(true)}
               />
             ))}
           </motion.div>
@@ -208,7 +206,6 @@ export function Pricing({ auth }: PricingProps) {
         </div>
       </div>
 
-      {contactOpen && <ContactModal onClose={() => setContactOpen(false)} />}
     </>
   )
 }
@@ -216,12 +213,11 @@ export function Pricing({ auth }: PricingProps) {
 interface PlanCardProps {
   plan: Plan
   busy: boolean
-  onSubscribe: () => void
-  onContact: () => void
+  onSubscribe: (tier: 'personal' | 'pro') => void
 }
 
 /** One pricing plan rendered as a glass card with a feature list and CTA. */
-function PlanCard({ plan, busy, onSubscribe, onContact }: PlanCardProps) {
+function PlanCard({ plan, busy, onSubscribe }: PlanCardProps) {
   const { Icon, name, price, cadence, tagline, features, cta, action, featured } =
     plan
   return (
@@ -273,7 +269,6 @@ function PlanCard({ plan, busy, onSubscribe, onContact }: PlanCardProps) {
         featured={featured}
         busy={busy}
         onSubscribe={onSubscribe}
-        onContact={onContact}
       />
     </div>
   )
@@ -284,15 +279,13 @@ interface PlanCtaProps {
   action: PlanAction
   featured: boolean
   busy: boolean
-  onSubscribe: () => void
-  onContact: () => void
+  onSubscribe: (tier: 'personal' | 'pro') => void
 }
 
 /**
- * The plan CTA: a subscribe button for Pro, a button that opens the contact form
- * for Enterprise, and a link for the rest.
+ * The plan CTA: a subscribe button for paid plans and a link for Free.
  */
-function PlanCta({ cta, action, featured, busy, onSubscribe, onContact }: PlanCtaProps) {
+function PlanCta({ cta, action, featured, busy, onSubscribe }: PlanCtaProps) {
   const solid =
     'inline-flex items-center justify-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-black hover:bg-white/90 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
   const ghost =
@@ -302,20 +295,12 @@ function PlanCta({ cta, action, featured, busy, onSubscribe, onContact }: PlanCt
     return (
       <button
         type="button"
-        onClick={onSubscribe}
+        onClick={() => onSubscribe(action.tier)}
         disabled={busy}
         className={solid}
       >
         {busy ? 'Starting…' : cta}
         {!busy && <ArrowRight className="w-4 h-4" />}
-      </button>
-    )
-  }
-  if (action.kind === 'contact') {
-    return (
-      <button type="button" onClick={onContact} className={featured ? solid : ghost}>
-        {cta}
-        <ArrowRight className="w-4 h-4" />
       </button>
     )
   }

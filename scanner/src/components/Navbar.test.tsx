@@ -39,7 +39,6 @@ describe('Navbar admin link', () => {
     const admin = screen.getByRole('link', { name: /Admin/ })
     expect(admin).toBeInTheDocument()
     expect(admin).toHaveAttribute('href', '#admin')
-    // Dashboard still renders alongside it.
     expect(screen.getByRole('link', { name: /Dashboard/ })).toBeInTheDocument()
   })
 
@@ -57,6 +56,20 @@ describe('Navbar admin link', () => {
     render(<Navbar auth={authState()} />)
     expect(screen.queryByRole('link', { name: /Admin/ })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: /Log in/ })).toBeInTheDocument()
+  })
+})
+
+describe('Navbar app navigation', () => {
+  it('renders the six Personal app links for an authenticated user', () => {
+    render(
+      <Navbar
+        auth={authState({ status: 'authenticated', user: user(false), isAdmin: false })}
+      />,
+    )
+    for (const label of ['Dashboard', 'Scan', 'Protection', 'Activity', 'Integrations', 'Settings']) {
+      expect(screen.getByRole('link', { name: label })).toBeInTheDocument()
+    }
+    expect(screen.queryByRole('link', { name: 'Enterprise' })).toBeNull()
   })
 })
 
@@ -105,16 +118,14 @@ describe('Navbar GitHub link removal', () => {
   it('does not render a GitHub link in the desktop nav', () => {
     render(<Navbar auth={authState()} />)
     expect(screen.queryByRole('link', { name: 'GitHub' })).toBeNull()
-    // The neighbouring Enterprise link it sat after still renders.
-    expect(screen.getByRole('link', { name: 'Enterprise' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Enterprise' })).toBeNull()
   })
 
   it('does not render a GitHub link in the mobile dropdown', () => {
     render(<Navbar auth={authState()} />)
     fireEvent.click(screen.getByRole('button', { name: /Open menu/ }))
-    // The dropdown is open (Enterprise is duplicated) but carries no GitHub link.
-    expect(screen.getAllByRole('link', { name: 'Enterprise' })).toHaveLength(2)
     expect(screen.queryByRole('link', { name: 'GitHub' })).toBeNull()
+    expect(screen.queryByRole('link', { name: 'Enterprise' })).toBeNull()
   })
 })
 
@@ -138,9 +149,8 @@ describe('Navbar mobile menu', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Open menu/ }))
 
-    // Open: the dropdown adds a second Pricing link (plus Enterprise).
+    // Open: the dropdown adds a second Pricing link.
     expect(screen.getAllByRole('link', { name: 'Pricing' })).toHaveLength(2)
-    expect(screen.getAllByRole('link', { name: 'Enterprise' })).toHaveLength(2)
     // The toggle now offers to close.
     expect(screen.getByRole('button', { name: /Close menu/ })).toBeInTheDocument()
   })

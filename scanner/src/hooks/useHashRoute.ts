@@ -1,20 +1,21 @@
 /**
  * Minimal hash-based routing for the single-page scanner: no router dependency,
- * just the top-level surfaces. The hash selects the surface, `#enterprise`,
- * `#pricing`, `#login`, `#register`, `#dashboard`, `#admin`, and anything else
- * is the scanner. Hash routing keeps the URL shareable and the back button
- * working without a history library.
+ * just the top-level surfaces. Hash routing keeps the URL shareable and the
+ * back button working without a history library.
  */
 
 import { useEffect, useState } from 'react'
 
 export type Route =
   | 'scanner'
-  | 'enterprise'
   | 'pricing'
   | 'login'
   | 'register'
   | 'dashboard'
+  | 'protection'
+  | 'activity'
+  | 'integrations'
+  | 'settings'
   | 'admin'
 export type RouteTarget = 'top' | 'how' | 'verify'
 
@@ -31,11 +32,15 @@ export interface HashRoute {
  * verify-it section.
  */
 const HASH_ROUTES: Record<string, HashRoute> = {
-  enterprise: { route: 'enterprise', target: 'top' },
   pricing: { route: 'pricing', target: 'top' },
   login: { route: 'login', target: 'top' },
   register: { route: 'register', target: 'top' },
   dashboard: { route: 'dashboard', target: 'top' },
+  scan: { route: 'scanner', target: 'top' },
+  protection: { route: 'protection', target: 'top' },
+  activity: { route: 'activity', target: 'top' },
+  integrations: { route: 'integrations', target: 'top' },
+  settings: { route: 'settings', target: 'top' },
   admin: { route: 'admin', target: 'top' },
   how: { route: 'scanner', target: 'how' },
   verify: { route: 'scanner', target: 'verify' },

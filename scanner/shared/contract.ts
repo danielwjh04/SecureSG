@@ -94,10 +94,34 @@ export interface Proof {
   headHash: string
 }
 
+/** One MCP tool exposed by an MCP server config. */
+export interface McpToolInput {
+  name: string
+  description?: string
+  permissions?: string[]
+  inputSchema?: unknown
+}
+
+/** MCP server config/setup data accepted by `POST /api/scan`. */
+export interface McpScanInput {
+  name?: string
+  transport?: string
+  command?: string
+  args?: string[]
+  endpoint?: string
+  endpoints?: string[]
+  permissions?: string[]
+  env?: string[] | Record<string, unknown>
+  tools?: McpToolInput[]
+  setup?: string
+  config?: unknown
+}
+
 /** The request body for `POST /api/scan`. Exactly one field is expected. */
 export interface ScanRequest {
   content?: string
   sourceUrl?: string
+  mcp?: McpScanInput
 }
 
 /** The full result of a scan, including the proof and out-of-band metadata. */
@@ -110,7 +134,7 @@ export interface ScanResult {
   proof: Proof
   /** ISO string, set OUTSIDE hashed steps, passed in by the caller. */
   scannedAt: string
-  source: { kind: 'paste' | 'url'; ref: string }
+  source: { kind: 'paste' | 'url' | 'mcp'; ref: string }
 }
 
 /** The result of re-verifying a proof chain. */

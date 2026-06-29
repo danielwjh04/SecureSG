@@ -5,7 +5,6 @@ describe('guardRedirect', () => {
   it('leaves open routes untouched regardless of auth', () => {
     expect(guardRedirect('scanner', 'anonymous', false)).toBeNull()
     expect(guardRedirect('pricing', 'authenticated', false)).toBeNull()
-    expect(guardRedirect('enterprise', 'loading', false)).toBeNull()
   })
 
   describe('#dashboard', () => {
@@ -18,6 +17,15 @@ describe('guardRedirect', () => {
       expect(guardRedirect('dashboard', 'loading', false)).toBeNull()
     })
   })
+
+  it.each(['protection', 'activity', 'integrations', 'settings'] as const)(
+    'gates #%s for authenticated users',
+    (route) => {
+      expect(guardRedirect(route, 'anonymous', false)).toBe('#login')
+      expect(guardRedirect(route, 'authenticated', false)).toBeNull()
+      expect(guardRedirect(route, 'loading', false)).toBeNull()
+    },
+  )
 
   describe('#admin', () => {
     it('redirects an anonymous visitor to login', () => {
