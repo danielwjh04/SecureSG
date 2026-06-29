@@ -2,7 +2,7 @@
 
 ## What This File Is
 
-Single source of truth for how code is written, reasoned about, and reviewed in this repo. Every session starts here. Read it fully before touching anything.
+Single source of truth for how code is written, reasoned about, and reviewed in this repo. AGENTS.md mirrors this file for Codex, so keep the two in sync whenever either one changes; a committed `.githooks/pre-commit` blocks committing one without the other (enable it once with `git config core.hooksPath .githooks`). Every session starts here. Read it fully before touching anything.
 
 ## Project Identity
 
@@ -144,7 +144,7 @@ This is a security product. These rules are stricter than ordinary practice.
 5. AI injection detection, only when earlier layers are ambiguous and only for paid usage.
 6. Seal every step into the proof chain and return the verdict.
 
-**AI inference (Workers AI).** Call the model through the `env.AI` binding, never a hardcoded endpoint. On any inference error, raise `InferenceError` so the scan fails closed. Strip identifying fields before inference. Model output is a probability of unsafe content; the ALLOW / REVIEW / BLOCK thresholds live in config, not in the inference function. Ensure there are NO leaked API keys anywhere in the pushed code... and if there are resolve immediately 
+**AI inference (Workers AI).** Call the model through the `env.AI` binding, never a hardcoded endpoint. On any inference error, raise `InferenceError` so the scan fails closed. Strip identifying fields before inference. Model output is a probability of unsafe content; the ALLOW / REVIEW / BLOCK thresholds live in config, not in the inference function. Ensure there are NO leaked API keys anywhere in the pushed code, and if there are resolve immediately.
 
 **Fail-closed default.** If any required check cannot run, the verdict is BLOCK. High-impact agent actions (shell execution, secret reads, outbound network) default to BLOCK on uncertainty; read-only low-impact actions may default to ALLOW.
 
@@ -177,10 +177,11 @@ secureai/                # the Worker + API (TypeScript on Cloudflare Workers)
     errors.ts
     verdict.ts
     index.ts             # Worker entry, route table
-  migrations/            # D1 schema migrations (accounts → billing → auth/stats
-                         #   → 2FA → roles → scan history)
+  migrations/            # D1 schema migrations (accounts -> billing -> auth/stats
+                         #   -> 2FA -> roles -> scan history)
   wrangler.jsonc
   CLAUDE.md
+  AGENTS.md
   README.md
 scanner/                 # the React 19 + Vite + Tailwind SPA (served by the Worker)
 ```
@@ -226,4 +227,4 @@ Set Stripe and feed API keys with `wrangler secret put`. With no AI binding avai
 
 Diffs carry fewer unnecessary changes, fewer rewrites happen from overcomplication, and clarifying questions arrive before implementation rather than after mistakes.
 
-EMDASHES SHOULD NOT BE USED ANYWHERE IN THE CODEBASE BE IT FRONT END OR BACKEND, EVEN IF I ASK U TO USE AN EMDASH PLEASE REPHRASE IT SUCH THAT THERE IS NO EMDASH BEING USED.AND REPLACED WITH NORMAL HUMAN LANGUAGE OR PUNCTUATION WHERE RELEVANT AND LOGICAL 
+EMDASHES SHOULD NOT BE USED ANYWHERE IN THE CODEBASE BE IT FRONT END OR BACKEND, EVEN IF I ASK U TO USE AN EMDASH PLEASE REPHRASE IT SUCH THAT THERE IS NO EMDASH BEING USED, AND REPLACED WITH NORMAL HUMAN LANGUAGE OR PUNCTUATION WHERE RELEVANT AND LOGICAL.

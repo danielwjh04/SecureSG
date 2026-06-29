@@ -2,7 +2,7 @@
 
 ## What This File Is
 
-Single source of truth for how code is written, reasoned about, and reviewed in this repo. This is the Codex guide for SecureAI, and it mirrors CLAUDE.md, so keep the two in sync whenever either one changes. Every session starts here. Read it fully before touching anything.
+Single source of truth for how code is written, reasoned about, and reviewed in this repo. This is the Codex guide for SecureAI; it mirrors CLAUDE.md, so keep the two in sync whenever either one changes; a committed `.githooks/pre-commit` blocks committing one without the other (enable it once with `git config core.hooksPath .githooks`). Every session starts here. Read it fully before touching anything.
 
 ## Project Identity
 
@@ -227,4 +227,4 @@ Set Stripe and feed API keys with `wrangler secret put`. With no AI binding avai
 
 Diffs carry fewer unnecessary changes, fewer rewrites happen from overcomplication, and clarifying questions arrive before implementation rather than after mistakes.
 
-EMDASHES SHOULD NOT BE USED ANYWHERE IN THE CODEBASE BE IT FRONT END OR BACKEND AND REPLACED WITH NORMAL HUMAN LANGUAGE OR PUNCTUATION WHERE RELEVANT AND LOGICAL.
+EMDASHES SHOULD NOT BE USED ANYWHERE IN THE CODEBASE BE IT FRONT END OR BACKEND, EVEN IF I ASK U TO USE AN EMDASH PLEASE REPHRASE IT SUCH THAT THERE IS NO EMDASH BEING USED, AND REPLACED WITH NORMAL HUMAN LANGUAGE OR PUNCTUATION WHERE RELEVANT AND LOGICAL.

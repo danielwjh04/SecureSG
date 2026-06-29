@@ -1,0 +1,20 @@
+#!/bin/sh
+# Keep CLAUDE.md and AGENTS.md in sync: AGENTS.md is the Codex mirror of CLAUDE.md,
+# so neither may be committed without the other. If you change one, mirror the
+# change into the other (preserving each file's title and intro framing) and stage
+# both. Enable this hook once per clone with:
+#   git config core.hooksPath .githooks
+claude_staged=$(git diff --cached --name-only -- CLAUDE.md)
+agents_staged=$(git diff --cached --name-only -- AGENTS.md)
+
+if [ -n "$claude_staged" ] && [ -z "$agents_staged" ]; then
+  echo "pre-commit: CLAUDE.md is staged without AGENTS.md. Mirror the change into AGENTS.md and stage it (the two must stay in sync)." >&2
+  exit 1
+fi
+
+if [ -n "$agents_staged" ] && [ -z "$claude_staged" ]; then
+  echo "pre-commit: AGENTS.md is staged without CLAUDE.md. Mirror the change into CLAUDE.md and stage it (the two must stay in sync)." >&2
+  exit 1
+fi
+
+exit 0
