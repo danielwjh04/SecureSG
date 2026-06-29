@@ -108,10 +108,8 @@ This prints a `hookSpecificOutput` object with `"permissionDecision": "deny"`.
 Point `SECUREAI_API_URL` at an unreachable host and the same command still
 prints `deny`, the fail-closed path.
 
-## Cursor (documented fast-follow)
+## Cursor
 
 The same model maps onto Cursor's agent hooks via `beforeShellExecution` and
-`beforeMCPExecution` with `failClosed: true`, which is the documented next
-integration. The server side (`/api/guard`) is provider-agnostic, only a thin
-Cursor-shaped client wrapper is needed, so a Cursor adapter is a planned
-fast-follow on top of this Claude Code guard.
+`beforeMCPExecution` with `failClosed: true`. The Cursor adapter now lives in
+`integrations/cursor/`.

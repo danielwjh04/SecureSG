@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node /ABSOLUTE/PATH/TO/secureai-guard.mjs",
+            "timeout": 30,
+            "statusMessage": "Checking SecureAI"
+          }
+        ]
+      }
+    ]
+  }
+}

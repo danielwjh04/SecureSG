@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "node /ABSOLUTE/PATH/TO/secureai-guard.mjs",
+        "timeout": 30,
+        "failClosed": true
+      }
+    ],
+    "beforeMCPExecution": [
+      {
+        "command": "node /ABSOLUTE/PATH/TO/secureai-guard.mjs",
+        "timeout": 30,
+        "failClosed": true
+      }
+    ]
+  }
+}
