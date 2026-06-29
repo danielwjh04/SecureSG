@@ -28,6 +28,7 @@ models/*.gguf
 
 # Local-only working notes, scratch, and office documents (never committed)
 /.local/
+.tmp-installer-*/
 *.docx
 iv.log
 
@@ -35,3 +36,6 @@ iv.log
 graphify-out/
 graphify/
 .graphify_detect.json
+
+# Local Obsidian vault config (repo opened as a vault; personal, never pushed)
+.obsidian/
