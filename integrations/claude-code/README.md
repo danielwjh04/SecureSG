@@ -92,7 +92,7 @@ Everything is configured via the environment, nothing is hardcoded in the hook.
 | Variable             | Default                        | Purpose                                            |
 | -------------------- | ------------------------------ | -------------------------------------------------- |
 | `SECUREAI_API_URL`   | `https://secureai.software` | Base URL of the SecureAI scanner.                  |
-| `SECUREAI_API_KEY`   | _(unset)_                      | If set, sent as `Authorization: Bearer <key>`.     |
+| `SECUREAI_API_KEY`   | _(unset)_                      | Required for hosted or DB-backed Guard decisions.  |
 | `SECUREAI_TIMEOUT_MS`| `5000`                         | Per-request timeout in milliseconds.               |
 
 Set them in the shell that launches Claude Code, or inline in the hook command,

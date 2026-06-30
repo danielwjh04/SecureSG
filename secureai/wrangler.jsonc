@@ -107,6 +107,7 @@
 		// Guard capability policy. These sets classify hook tool calls before URL
 		// scanning so no-URL actions such as secret reads, package installs, and
 		// destructive shell commands still require review.
+		"SCANNER_GUARD_REQUIRE_AUTH": "true",
 		"SCANNER_GUARD_POLICY_VERSION": "1",
 		"SCANNER_GUARD_READ_TOOLS": "read,grep,glob,ls",
 		"SCANNER_GUARD_WRITE_TOOLS": "write,edit,multiedit,notebookedit,apply_patch",

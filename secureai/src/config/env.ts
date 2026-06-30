@@ -104,6 +104,8 @@ export interface ScannerConfig {
    * feed could be briefly masked, the documented tradeoff for the latency win.
    */
   readonly verdictCacheTtlSeconds: number
+  /** Whether DB-backed Guard decisions require an authenticated account. */
+  readonly guardRequireAuth: boolean
   /** Version string folded into guard-decision cache keys. Bump on policy retunes. */
   readonly guardPolicyVersion: string
   /** Guard tool names treated as low-risk filesystem reads when paths are not sensitive. */
@@ -309,6 +311,7 @@ export function loadConfig(env: Env): ScannerConfig {
     0,
     86400,
   )
+  const guardRequireAuth = readBool(env, 'SCANNER_GUARD_REQUIRE_AUTH', true)
   const guardPolicyVersion = readString(env, 'SCANNER_GUARD_POLICY_VERSION', '1')
   const guardReadTools = readSet(env, 'SCANNER_GUARD_READ_TOOLS', 'read,grep,glob,ls')
   const guardWriteTools = readSet(
@@ -498,6 +501,7 @@ export function loadConfig(env: Env): ScannerConfig {
     capProPerDay,
     aiTiers,
     verdictCacheTtlSeconds,
+    guardRequireAuth,
     guardPolicyVersion,
     guardReadTools,
     guardWriteTools,

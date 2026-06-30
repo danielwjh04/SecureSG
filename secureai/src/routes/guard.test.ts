@@ -9,6 +9,7 @@ import { getUsage, incrementUsage } from '../db/usage'
 import { handleGuard } from './guard'
 
 const config = loadConfig({})
+const optionalGuardAuthConfig = loadConfig({ SCANNER_GUARD_REQUIRE_AUTH: 'false' })
 
 function post(body: unknown, raw?: string, headers?: Record<string, string>): Request {
   return new Request('https://secureai.test/api/guard', {
@@ -132,19 +133,39 @@ describe('handleGuard, metering and caps', () => {
     expect(res.status).toBe(200)
   })
 
-  it('meters an anonymous caller and returns 429 once the cap is reached', async () => {
+  it('meters an anonymous caller only when Guard auth is explicitly optional', async () => {
     const { env, db } = fixture()
-    for (let i = 0; i < config.capAnonymousPerDay; i += 1) {
+    for (let i = 0; i < optionalGuardAuthConfig.capAnonymousPerDay; i += 1) {
       await incrementUsage(db, 'anon:198.51.100.5', today, { ai: false })
     }
     const res = await handleGuard(
       post(benign, undefined, { 'CF-Connecting-IP': '198.51.100.5' }),
       env,
-      config,
+      optionalGuardAuthConfig,
     )
     expect(res.status).toBe(429)
     const body = (await res.json()) as { error: string }
     expect(body.error).toBe('quota_exceeded')
+  })
+
+  it('returns 401 for a DB-backed anonymous guard caller by default', async () => {
+    const { env } = fixture()
+    const res = await handleGuard(post(benign), env, config)
+    expect(res.status).toBe(401)
+    const body = (await res.json()) as { error: string }
+    expect(body.error).toBe('AuthError')
+  })
+
+  it('returns 401 for a DB-backed guard caller with an unknown API key', async () => {
+    const { env } = fixture()
+    const res = await handleGuard(
+      post(benign, undefined, { Authorization: 'Bearer sk_secureai_unknown' }),
+      env,
+      config,
+    )
+    expect(res.status).toBe(401)
+    const body = (await res.json()) as { error: string }
+    expect(body.error).toBe('AuthError')
   })
 
   it('gates AI off for a free caller and on for a pro caller', async () => {

@@ -108,6 +108,8 @@ Guard decisions now evaluate the action capability before looking for links. A m
 
 Before the Claude Code, Cursor, Codex, or browser-served guard adapters call `/api/guard`, they redact likely local secrets from the payload. Token-like fields, passwords, cookies, authorization headers, bearer values, basic auth values, and query-string credentials are replaced with `[REDACTED]` in the adapter process before the action metadata leaves the machine.
 
+On DB-backed deployments, Guard requires an authenticated API key by default. A missing, malformed, expired, or unknown credential returns 401, which the local adapters treat as a fail-closed deny. The public scanner can still support anonymous scans; runtime Guard actions do not silently fall back to anonymous mode.
+
 ## Browser extension (Chrome and Edge MV3)
 
 The browser extension lives in `extensions/chrome/`. It adds "Scan with SecureAI" on supported GitHub and raw GitHub pages, scans selected or pasted text, and guards supported browser AI pages before content is sent.

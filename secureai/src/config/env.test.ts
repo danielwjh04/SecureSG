@@ -36,6 +36,11 @@ describe('loadConfig', () => {
     expect(loadConfig({ SCANNER_VERDICT_CACHE_TTL_S: '600' }).verdictCacheTtlSeconds).toBe(600)
   })
 
+  it('requires Guard auth by default and parses the opt-out flag', () => {
+    expect(loadConfig({}).guardRequireAuth).toBe(true)
+    expect(loadConfig({ SCANNER_GUARD_REQUIRE_AUTH: 'false' }).guardRequireAuth).toBe(false)
+  })
+
   it('defaults and parses the personal-tier daily cap', () => {
     expect(loadConfig({}).capPersonalPerDay).toBe(1000)
     expect(loadConfig({ SCANNER_CAP_PERSONAL_PER_DAY: '2500' }).capPersonalPerDay).toBe(2500)

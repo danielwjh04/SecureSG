@@ -16,6 +16,7 @@ import type { Env, ScannerConfig } from '../config/env'
 import type { GuardDecision } from '../guard/claudeCode'
 import type { PreToolUsePayload } from '../schemas/validate'
 import {
+  AuthError,
   CircuitOpenError,
   ConfigError,
   InferenceError,
@@ -41,6 +42,7 @@ import { log } from '../observability/logger'
 import { metrics } from '../observability/metrics'
 
 const STATUS_OK = 200
+const STATUS_UNAUTHORIZED = 401
 const STATUS_BAD_REQUEST = 400
 const STATUS_UNPROCESSABLE = 422
 const STATUS_TOO_MANY_REQUESTS = 429
@@ -79,6 +81,9 @@ async function parseGuardBody(request: Request): Promise<PreToolUsePayload> {
  * Time complexity: O(1). Space complexity: O(1).
  */
 function statusForError(error: unknown): number {
+  if (error instanceof AuthError) {
+    return STATUS_UNAUTHORIZED
+  }
   if (error instanceof ParseError || error instanceof SourceResolutionError) {
     return STATUS_UNPROCESSABLE
   }
@@ -108,10 +113,12 @@ function statusForError(error: unknown): number {
  * two metered routes behave uniformly. `scannedAt` is stamped here at the edge
  * so the time-varying value never enters the hashed proof.
  *
- * Accounts degrade gracefully: when `env.DB` is absent the route runs the guard
- * as an unmetered anonymous caller (no cap, no usage write). A successful call
- * returns the {@link GuardDecision} at 200, the allow/ask/deny lives in the
- * body. A malformed body is 422; an exhausted daily cap is 429.
+ * Guard auth is strict when a DB is bound and `config.guardRequireAuth` is true:
+ * a missing, malformed, expired, or unknown credential is a 401 so local hooks
+ * fail closed instead of silently downgrading to anonymous. When `env.DB` is
+ * absent, the route still runs as an unmetered anonymous caller for local dev.
+ * A successful call returns the {@link GuardDecision} at 200, the allow/ask/deny
+ * lives in the body. A malformed body is 422; an exhausted daily cap is 429.
  *
  * Time complexity: dominated by `guardDecision` → `runScan` (O(U·H + R + F)).
  * Space complexity: O(decision size).
@@ -136,6 +143,9 @@ export async function handleGuard(
       : ({ subject: 'anon:unmetered', tier: 'anonymous' } as const)
 
     if (db !== null) {
+      if (config.guardRequireAuth && ctx.tier === 'anonymous') {
+        throw new AuthError('authentication required for guard decisions')
+      }
       await enforceDailyCap(db, ctx.subject, ctx.tier, today, config)
     }
 
