@@ -107,8 +107,9 @@ test('attaches device identity and applies maximum privacy mode', async () => {
   assert.equal(body.integration_version, 'cursor-test')
   assert.equal(body.session_id, undefined)
   assert.equal(body.transcript_path, undefined)
-  assert.equal(body.tool_input.cwd, undefined)
-  assert.equal(body.cwd, '/repo')
+  assert.equal(body.tool_input, undefined)
+  assert.equal(body.privacy_mode, 'maximum')
+  assert.equal(body.cwd, undefined)
 })
 
 test('reports hook health without exposing secrets', () => {
