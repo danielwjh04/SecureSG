@@ -31,5 +31,20 @@ SESSION_SECRET=dev-only-change-me-to-a-long-random-string
 #   wrangler secret put RESEND_API_KEY
 # RESEND_API_KEY=re_...
 
+# Guard ticket signing key (current). Set exactly one of the two options below.
+# Option 1: HS256 shared secret (simpler, symmetric).
+#   GUARD_TICKET_SECRET=change-me-to-a-long-random-string
+# Option 2: ES256 asymmetric key pair (public JWK can be shared for offline verify).
+#   GUARD_TICKET_PRIVATE_JWK={"kty":"EC","crv":"P-256",...}
+#   GUARD_TICKET_PUBLIC_JWK={"kty":"EC","crv":"P-256",...}
+
+# Guard ticket rotation overlap window (verify-only previous key).
+# When rotating the Guard ticket signing key, set SCANNER_GUARD_TICKET_KEY_ID_PREVIOUS
+# (in wrangler.jsonc vars) to the OLD key id, then set the matching previous key
+# material here. Outstanding tickets signed with the old key stay valid until they
+# expire. Clear both after the overlap window has passed.
+#   GUARD_TICKET_SECRET_PREVIOUS=the-old-shared-secret
+#   GUARD_TICKET_PUBLIC_JWK_PREVIOUS={"kty":"EC","crv":"P-256",...}
+
 # Threat-intel feed credentials, if a feed requires one (Spamhaus DROP does not).
 # Workers AI needs no key, it uses the account `AI` binding.

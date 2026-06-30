@@ -220,6 +220,8 @@ export async function handleGuard(
           verdict: null,
           ticket: presentedTicket,
         }
+      } else if (!verification.ok) {
+        metrics.count('guard.ticket.reject', { labels: [verification.reason] })
       }
     }
 
@@ -343,6 +345,8 @@ function guardTicketContextFromEnv(
     return null
   }
 
+  const prevKid = config.guardTicketKeyIdPrevious
+
   const privateJwkRaw = optionalEnvString(env.GUARD_TICKET_PRIVATE_JWK)
   const publicJwkRaw = optionalEnvString(env.GUARD_TICKET_PUBLIC_JWK)
   if (privateJwkRaw !== null || publicJwkRaw !== null) {
@@ -354,14 +358,23 @@ function guardTicketContextFromEnv(
       kid: config.guardTicketKeyId,
       privateJwk: parseTicketJwk(privateJwkRaw, 'GUARD_TICKET_PRIVATE_JWK'),
     }
-    const verifier: GuardTicketVerifier = {
+    const currentVerifier: GuardTicketVerifier = {
       alg: 'ES256',
       kid: config.guardTicketKeyId,
       publicJwk: parseTicketJwk(publicJwkRaw, 'GUARD_TICKET_PUBLIC_JWK'),
     }
+    const verifiers: GuardTicketVerifier[] = [currentVerifier]
+    const prevPublicJwkRaw = optionalEnvString(env.GUARD_TICKET_PUBLIC_JWK_PREVIOUS)
+    if (prevKid.length > 0 && prevPublicJwkRaw !== null) {
+      verifiers.push({
+        alg: 'ES256',
+        kid: prevKid,
+        publicJwk: parseTicketJwk(prevPublicJwkRaw, 'GUARD_TICKET_PUBLIC_JWK_PREVIOUS'),
+      })
+    }
     return {
       signer,
-      verifiers: [verifier],
+      verifiers,
       policyVersion: config.guardPolicyVersion,
       trustRevision,
       ttlSeconds: config.guardTicketTtlSeconds,
@@ -374,10 +387,15 @@ function guardTicketContextFromEnv(
     return null
   }
   const signer: GuardTicketSigner = { alg: 'HS256', kid: config.guardTicketKeyId, secret }
-  const verifier: GuardTicketVerifier = { alg: 'HS256', kid: config.guardTicketKeyId, secret }
+  const currentVerifier: GuardTicketVerifier = { alg: 'HS256', kid: config.guardTicketKeyId, secret }
+  const verifiers: GuardTicketVerifier[] = [currentVerifier]
+  const prevSecret = optionalEnvString(env.GUARD_TICKET_SECRET_PREVIOUS)
+  if (prevKid.length > 0 && prevSecret !== null) {
+    verifiers.push({ alg: 'HS256', kid: prevKid, secret: prevSecret })
+  }
   return {
     signer,
-    verifiers: [verifier],
+    verifiers,
     policyVersion: config.guardPolicyVersion,
     trustRevision,
     ttlSeconds: config.guardTicketTtlSeconds,

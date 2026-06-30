@@ -114,6 +114,12 @@
 		// or GUARD_TICKET_PRIVATE_JWK plus GUARD_TICKET_PUBLIC_JWK for ES256.
 		"SCANNER_GUARD_TICKET_TTL_S": "300",
 		"SCANNER_GUARD_TICKET_KEY_ID": "guard-ticket-v1",
+		// Previous signing-key id for the rotation overlap window (verify-only).
+		// Set to the old SCANNER_GUARD_TICKET_KEY_ID value when rotating keys,
+		// and pair with the GUARD_TICKET_SECRET_PREVIOUS or
+		// GUARD_TICKET_PUBLIC_JWK_PREVIOUS secrets (set via `wrangler secret put`).
+		// Clear this var after the overlap window has expired.
+		"SCANNER_GUARD_TICKET_KEY_ID_PREVIOUS": "",
 		// Device-scoped Guard credentials. Keep account credential fallback false
 		// for production Guard so broad account keys do not authorize runtime hooks.
 		"SCANNER_GUARD_ALLOW_ACCOUNT_CREDENTIALS": "false",

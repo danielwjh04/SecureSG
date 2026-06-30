@@ -59,6 +59,20 @@ export interface Env {
    */
   GUARD_TICKET_PUBLIC_JWK?: string
   /**
+   * Previous HS256 shared secret kept as a verify-only verifier during a rotation
+   * overlap window. A SECRET (set via `wrangler secret put GUARD_TICKET_SECRET_PREVIOUS`).
+   * Requires `SCANNER_GUARD_TICKET_KEY_ID_PREVIOUS` to be set. When absent, no
+   * previous HS256 verifier is registered.
+   */
+  GUARD_TICKET_SECRET_PREVIOUS?: string
+  /**
+   * Previous public ES256 JWK kept as a verify-only verifier during a rotation
+   * overlap window. A SECRET (set via `wrangler secret put
+   * GUARD_TICKET_PUBLIC_JWK_PREVIOUS`). Requires `SCANNER_GUARD_TICKET_KEY_ID_PREVIOUS`
+   * to be set. When absent, no previous ES256 verifier is registered.
+   */
+  GUARD_TICKET_PUBLIC_JWK_PREVIOUS?: string
+  /**
    * API key for the Resend transactional-email provider, used to deliver 2FA
    * sign-in codes. A SECRET (set via `wrangler secret put RESEND_API_KEY`), so
    * it is read from `env` at the route, never folded into {@link ScannerConfig},
@@ -132,6 +146,13 @@ export interface ScannerConfig {
   readonly guardTicketTtlSeconds: number
   /** Key id embedded in signed Guard decision tickets. Bump when rotating keys. */
   readonly guardTicketKeyId: string
+  /**
+   * Key id of the previous signing key, kept as a verify-only verifier during a
+   * rotation overlap window. Empty string means no previous verifier is registered.
+   * Pair with the GUARD_TICKET_SECRET_PREVIOUS or GUARD_TICKET_PUBLIC_JWK_PREVIOUS
+   * secret for the overlap to activate.
+   */
+  readonly guardTicketKeyIdPrevious: string
   /** Whether Guard may accept account API keys or sessions instead of device credentials. */
   readonly guardAllowAccountCredentials: boolean
   /** Lifetime, in days, for newly minted Guard device credentials. */
@@ -344,6 +365,7 @@ export function loadConfig(env: Env): ScannerConfig {
   const guardTrustRevision = readString(env, 'SCANNER_GUARD_TRUST_REVISION', '1')
   const guardTicketTtlSeconds = readIntInRange(env, 'SCANNER_GUARD_TICKET_TTL_S', 300, 0, 3600)
   const guardTicketKeyId = readString(env, 'SCANNER_GUARD_TICKET_KEY_ID', 'guard-ticket-v1')
+  const guardTicketKeyIdPrevious = readStringOrEmpty(env, 'SCANNER_GUARD_TICKET_KEY_ID_PREVIOUS')
   const guardAllowAccountCredentials = readBool(env, 'SCANNER_GUARD_ALLOW_ACCOUNT_CREDENTIALS', false)
   const guardDeviceCredentialTtlDays = readIntInRange(
     env,
@@ -545,6 +567,7 @@ export function loadConfig(env: Env): ScannerConfig {
     guardTrustRevision,
     guardTicketTtlSeconds,
     guardTicketKeyId,
+    guardTicketKeyIdPrevious,
     guardAllowAccountCredentials,
     guardDeviceCredentialTtlDays,
     guardReadTools,
@@ -615,6 +638,17 @@ function readString(env: Env, key: string, fallback: string): string {
     throw new ConfigError(`${key} must be a non-empty string`)
   }
   return value
+}
+
+/**
+ * Read a string var that is explicitly allowed to be empty (e.g. an optional
+ * key id that defaults to the empty string meaning "not set"). Unlike
+ * {@link readString}, an empty or absent var returns `""` rather than
+ * throwing.
+ */
+function readStringOrEmpty(env: Env, key: string): string {
+  const raw = readRaw(env, key)
+  return raw === undefined ? '' : raw.trim()
 }
 
 function readSet(env: Env, key: string, fallback: string): ReadonlySet<string> {

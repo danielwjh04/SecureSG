@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { GuardTicketContext, GuardTicketSigner, GuardTicketVerifier } from './decisionTicket'
 import type { PreToolUsePayload } from '../schemas/validate'
 import {
   type GuardDecisionTicket,
@@ -99,6 +100,113 @@ describe('Guard decision tickets', () => {
     await expect(verifyGuardDecisionTicket(noCwd, ticket, context)).resolves.toEqual({
       ok: false,
       reason: 'missing project scope',
+    })
+  })
+
+  it('verifies a ticket signed under the previous key id when a previous verifier is present (HS256)', async () => {
+    const previousKid = 'guard-ticket-prev'
+    const previousSecret = 'previous-ticket-secret'
+    const currentKid = 'guard-ticket-current'
+    const currentSecret = 'current-ticket-secret'
+
+    const prevSigner: GuardTicketSigner = { alg: 'HS256', kid: previousKid, secret: previousSecret }
+    const prevVerifier: GuardTicketVerifier = { alg: 'HS256', kid: previousKid, secret: previousSecret }
+    const currentVerifier: GuardTicketVerifier = { alg: 'HS256', kid: currentKid, secret: currentSecret }
+
+    // Context used to sign with the PREVIOUS key.
+    const prevSignContext: GuardTicketContext = {
+      signer: prevSigner,
+      verifiers: [prevVerifier],
+      policyVersion: 'policy-1',
+      trustRevision: 'trust-1',
+      ttlSeconds: 300,
+      now,
+    }
+
+    // Context that knows both current and previous verifiers (rotation overlap).
+    const overlapContext: GuardTicketContext = {
+      signer: { alg: 'HS256', kid: currentKid, secret: currentSecret },
+      verifiers: [currentVerifier, prevVerifier],
+      policyVersion: 'policy-1',
+      trustRevision: 'trust-1',
+      ttlSeconds: 300,
+      now,
+    }
+
+    const ticket = requireTicket(await signGuardDecisionTicket(payload, 'allow', prevSignContext))
+    expect(ticket.kid).toBe(previousKid)
+
+    await expect(verifyGuardDecisionTicket(payload, ticket, overlapContext)).resolves.toEqual({
+      ok: true,
+      reason: 'ticket valid',
+    })
+  })
+
+  it('verifies a ticket signed under the previous key id when a previous verifier is present (ES256)', async () => {
+    // Generate a P-256 key pair for the previous key in-test.
+    const prevKeyPair = (await crypto.subtle.generateKey(
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      true,
+      ['sign', 'verify'],
+    )) as CryptoKeyPair
+    const prevPrivateJwk = (await crypto.subtle.exportKey('jwk', prevKeyPair.privateKey)) as JsonWebKey
+    const prevPublicJwk = (await crypto.subtle.exportKey('jwk', prevKeyPair.publicKey)) as JsonWebKey
+
+    // Generate a P-256 key pair for the current key in-test.
+    const currKeyPair = (await crypto.subtle.generateKey(
+      { name: 'ECDSA', namedCurve: 'P-256' },
+      true,
+      ['sign', 'verify'],
+    )) as CryptoKeyPair
+    const currPrivateJwk = (await crypto.subtle.exportKey('jwk', currKeyPair.privateKey)) as JsonWebKey
+    const currPublicJwk = (await crypto.subtle.exportKey('jwk', currKeyPair.publicKey)) as JsonWebKey
+
+    const previousKid = 'guard-ticket-es256-prev'
+    const currentKid = 'guard-ticket-es256-current'
+
+    const prevSigner: GuardTicketSigner = { alg: 'ES256', kid: previousKid, privateJwk: prevPrivateJwk }
+    const prevVerifier: GuardTicketVerifier = { alg: 'ES256', kid: previousKid, publicJwk: prevPublicJwk }
+    const currentVerifier: GuardTicketVerifier = { alg: 'ES256', kid: currentKid, publicJwk: currPublicJwk }
+
+    // Context that signs with the PREVIOUS key.
+    const prevSignContext: GuardTicketContext = {
+      signer: prevSigner,
+      verifiers: [prevVerifier],
+      policyVersion: 'policy-1',
+      trustRevision: 'trust-1',
+      ttlSeconds: 300,
+      now,
+    }
+
+    // Context with both verifiers (rotation overlap, current signer).
+    const overlapContext: GuardTicketContext = {
+      signer: { alg: 'ES256', kid: currentKid, privateJwk: currPrivateJwk },
+      verifiers: [currentVerifier, prevVerifier],
+      policyVersion: 'policy-1',
+      trustRevision: 'trust-1',
+      ttlSeconds: 300,
+      now,
+    }
+
+    const ticket = requireTicket(await signGuardDecisionTicket(payload, 'allow', prevSignContext))
+    expect(ticket.kid).toBe(previousKid)
+
+    await expect(verifyGuardDecisionTicket(payload, ticket, overlapContext)).resolves.toEqual({
+      ok: true,
+      reason: 'ticket valid',
+    })
+  })
+
+  it('rejects a ticket whose kid matches no verifier', async () => {
+    const ticket = requireTicket(await signGuardDecisionTicket(payload, 'allow', context))
+    const noMatchContext: GuardTicketContext = {
+      ...context,
+      verifiers: [{ alg: 'HS256', kid: 'completely-different-kid', secret: 'test-ticket-secret' }],
+    }
+
+    await expect(verifyGuardDecisionTicket(payload, ticket, noMatchContext)).resolves.toEqual({
+      ok: false,
+      reason: 'ticket key mismatch',
     })
   })
 })

@@ -8,6 +8,7 @@ import { createFreeUser, setUserTier } from '../db/accounts'
 import { createGuardDeviceCredential } from '../db/guardDevices'
 import { getUsage, incrementUsage } from '../db/usage'
 import { replaceFeed } from '../db/feed'
+import { setMetricsDataset } from '../observability/metrics'
 import { handleGuard } from './guard'
 
 const config = loadConfig({})
@@ -525,6 +526,66 @@ describe('handleGuard', () => {
     expect(second.status).toBe(200)
     // A new cache entry must have been written (total keys increased).
     expect(cacheStore.size).toBeGreaterThan(cacheSize)
+  })
+})
+
+describe('handleGuard, ticket-reject metric', () => {
+  afterEach(() => {
+    setMetricsDataset(null)
+  })
+
+  it('emits guard.ticket.reject with the reason when a presented ticket fails verification', async () => {
+    const d1 = new MemoryD1(new MemoryStore()) as unknown as D1Database
+    const db = d1Database(d1)
+    const { user } = await createFreeUser(db, 'ticket-reject-metric@example.com')
+    const credential = await guardCredentialFor(db, user.id)
+    const env = { DB: d1, GUARD_TICKET_SECRET: 'guard-ticket-secret' }
+    const payload = {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Read',
+      tool_input: { file_path: 'README.md' },
+      cwd: '/workspace/project',
+      integration_version: '1.0.0',
+    }
+
+    // Obtain a valid ticket first.
+    const first = await handleGuard(
+      post(payload, undefined, { Authorization: `Bearer ${credential}` }),
+      env,
+      config,
+    )
+    const firstDecision = (await first.json()) as GuardDecision
+    expect(firstDecision.ticket).toBeDefined()
+
+    // Tamper the ticket so it will fail verification (wrong action_hash).
+    const badTicket = { ...firstDecision.ticket, action_hash: 'deadbeef' }
+
+    const writeDataPoint = vi.fn()
+    setMetricsDataset({ writeDataPoint })
+
+    await handleGuard(
+      post({ ...payload, decision_ticket: badTicket }, undefined, {
+        Authorization: `Bearer ${credential}`,
+      }),
+      env,
+      config,
+    )
+
+    // writeDataPoint must have been called with blobs starting with
+    // 'guard.ticket.reject' followed by the rejection reason.
+    const rejectCall = writeDataPoint.mock.calls.find(
+      (call: unknown[]) => {
+        const event = call[0] as { blobs?: string[] }
+        return Array.isArray(event.blobs) && event.blobs[0] === 'guard.ticket.reject'
+      },
+    )
+    expect(rejectCall).toBeDefined()
+    const rejectEvent = (rejectCall as [{ blobs: string[] }])[0]
+    const rejectBlobs = rejectEvent.blobs
+    expect(rejectBlobs[0]).toBe('guard.ticket.reject')
+    const rejectReason = rejectBlobs[1]
+    expect(typeof rejectReason).toBe('string')
+    expect((rejectReason ?? '').length).toBeGreaterThan(0)
   })
 })
 
