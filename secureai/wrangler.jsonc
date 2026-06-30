@@ -128,6 +128,7 @@
 		// throttling (writes on every authenticated Guard call). Range 0..86400.
 		"SCANNER_GUARD_LAST_SEEN_THROTTLE_S": "300",
 		"SCANNER_GUARD_DEVICE_TTL_DAYS": "90",
+		"SCANNER_GUARD_DEVICE_PURGE_GRACE_DAYS": "7",
 		"SCANNER_GUARD_MAX_DEVICES_PER_ACCOUNT": "25",
 		"SCANNER_GUARD_READ_TOOLS": "read,grep,glob,ls",
 		"SCANNER_GUARD_WRITE_TOOLS": "write,edit,multiedit,notebookedit,apply_patch",

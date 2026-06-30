@@ -7,6 +7,7 @@ import {
   createGuardDeviceCredential,
   findGuardDeviceByCredential,
   listGuardDevices,
+  purgeExpiredGuardDevices,
   revokeGuardDevice,
   touchGuardDeviceCredential,
 } from './guardDevices'
@@ -223,5 +224,57 @@ describe('guard device credentials', () => {
     expect(await activeGuardDeviceExists(db, user.id, 'dev_x', 'claude-code')).toBe(true)
     expect(await activeGuardDeviceExists(db, user.id, 'dev_x', 'codex')).toBe(false)
     expect(await activeGuardDeviceExists(db, user.id, 'dev_other', 'claude-code')).toBe(false)
+  })
+
+  it('purgeExpiredGuardDevices deletes rows expired before the cutoff and keeps active and recently-expired rows', async () => {
+    const { db, store } = memoryDatabase()
+    const { user } = await createFreeUser(db, 'purge@example.com')
+
+    // Long-expired: expires_at is well before the cutoff.
+    await createGuardDeviceCredential(db, {
+      userId: user.id,
+      deviceId: 'dev_long_expired',
+      name: 'Long expired',
+      integration: 'claude-code',
+      scopes: ['guard:decision'],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      expiresAt: '2026-01-10T00:00:00.000Z',
+    })
+
+    // Recently expired: within the grace window (expires_at is between cutoff and now).
+    await createGuardDeviceCredential(db, {
+      userId: user.id,
+      deviceId: 'dev_recently_expired',
+      name: 'Recently expired',
+      integration: 'claude-code',
+      scopes: ['guard:decision'],
+      createdAt: '2026-06-20T00:00:00.000Z',
+      expiresAt: '2026-06-28T00:00:00.000Z',
+    })
+
+    // Active: expires in the future.
+    await createGuardDeviceCredential(db, {
+      userId: user.id,
+      deviceId: 'dev_active',
+      name: 'Active device',
+      integration: 'claude-code',
+      scopes: ['guard:decision'],
+      createdAt: '2026-06-30T00:00:00.000Z',
+      expiresAt: '2026-09-30T00:00:00.000Z',
+    })
+
+    // Cutoff sits between the long-expired row and the recently-expired row.
+    const cutoff = '2026-06-20T00:00:00.000Z'
+    const removed = await purgeExpiredGuardDevices(db, cutoff)
+
+    expect(removed).toBe(1)
+
+    const remaining = await listGuardDevices(db, user.id)
+    const deviceIds = remaining.map((d) => d.deviceId)
+    expect(deviceIds).not.toContain('dev_long_expired')
+    expect(deviceIds).toContain('dev_recently_expired')
+    expect(deviceIds).toContain('dev_active')
+    // Confirm the store also reflects the deletion.
+    expect(store.guardDeviceCredentials.size).toBe(2)
   })
 })

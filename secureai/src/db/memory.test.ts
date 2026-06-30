@@ -961,6 +961,17 @@ export class MemoryStore {
       }
       return { changes }
     }
+    if (sql.startsWith('DELETE FROM guard_device_credentials WHERE expires_at <')) {
+      const cutoff = String(params[0])
+      let changes = 0
+      for (const [key, credential] of this.guardDeviceCredentials) {
+        if (credential.expires_at < cutoff) {
+          this.guardDeviceCredentials.delete(key)
+          changes += 1
+        }
+      }
+      return { changes }
+    }
     if (sql.startsWith('DELETE FROM guard_device_credentials WHERE user_id')) {
       const userId = String(params[0])
       let changes = 0

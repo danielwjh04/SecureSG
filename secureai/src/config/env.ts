@@ -166,6 +166,12 @@ export interface ScannerConfig {
   readonly guardDeviceCredentialTtlDays: number
   /** Maximum number of active Guard device credentials allowed per account. */
   readonly guardMaxDevicesPerAccount: number
+  /**
+   * Grace window, in days, applied when purging expired device credentials in the
+   * cron. Rows whose expires_at is within this window are kept so the dashboard
+   * can still list recently-expired devices. Default 7 days; range 0..365.
+   */
+  readonly guardDevicePurgeGraceDays: number
   /** Guard tool names treated as low-risk filesystem reads when paths are not sensitive. */
   readonly guardReadTools: ReadonlySet<string>
   /** Guard tool names treated as filesystem writes. */
@@ -390,6 +396,7 @@ export function loadConfig(env: Env): ScannerConfig {
     1,
     365,
   )
+  const guardDevicePurgeGraceDays = readIntInRange(env, 'SCANNER_GUARD_DEVICE_PURGE_GRACE_DAYS', 7, 0, 365)
   const guardMaxDevicesPerAccount = readIntInRange(
     env,
     'SCANNER_GUARD_MAX_DEVICES_PER_ACCOUNT',
@@ -594,6 +601,7 @@ export function loadConfig(env: Env): ScannerConfig {
     guardAllowAccountCredentials,
     guardLastSeenThrottleSeconds,
     guardDeviceCredentialTtlDays,
+    guardDevicePurgeGraceDays,
     guardMaxDevicesPerAccount,
     guardReadTools,
     guardWriteTools,

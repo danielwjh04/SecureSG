@@ -51,6 +51,7 @@ import {
   handleAdminThreats,
 } from './routes/admin'
 import { d1Database, d1Session, type SessionDatabase } from './db/database'
+import { purgeExpiredGuardDevices } from './db/guardDevices'
 import { ingestFeeds } from './scanner/feedIngest'
 import { readBookmark, withBookmark } from './db/bookmark'
 import type { ObjectStore } from './storage/r2'
@@ -360,10 +361,12 @@ export default {
   },
 
   /**
-   * Cron entry: refresh the threat-feed indicators. Gated on `feedEnabled` and a
-   * bound DB; the `URLHAUS_AUTH_KEY` secret authenticates the abuse.ch fetches.
-   * The cron's `scheduledTime` is the monotonic feed version. Fail-safe: a
-   * refresh fault is logged, never thrown, so the schedule keeps running.
+   * Cron entry: refresh the threat-feed indicators and purge expired device
+   * credentials. The feed refresh is gated on `feedEnabled`; the purge always
+   * runs when a DB binding is present. The `URLHAUS_AUTH_KEY` secret
+   * authenticates the abuse.ch fetches. The cron's `scheduledTime` is the
+   * monotonic feed version. Fail-safe: each phase is wrapped in its own
+   * try/catch so a fault in one never prevents the other from running.
    */
   async scheduled(controller: ScheduledController, env: Env): Promise<void> {
     let config: ScannerConfig
@@ -376,33 +379,43 @@ export default {
     setLogLevel(config.logLevel)
     setMetricsDataset((env.METRICS as MetricsDataset | undefined) ?? null)
 
-    if (!config.feedEnabled) {
-      log.info('index', 'feed refresh skipped: disabled')
+    if (env.DB === undefined || env.DB === null) {
+      log.warn('index', 'scheduled run skipped: no DB binding')
       return
     }
-    if (env.DB === undefined || env.DB === null) {
-      log.warn('index', 'feed refresh skipped: no DB binding')
-      return
+    const db = d1Database(env.DB)
+
+    if (config.feedEnabled) {
+      try {
+        const summary = await ingestFeeds({
+          db,
+          fetchImpl: fetch,
+          authKey: typeof env.URLHAUS_AUTH_KEY === 'string' ? env.URLHAUS_AUTH_KEY : undefined,
+          version: controller.scheduledTime,
+          updatedAt: new Date(controller.scheduledTime).toISOString(),
+          sources: {
+            urlhausUrlList: config.feedUrlhausUrlList,
+            urlhausHostfile: config.feedUrlhausHostfile,
+            threatfoxCsv: config.feedThreatfoxCsv,
+          },
+          maxRows: config.feedMaxRows,
+          fetchTimeoutMs: config.feedFetchTimeoutMs,
+        })
+        log.info('index', 'feed refresh complete', { total: summary.total, flipped: summary.flipped })
+      } catch (error) {
+        log.error('index', 'feed refresh failed', { errorClass: errorClassOf(error) })
+      }
+    } else {
+      log.info('index', 'feed refresh skipped: disabled')
     }
 
     try {
-      const summary = await ingestFeeds({
-        db: d1Database(env.DB),
-        fetchImpl: fetch,
-        authKey: typeof env.URLHAUS_AUTH_KEY === 'string' ? env.URLHAUS_AUTH_KEY : undefined,
-        version: controller.scheduledTime,
-        updatedAt: new Date(controller.scheduledTime).toISOString(),
-        sources: {
-          urlhausUrlList: config.feedUrlhausUrlList,
-          urlhausHostfile: config.feedUrlhausHostfile,
-          threatfoxCsv: config.feedThreatfoxCsv,
-        },
-        maxRows: config.feedMaxRows,
-        fetchTimeoutMs: config.feedFetchTimeoutMs,
-      })
-      log.info('index', 'feed refresh complete', { total: summary.total, flipped: summary.flipped })
+      const graceMs = config.guardDevicePurgeGraceDays * 86400000
+      const cutoffIso = new Date(controller.scheduledTime - graceMs).toISOString()
+      const removed = await purgeExpiredGuardDevices(db, cutoffIso)
+      log.info('index', 'guard device purge complete', { removed })
     } catch (error) {
-      log.error('index', 'feed refresh failed', { errorClass: errorClassOf(error) })
+      log.error('index', 'guard device purge failed', { errorClass: errorClassOf(error) })
     }
   },
 } satisfies ExportedHandler<Env>

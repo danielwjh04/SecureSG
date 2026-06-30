@@ -272,6 +272,21 @@ export async function listGuardDevices(
   return rows.map(rowToDevice)
 }
 
+/**
+ * Delete Guard device credentials whose expiry is strictly before the cutoff.
+ * The caller computes the cutoff (now minus the grace window) so recently
+ * expired rows stay listable in the dashboard during the grace period.
+ *
+ * Time complexity: O(rows deleted) on an indexed scan. Space complexity: O(1).
+ */
+export async function purgeExpiredGuardDevices(db: Database, cutoffIso: string): Promise<number> {
+  const result = await db.execute(
+    'DELETE FROM guard_device_credentials WHERE expires_at < ?',
+    [cutoffIso],
+  )
+  return result.changes
+}
+
 /** Revoke one account-owned Guard device credential. */
 export async function revokeGuardDevice(
   db: Database,
