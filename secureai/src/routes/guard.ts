@@ -115,6 +115,37 @@ function statusForError(error: unknown): number {
 }
 
 /**
+ * Bind the guard identity fields on the payload for downstream use.
+ *
+ * For a DB-backed `guard_device` caller: set `device_id` from the authenticated
+ * credential and `provider` from the credential integration name (falling back to
+ * any client-supplied provider). For every other caller: remove any client-asserted
+ * `device_id` so it cannot be used for ticket binding or cache keying.
+ *
+ * Note: `integration_version` is a self-claim scoped to cache/ticket reuse and is
+ * never overwritten here.
+ *
+ * Time complexity: O(1). Space complexity: O(1).
+ */
+function bindGuardIdentity(
+  payload: PreToolUsePayload,
+  ctx: { credentialKind: string; deviceId?: string; integration?: string },
+  dbBound: boolean,
+): PreToolUsePayload {
+  const record = payload as unknown as Record<string, unknown>
+  if (dbBound && ctx.credentialKind === 'guard_device') {
+    return {
+      ...payload,
+      device_id: ctx.deviceId,
+      provider: (record.provider as string | undefined) ?? ctx.integration,
+    } as PreToolUsePayload
+  }
+  const copy = { ...payload } as unknown as Record<string, unknown>
+  delete copy.device_id
+  return copy as unknown as PreToolUsePayload
+}
+
+/**
  * Handle `POST /api/guard`. Authenticates the caller, enforces its per-tier
  * daily cap BEFORE the guard scan, gates the paid AI stage to eligible tiers,
  * runs `guardDecision`, then meters usage, mirroring `/api/scan` exactly so the
@@ -158,23 +189,24 @@ export async function handleGuard(
       await enforceDailyCap(db, ctx.subject, ctx.tier, today, config)
     }
 
-    const guardPayload: PreToolUsePayload =
-      db !== null && ctx.credentialKind === 'guard_device'
-        ? ({
-            ...payload,
-            device_id: ctx.deviceId,
-            provider: (payload as unknown as Record<string, unknown>).provider ?? ctx.integration,
-          } as PreToolUsePayload)
-        : payload
+    const guardPayload = bindGuardIdentity(payload, ctx, db !== null)
 
     const ticketContext = guardTicketContextFromEnv(env, config, now)
     let decision: GuardDecision | null = null
     const presentedTicket = parseGuardDecisionTicket(
       (guardPayload as unknown as Record<string, unknown>).decision_ticket,
     )
-    if (ticketContext !== null && presentedTicket !== null) {
+    if (
+      ticketContext !== null &&
+      presentedTicket !== null &&
+      ctx.credentialKind === 'guard_device'
+    ) {
       const verification = await verifyGuardDecisionTicket(guardPayload, presentedTicket, ticketContext)
-      if (verification.ok && presentedTicket.decision === 'allow') {
+      if (
+        verification.ok &&
+        presentedTicket.decision === 'allow' &&
+        presentedTicket.device_id === ctx.deviceId
+      ) {
         decision = {
           decision: 'allow',
           reason: 'valid signed decision ticket',
@@ -242,7 +274,8 @@ export async function handleGuard(
     if (
       decision.decision === 'allow' &&
       decision.ticket === undefined &&
-      ticketContext !== null
+      ticketContext !== null &&
+      ctx.credentialKind === 'guard_device'
     ) {
       const ticket = await signGuardDecisionTicket(guardPayload, decision.decision, ticketContext)
       if (ticket !== null) {

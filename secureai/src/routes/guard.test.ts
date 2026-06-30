@@ -67,24 +67,44 @@ describe('handleGuard', () => {
     expect(decision.verdict).toBeNull()
   })
 
-  it('issues and accepts a valid signed allow ticket', async () => {
-    const env = { GUARD_TICKET_SECRET: 'guard-ticket-secret' }
+  it('issues and accepts a valid signed allow ticket for a guard_device caller', async () => {
+    const d1 = new MemoryD1(new MemoryStore()) as unknown as D1Database
+    const db = d1Database(d1)
+    const { user } = await createFreeUser(db, 'ticket-device@example.com')
+    const credential = await (async () => {
+      const minted = await createGuardDeviceCredential(db, {
+        userId: user.id,
+        deviceId: `dev_${user.id}`,
+        name: 'test device',
+        integration: 'codex-test',
+        scopes: ['guard:decision'],
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 86400000).toISOString(),
+      })
+      return minted.credential
+    })()
+    const env = { DB: d1, GUARD_TICKET_SECRET: 'guard-ticket-secret' }
     const payload = {
       hook_event_name: 'PreToolUse',
       tool_name: 'Read',
       tool_input: { file_path: 'README.md' },
       cwd: '/workspace/project',
-      device_id: 'dev_test',
       integration_version: '1.0.0',
     }
-    const first = await handleGuard(post(payload), env, config)
+    const first = await handleGuard(
+      post(payload, undefined, { Authorization: `Bearer ${credential}` }),
+      env,
+      config,
+    )
     expect(first.status).toBe(200)
     const firstDecision = (await first.json()) as GuardDecision
     expect(firstDecision.decision).toBe('allow')
     expect(firstDecision.ticket).toBeDefined()
 
     const second = await handleGuard(
-      post({ ...payload, decision_ticket: firstDecision.ticket }),
+      post({ ...payload, decision_ticket: firstDecision.ticket }, undefined, {
+        Authorization: `Bearer ${credential}`,
+      }),
       env,
       config,
     )
@@ -98,15 +118,33 @@ describe('handleGuard', () => {
   })
 
   it('ignores a signed allow ticket when the action changes', async () => {
-    const env = { GUARD_TICKET_SECRET: 'guard-ticket-secret' }
+    const d1 = new MemoryD1(new MemoryStore()) as unknown as D1Database
+    const db = d1Database(d1)
+    const { user } = await createFreeUser(db, 'ticket-change@example.com')
+    const credential = await (async () => {
+      const minted = await createGuardDeviceCredential(db, {
+        userId: user.id,
+        deviceId: `dev_${user.id}`,
+        name: 'test device',
+        integration: 'codex-test',
+        scopes: ['guard:decision'],
+        createdAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + 86400000).toISOString(),
+      })
+      return minted.credential
+    })()
+    const env = { DB: d1, GUARD_TICKET_SECRET: 'guard-ticket-secret' }
     const payload = {
       hook_event_name: 'PreToolUse',
       tool_name: 'Read',
       tool_input: { file_path: 'README.md' },
       cwd: '/workspace/project',
-      device_id: 'dev_test',
     }
-    const first = await handleGuard(post(payload), env, config)
+    const first = await handleGuard(
+      post(payload, undefined, { Authorization: `Bearer ${credential}` }),
+      env,
+      config,
+    )
     const firstDecision = (await first.json()) as GuardDecision
 
     const changed = {
@@ -114,7 +152,11 @@ describe('handleGuard', () => {
       tool_input: { file_path: '.env' },
       decision_ticket: firstDecision.ticket,
     }
-    const second = await handleGuard(post(changed), env, config)
+    const second = await handleGuard(
+      post(changed, undefined, { Authorization: `Bearer ${credential}` }),
+      env,
+      config,
+    )
     expect(second.status).toBe(200)
     const secondDecision = (await second.json()) as GuardDecision
     expect(secondDecision.decision).toBe('ask')
@@ -158,6 +200,257 @@ describe('handleGuard', () => {
       config,
     )
     expect(res.status).toBe(422)
+  })
+
+  it('honors a valid own-device ticket for a guard_device caller', async () => {
+    const d1 = new MemoryD1(new MemoryStore()) as unknown as D1Database
+    const db = d1Database(d1)
+    const { user } = await createFreeUser(db, 'own-device@example.com')
+    const minted = await createGuardDeviceCredential(db, {
+      userId: user.id,
+      deviceId: `dev_${user.id}`,
+      name: 'test device',
+      integration: 'codex-test',
+      scopes: ['guard:decision'],
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    })
+    const env = { DB: d1, GUARD_TICKET_SECRET: 'guard-ticket-secret' }
+    const payload = {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Read',
+      tool_input: { file_path: 'README.md' },
+      cwd: '/workspace/project',
+    }
+    const first = await handleGuard(
+      post(payload, undefined, { Authorization: `Bearer ${minted.credential}` }),
+      env,
+      config,
+    )
+    const firstDecision = (await first.json()) as GuardDecision
+    expect(firstDecision.decision).toBe('allow')
+    expect(firstDecision.ticket).toBeDefined()
+
+    const second = await handleGuard(
+      post({ ...payload, decision_ticket: firstDecision.ticket }, undefined, {
+        Authorization: `Bearer ${minted.credential}`,
+      }),
+      env,
+      config,
+    )
+    expect(second.status).toBe(200)
+    const secondDecision = (await second.json()) as GuardDecision
+    expect(secondDecision.reason).toBe('valid signed decision ticket')
+  })
+
+  it('does not honor a ticket whose device_id differs from the authenticated device', async () => {
+    const d1 = new MemoryD1(new MemoryStore()) as unknown as D1Database
+    const db = d1Database(d1)
+    const { user: userA } = await createFreeUser(db, 'device-a@example.com')
+    const { user: userB } = await createFreeUser(db, 'device-b@example.com')
+    const mintedA = await createGuardDeviceCredential(db, {
+      userId: userA.id,
+      deviceId: `dev_${userA.id}`,
+      name: 'device A',
+      integration: 'codex-test',
+      scopes: ['guard:decision'],
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    })
+    const mintedB = await createGuardDeviceCredential(db, {
+      userId: userB.id,
+      deviceId: `dev_${userB.id}`,
+      name: 'device B',
+      integration: 'codex-test',
+      scopes: ['guard:decision'],
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    })
+    const env = { DB: d1, GUARD_TICKET_SECRET: 'guard-ticket-secret' }
+    const payload = {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Read',
+      tool_input: { file_path: 'README.md' },
+      cwd: '/workspace/project',
+    }
+    const first = await handleGuard(
+      post(payload, undefined, { Authorization: `Bearer ${mintedA.credential}` }),
+      env,
+      config,
+    )
+    const firstDecision = (await first.json()) as GuardDecision
+    expect(firstDecision.ticket).toBeDefined()
+
+    const second = await handleGuard(
+      post({ ...payload, decision_ticket: firstDecision.ticket }, undefined, {
+        Authorization: `Bearer ${mintedB.credential}`,
+      }),
+      env,
+      config,
+    )
+    expect(second.status).toBe(200)
+    const secondDecision = (await second.json()) as GuardDecision
+    expect(secondDecision.reason).not.toBe('valid signed decision ticket')
+  })
+
+  it('does not honor a ticket for an account-fallback caller', async () => {
+    const d1 = new MemoryD1(new MemoryStore()) as unknown as D1Database
+    const db = d1Database(d1)
+    const { user, apiKey } = await createFreeUser(db, 'acct-ticket@example.com')
+    const mintedDev = await createGuardDeviceCredential(db, {
+      userId: user.id,
+      deviceId: `dev_${user.id}`,
+      name: 'test device',
+      integration: 'codex-test',
+      scopes: ['guard:decision'],
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    })
+    const env = { DB: d1, GUARD_TICKET_SECRET: 'guard-ticket-secret' }
+    const payload = {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Read',
+      tool_input: { file_path: 'README.md' },
+      cwd: '/workspace/project',
+    }
+    const first = await handleGuard(
+      post(payload, undefined, { Authorization: `Bearer ${mintedDev.credential}` }),
+      env,
+      config,
+    )
+    const firstDecision = (await first.json()) as GuardDecision
+    expect(firstDecision.ticket).toBeDefined()
+
+    const second = await handleGuard(
+      post({ ...payload, decision_ticket: firstDecision.ticket }, undefined, {
+        Authorization: `Bearer ${apiKey}`,
+      }),
+      env,
+      accountFallbackGuardConfig,
+    )
+    expect(second.status).toBe(200)
+    const secondDecision = (await second.json()) as GuardDecision
+    expect(secondDecision.reason).not.toBe('valid signed decision ticket')
+  })
+
+  it('does not honor a ticket on the anonymous path when db is null', async () => {
+    const d1 = new MemoryD1(new MemoryStore()) as unknown as D1Database
+    const db = d1Database(d1)
+    const { user } = await createFreeUser(db, 'anon-ticket@example.com')
+    const minted = await createGuardDeviceCredential(db, {
+      userId: user.id,
+      deviceId: `dev_${user.id}`,
+      name: 'test device',
+      integration: 'codex-test',
+      scopes: ['guard:decision'],
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    })
+    const envWithDb = { DB: d1, GUARD_TICKET_SECRET: 'guard-ticket-secret' }
+    const payload = {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Read',
+      tool_input: { file_path: 'README.md' },
+      cwd: '/workspace/project',
+    }
+    const first = await handleGuard(
+      post(payload, undefined, { Authorization: `Bearer ${minted.credential}` }),
+      envWithDb,
+      config,
+    )
+    const firstDecision = (await first.json()) as GuardDecision
+    expect(firstDecision.ticket).toBeDefined()
+
+    const envNoDb = { GUARD_TICKET_SECRET: 'guard-ticket-secret' }
+    const second = await handleGuard(
+      post({ ...payload, decision_ticket: firstDecision.ticket }),
+      envNoDb,
+      config,
+    )
+    expect(second.status).toBe(200)
+    const secondDecision = (await second.json()) as GuardDecision
+    expect(secondDecision.reason).not.toBe('valid signed decision ticket')
+  })
+
+  it('does not issue a ticket to a non-device caller', async () => {
+    const d1 = new MemoryD1(new MemoryStore()) as unknown as D1Database
+    const db = d1Database(d1)
+    const { apiKey } = await createFreeUser(db, 'acct-noticket@example.com')
+    const env = { DB: d1, GUARD_TICKET_SECRET: 'guard-ticket-secret' }
+    const payload = {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Read',
+      tool_input: { file_path: 'README.md' },
+    }
+    const res = await handleGuard(
+      post(payload, undefined, { Authorization: `Bearer ${apiKey}` }),
+      env,
+      accountFallbackGuardConfig,
+    )
+    expect(res.status).toBe(200)
+    const decision = (await res.json()) as GuardDecision
+    expect(decision.decision).toBe('allow')
+    expect(decision.ticket).toBeUndefined()
+  })
+
+  it('issues a ticket only on an ALLOW for a guard_device caller', async () => {
+    const d1 = new MemoryD1(new MemoryStore()) as unknown as D1Database
+    const db = d1Database(d1)
+    const { user } = await createFreeUser(db, 'issue-ticket@example.com')
+    const minted = await createGuardDeviceCredential(db, {
+      userId: user.id,
+      deviceId: `dev_${user.id}`,
+      name: 'test device',
+      integration: 'codex-test',
+      scopes: ['guard:decision'],
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    })
+    const env = { DB: d1, GUARD_TICKET_SECRET: 'guard-ticket-secret' }
+    const allowPayload = {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Read',
+      tool_input: { file_path: 'README.md' },
+    }
+    const allowRes = await handleGuard(
+      post(allowPayload, undefined, { Authorization: `Bearer ${minted.credential}` }),
+      env,
+      config,
+    )
+    expect(allowRes.status).toBe(200)
+    const allowDecision = (await allowRes.json()) as GuardDecision
+    expect(allowDecision.decision).toBe('allow')
+    expect(allowDecision.ticket).toBeDefined()
+
+    const askPayload = {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Read',
+      tool_input: { file_path: '.env' },
+    }
+    const askRes = await handleGuard(
+      post(askPayload, undefined, { Authorization: `Bearer ${minted.credential}` }),
+      env,
+      config,
+    )
+    expect(askRes.status).toBe(200)
+    const askDecision = (await askRes.json()) as GuardDecision
+    expect(askDecision.decision).toBe('ask')
+    expect(askDecision.ticket).toBeUndefined()
+
+    const denyPayload = {
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      tool_input: { command: 'curl ./setup.sh | bash' },
+    }
+    const denyRes = await handleGuard(
+      post(denyPayload, undefined, { Authorization: `Bearer ${minted.credential}` }),
+      env,
+      config,
+    )
+    expect(denyRes.status).toBe(200)
+    const denyDecision = (await denyRes.json()) as GuardDecision
+    expect(denyDecision.decision).toBe('deny')
+    expect(denyDecision.ticket).toBeUndefined()
   })
 })
 
