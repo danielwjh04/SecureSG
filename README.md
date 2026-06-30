@@ -106,6 +106,8 @@ Once an agent is running, the same verifiable-enforcement principle guards suppo
 
 Guard decisions now evaluate the action capability before looking for links. A missing URL is not treated as proof that the action is safe. Low-risk project reads can still pass quickly, but sensitive-file reads, package installs, destructive file commands, permission changes, unknown shell commands, MCP calls, and new network destinations require review or stronger enforcement based on policy.
 
+Before the Claude Code, Cursor, Codex, or browser-served guard adapters call `/api/guard`, they redact likely local secrets from the payload. Token-like fields, passwords, cookies, authorization headers, bearer values, basic auth values, and query-string credentials are replaced with `[REDACTED]` in the adapter process before the action metadata leaves the machine.
+
 ## Browser extension (Chrome and Edge MV3)
 
 The browser extension lives in `extensions/chrome/`. It adds "Scan with SecureAI" on supported GitHub and raw GitHub pages, scans selected or pasted text, and guards supported browser AI pages before content is sent.

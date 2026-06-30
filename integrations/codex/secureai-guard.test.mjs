@@ -83,6 +83,33 @@ test('routes a shell execution with curl pipe shell and emits deny', async () =>
   assert.match(output.hookSpecificOutput.permissionDecisionReason, /download and execute/)
 })
 
+test('redacts obvious secrets before forwarding guard payloads', async () => {
+  const calls = []
+  await runCodexGuard(
+    JSON.stringify({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      tool_input: {
+        command: 'GITHUB_TOKEN=ghp_secretvalue node script.js',
+        headers: { Authorization: 'Bearer secret-token' },
+      },
+    }),
+    {
+      env: { SECUREAI_API_KEY: KEY },
+      fetchImpl: async (url, init) => {
+        calls.push({ url, init })
+        return okDecision('ask', 'unknown shell command requires review')
+      },
+    },
+  )
+
+  const body = JSON.parse(calls[0].init.body)
+  assert.equal(body.tool_input.command, 'GITHUB_TOKEN=[REDACTED] node script.js')
+  assert.equal(body.tool_input.headers.Authorization, '[REDACTED]')
+  assert.doesNotMatch(calls[0].init.body, /ghp_secretvalue/)
+  assert.doesNotMatch(calls[0].init.body, /secret-token/)
+})
+
 test('routes a network tool call and emits ask', async () => {
   const calls = []
   const output = await runCodexGuard(

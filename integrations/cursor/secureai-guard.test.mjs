@@ -62,6 +62,29 @@ test('routes a risky shell command and emits deny', async () => {
   assert.match(output.agent_message, /download and execute/)
 })
 
+test('redacts obvious secrets before forwarding guard payloads', async () => {
+  const calls = []
+  await runCursorGuard(
+    JSON.stringify({
+      command: 'OPENAI_API_KEY=sk_test_secret npm install package',
+      cwd: '/repo',
+      token: 'ghp_secretvalue',
+    }),
+    {
+      env: { SECUREAI_API_KEY: KEY },
+      fetchImpl: async (url, init) => {
+        calls.push({ url, init })
+        return okDecision('ask', 'package install requires review')
+      },
+    },
+  )
+
+  const body = JSON.parse(calls[0].init.body)
+  assert.equal(body.tool_input.command, 'OPENAI_API_KEY=[REDACTED] npm install package')
+  assert.doesNotMatch(calls[0].init.body, /sk_test_secret/)
+  assert.doesNotMatch(calls[0].init.body, /ghp_secretvalue/)
+})
+
 test('maps beforeMCPExecution payloads and emits ask', async () => {
   const calls = []
   const output = await runCursorGuard(

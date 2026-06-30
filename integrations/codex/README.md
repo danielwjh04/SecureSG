@@ -15,6 +15,9 @@ those payloads to the existing `/api/guard` contract.
 - `apply_patch` payloads when Codex provides them to `PreToolUse`.
 - Network errors, timeouts, malformed responses, missing API keys, and unknown
   decisions all return deny.
+- Likely local secrets are redacted before the adapter calls `/api/guard`,
+  including token-like fields, passwords, cookies, authorization headers,
+  bearer values, basic auth values, and query-string credentials.
 
 ## Install
 

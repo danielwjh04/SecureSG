@@ -30,6 +30,16 @@ const DEFAULT_API_URL = 'https://secureai.software'
 const DEFAULT_TIMEOUT_MS = 5000
 const HOOK_EVENT_NAME = 'PreToolUse'
 const GUARD_PATH = '/api/guard'
+const REDACTED = '[REDACTED]'
+const SECRET_KEY_PATTERN = /(token|secret|password|passwd|pwd|credential|authorization|cookie|api[_-]?key|access[_-]?key|private[_-]?key|session[_-]?key)/i
+const SECRET_ASSIGNMENT_PATTERN =
+  /\b([A-Za-z_][A-Za-z0-9_-]*(?:token|secret|password|passwd|pwd|credential|api[_-]?key|access[_-]?key|private[_-]?key|session[_-]?key)[A-Za-z0-9_-]*)\s*=\s*("[^"]*"|'[^']*'|[^\s;&|]+)/gi
+const BEARER_PATTERN = /\b(Bearer\s+)[A-Za-z0-9._~+/=-]+/gi
+const BASIC_PATTERN = /\b(Basic\s+)[A-Za-z0-9._~+/=-]+/gi
+const TOKEN_PREFIX_PATTERN =
+  /\b(ghp|github_pat|sk|sk_live|sk_test|xoxb|xoxp|AKIA|ASIA)_[A-Za-z0-9_=-]+/g
+const QUERY_SECRET_PATTERN =
+  /([?&][^=]*(?:token|secret|password|credential|api[_-]?key|access[_-]?key|private[_-]?key|session[_-]?key)[^=]*=)[^&#\s]+/gi
 
 /**
  * Read all of stdin and resolve it as a UTF-8 string. Claude Code writes the
@@ -78,6 +88,32 @@ function failClosed(reason) {
   emitDecision('deny', `SecureAI guard could not verify this tool call: ${reason}. Blocked fail-closed.`)
 }
 
+function redactString(value) {
+  return value
+    .replace(SECRET_ASSIGNMENT_PATTERN, (_match, key) => `${key}=${REDACTED}`)
+    .replace(BEARER_PATTERN, (_match, prefix) => `${prefix}${REDACTED}`)
+    .replace(BASIC_PATTERN, (_match, prefix) => `${prefix}${REDACTED}`)
+    .replace(TOKEN_PREFIX_PATTERN, REDACTED)
+    .replace(QUERY_SECRET_PATTERN, (_match, prefix) => `${prefix}${REDACTED}`)
+}
+
+function redactSecrets(value) {
+  if (typeof value === 'string') {
+    return redactString(value)
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => redactSecrets(item))
+  }
+  if (value !== null && typeof value === 'object') {
+    const output = {}
+    for (const [key, item] of Object.entries(value)) {
+      output[key] = SECRET_KEY_PATTERN.test(key) ? REDACTED : redactSecrets(item)
+    }
+    return output
+  }
+  return value
+}
+
 /**
  * Map the server's `GuardDecision` body to a Claude Code decision and emit it.
  * A body missing the required string fields is treated as unverifiable and fails
@@ -121,7 +157,7 @@ async function main() {
   // The payload must be valid JSON; if Claude Code handed us something
   // unparseable, we cannot safely forward it, fail closed.
   try {
-    JSON.parse(payload)
+    payload = JSON.stringify(redactSecrets(JSON.parse(payload)))
   } catch {
     failClosed('hook payload was not valid JSON')
     return

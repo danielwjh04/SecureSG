@@ -20,8 +20,16 @@ permission decision:
 | `HUMAN_APPROVAL_REQUIRED` | `ask`                | Claude Code asks you to approve         |
 | `BLOCK`                   | `deny`               | Tool call is blocked, reason fed back   |
 
-A tool call with no scannable indicators (e.g. reading a local file) is allowed
-without a round-trip cost beyond the single guard request.
+A tool call with no visible URL is still evaluated by capability. Low-risk
+project reads can pass quickly, while sensitive reads, package installs,
+destructive commands, permission changes, unknown shell commands, MCP calls,
+and new network destinations require review or stronger enforcement based on
+policy.
+
+Before the hook calls `/api/guard`, it redacts likely local secrets from the
+payload. Token-like fields, passwords, cookies, authorization headers, bearer
+values, basic auth values, and query-string credentials are replaced with
+`[REDACTED]` in the local Node process.
 
 ## The fail-closed guarantee
 

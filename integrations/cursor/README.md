@@ -13,6 +13,9 @@ stdout. SecureAI maps them to the existing `/api/guard` contract.
 - MCP tool calls through `beforeMCPExecution`.
 - Network errors, timeouts, malformed responses, missing API keys, and unknown
   decisions all return `permission: "deny"`.
+- Likely local secrets are redacted before the adapter calls `/api/guard`,
+  including token-like fields, passwords, cookies, authorization headers,
+  bearer values, basic auth values, and query-string credentials.
 
 ## Install
 
