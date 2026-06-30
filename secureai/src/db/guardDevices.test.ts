@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { memoryDatabase } from './memory.test'
 import { createFreeUser, sha256Hex } from './accounts'
 import {
+  activeGuardDeviceExists,
+  countActiveGuardDevices,
   createGuardDeviceCredential,
   findGuardDeviceByCredential,
   listGuardDevices,
@@ -111,5 +113,115 @@ describe('guard device credentials', () => {
       status: 'active',
     })
     expect(JSON.stringify(devices)).not.toContain(minted.credential)
+  })
+
+  it('re-registering the same device and integration revokes the prior active credential and leaves exactly one active', async () => {
+    const { db } = memoryDatabase()
+    const { user } = await createFreeUser(db, 'rotate@example.com')
+    const first = await createGuardDeviceCredential(db, {
+      userId: user.id,
+      deviceId: 'dev_rotate',
+      name: null,
+      integration: 'claude-code',
+      scopes: ['guard:decision'],
+      createdAt: '2026-06-30T00:00:00.000Z',
+      expiresAt: tomorrow(),
+    })
+    const second = await createGuardDeviceCredential(db, {
+      userId: user.id,
+      deviceId: 'dev_rotate',
+      name: null,
+      integration: 'claude-code',
+      scopes: ['guard:decision'],
+      createdAt: '2026-06-30T01:00:00.000Z',
+      expiresAt: tomorrow(),
+    })
+
+    const all = await listGuardDevices(db, user.id)
+    // Both rows preserved (one active, one revoked).
+    expect(all).toHaveLength(2)
+    const active = all.filter((d) => d.status === 'active')
+    const revoked = all.filter((d) => d.status === 'revoked')
+    expect(active).toHaveLength(1)
+    expect(revoked).toHaveLength(1)
+    // The active row is the new one; the revoked row is the old one.
+    expect(active[0]?.id).toBe(second.device.id)
+    expect(revoked[0]?.id).toBe(first.device.id)
+    // The new credential differs from the old one.
+    expect(second.credential).not.toBe(first.credential)
+  })
+
+  it('the same device with a different integration keeps both active', async () => {
+    const { db } = memoryDatabase()
+    const { user } = await createFreeUser(db, 'two-integrations@example.com')
+    await createGuardDeviceCredential(db, {
+      userId: user.id,
+      deviceId: 'dev_shared',
+      name: null,
+      integration: 'claude-code',
+      scopes: ['guard:decision'],
+      createdAt: '2026-06-30T00:00:00.000Z',
+      expiresAt: tomorrow(),
+    })
+    await createGuardDeviceCredential(db, {
+      userId: user.id,
+      deviceId: 'dev_shared',
+      name: null,
+      integration: 'codex',
+      scopes: ['guard:decision'],
+      createdAt: '2026-06-30T01:00:00.000Z',
+      expiresAt: tomorrow(),
+    })
+
+    const all = await listGuardDevices(db, user.id)
+    expect(all).toHaveLength(2)
+    expect(all.filter((d) => d.status === 'active')).toHaveLength(2)
+  })
+
+  it('countActiveGuardDevices counts only active rows', async () => {
+    const { db } = memoryDatabase()
+    const { user } = await createFreeUser(db, 'count@example.com')
+    const m1 = await createGuardDeviceCredential(db, {
+      userId: user.id,
+      deviceId: 'dev_a',
+      name: null,
+      integration: 'claude-code',
+      scopes: ['guard:decision'],
+      createdAt: '2026-06-30T00:00:00.000Z',
+      expiresAt: tomorrow(),
+    })
+    await createGuardDeviceCredential(db, {
+      userId: user.id,
+      deviceId: 'dev_b',
+      name: null,
+      integration: 'claude-code',
+      scopes: ['guard:decision'],
+      createdAt: '2026-06-30T01:00:00.000Z',
+      expiresAt: tomorrow(),
+    })
+
+    expect(await countActiveGuardDevices(db, user.id)).toBe(2)
+
+    // Revoke one; the count drops to 1.
+    await revokeGuardDevice(db, user.id, m1.device.id)
+    expect(await countActiveGuardDevices(db, user.id)).toBe(1)
+  })
+
+  it('activeGuardDeviceExists returns true only for a matching active tuple', async () => {
+    const { db } = memoryDatabase()
+    const { user } = await createFreeUser(db, 'exists@example.com')
+    await createGuardDeviceCredential(db, {
+      userId: user.id,
+      deviceId: 'dev_x',
+      name: null,
+      integration: 'claude-code',
+      scopes: ['guard:decision'],
+      createdAt: '2026-06-30T00:00:00.000Z',
+      expiresAt: tomorrow(),
+    })
+
+    expect(await activeGuardDeviceExists(db, user.id, 'dev_x', 'claude-code')).toBe(true)
+    expect(await activeGuardDeviceExists(db, user.id, 'dev_x', 'codex')).toBe(false)
+    expect(await activeGuardDeviceExists(db, user.id, 'dev_other', 'claude-code')).toBe(false)
   })
 })

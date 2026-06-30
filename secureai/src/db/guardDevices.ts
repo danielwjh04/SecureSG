@@ -110,7 +110,12 @@ function rowToDevice(row: Row): GuardDeviceRecord {
 /**
  * Register a device-scoped Guard credential for a user.
  *
- * Time complexity: O(1), one insert. Space complexity: O(1).
+ * Atomically revokes any existing active credential for the same
+ * (user_id, device_id, integration) tuple before inserting the new one, making
+ * re-registration a rotation rather than a second active row. Uses db.batch so
+ * the revoke and insert are all-or-nothing.
+ *
+ * Time complexity: O(1). Space complexity: O(1).
  */
 export async function createGuardDeviceCredential(
   db: Database,
@@ -123,24 +128,33 @@ export async function createGuardDeviceCredential(
     ? input.scopes
     : [REQUIRED_SCOPE, ...input.scopes]
   try {
-    await db.execute(
-      'INSERT INTO guard_device_credentials ' +
-        '(id, credential_sha256, user_id, device_id, name, integration, scopes, status, created_at, expires_at, last_seen_at) ' +
-        'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      [
-        id,
-        credentialHash,
-        input.userId,
-        input.deviceId,
-        input.name,
-        input.integration,
-        scopes.join(','),
-        'active',
-        input.createdAt,
-        input.expiresAt,
-        null,
-      ],
-    )
+    await db.batch([
+      {
+        sql:
+          "UPDATE guard_device_credentials SET status = 'revoked' " +
+          "WHERE user_id = ? AND device_id = ? AND integration = ? AND status = 'active'",
+        params: [input.userId, input.deviceId, input.integration],
+      },
+      {
+        sql:
+          'INSERT INTO guard_device_credentials ' +
+          '(id, credential_sha256, user_id, device_id, name, integration, scopes, status, created_at, expires_at, last_seen_at) ' +
+          'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        params: [
+          id,
+          credentialHash,
+          input.userId,
+          input.deviceId,
+          input.name,
+          input.integration,
+          scopes.join(','),
+          'active',
+          input.createdAt,
+          input.expiresAt,
+          null,
+        ],
+      },
+    ])
   } catch (error: unknown) {
     const name = error instanceof Error ? error.name : typeof error
     log.error('guardDevices', 'create failed', { errorClass: name })
@@ -162,6 +176,38 @@ export async function createGuardDeviceCredential(
       lastSeenAt: null,
     },
   }
+}
+
+/**
+ * Count active Guard device credentials for one account.
+ *
+ * Time complexity: O(1) (indexed on user_id + status). Space complexity: O(1).
+ */
+export async function countActiveGuardDevices(db: Database, userId: string): Promise<number> {
+  const row = await db.queryOne(
+    "SELECT COUNT(*) AS n FROM guard_device_credentials WHERE user_id = ? AND status = 'active'",
+    [userId],
+  )
+  return typeof row?.['n'] === 'number' ? row['n'] : 0
+}
+
+/**
+ * Check whether a specific (user, deviceId, integration) tuple already has an
+ * active credential, so rotation can be distinguished from a genuinely new device.
+ *
+ * Time complexity: O(1) (partial unique index). Space complexity: O(1).
+ */
+export async function activeGuardDeviceExists(
+  db: Database,
+  userId: string,
+  deviceId: string,
+  integration: string,
+): Promise<boolean> {
+  const row = await db.queryOne(
+    "SELECT 1 AS one FROM guard_device_credentials WHERE user_id = ? AND device_id = ? AND integration = ? AND status = 'active' LIMIT 1",
+    [userId, deviceId, integration],
+  )
+  return row !== null
 }
 
 /**

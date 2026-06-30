@@ -10,12 +10,14 @@ import type {
   GuardDeviceRegisterPayload,
   GuardDeviceRevokePayload,
 } from '../schemas/validate'
-import { AuthError, ParseError, ScannerError } from '../errors'
+import { AuthError, GuardDeviceLimitError, ParseError, ScannerError } from '../errors'
 import {
   guardDeviceRegisterSchema,
   guardDeviceRevokeSchema,
 } from '../schemas/validate'
 import {
+  activeGuardDeviceExists,
+  countActiveGuardDevices,
   createGuardDeviceCredential,
   listGuardDevices,
   revokeGuardDevice,
@@ -27,6 +29,7 @@ import { log } from '../observability/logger'
 const STATUS_OK = 200
 const STATUS_CREATED = 201
 const STATUS_UNAUTHORIZED = 401
+const STATUS_TOO_MANY_REQUESTS = 429
 const STATUS_UNPROCESSABLE = 422
 const STATUS_SERVER_ERROR = 500
 const STATUS_SERVICE_UNAVAILABLE = 503
@@ -94,6 +97,9 @@ function errorResponse(module: string, error: unknown): Response {
   if (error instanceof ParseError) {
     return Response.json({ error: className, message }, { status: STATUS_UNPROCESSABLE })
   }
+  if (error instanceof GuardDeviceLimitError) {
+    return Response.json({ error: className, message }, { status: STATUS_TOO_MANY_REQUESTS })
+  }
   if (error instanceof AuthError || error instanceof ScannerError) {
     return Response.json({ error: className, message }, { status: STATUS_SERVER_ERROR })
   }
@@ -122,13 +128,19 @@ export async function handleGuardDeviceRegister(
       guardDeviceRegisterSchema,
       'guard device register',
     )
+    const deviceId = body.deviceId ?? crypto.randomUUID()
+    if (!(await activeGuardDeviceExists(db, subject, deviceId, body.integration))) {
+      if ((await countActiveGuardDevices(db, subject)) >= deps.config.guardMaxDevicesPerAccount) {
+        throw new GuardDeviceLimitError('active device limit reached for this account')
+      }
+    }
     const createdAt = new Date()
     const expiresAt = new Date(
       createdAt.getTime() + deps.config.guardDeviceCredentialTtlDays * MILLISECONDS_PER_DAY,
     )
     const minted = await createGuardDeviceCredential(db, {
       userId: subject,
-      deviceId: body.deviceId ?? crypto.randomUUID(),
+      deviceId,
       name: body.name ?? null,
       integration: body.integration,
       scopes: body.scopes ?? ['guard:decision'],

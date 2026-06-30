@@ -184,6 +184,32 @@ export class MemoryStore {
       }
       return { id: user.id, tier: user.tier }
     }
+    if (sql.includes("COUNT(*) AS n FROM guard_device_credentials WHERE user_id")) {
+      const userId = String(params[0])
+      let n = 0
+      for (const record of this.guardDeviceCredentials.values()) {
+        if (record.user_id === userId && record.status === 'active') {
+          n += 1
+        }
+      }
+      return { n }
+    }
+    if (sql.includes('SELECT 1 AS one FROM guard_device_credentials WHERE user_id')) {
+      const userId = String(params[0])
+      const deviceId = String(params[1])
+      const integration = String(params[2])
+      for (const record of this.guardDeviceCredentials.values()) {
+        if (
+          record.user_id === userId &&
+          record.device_id === deviceId &&
+          record.integration === integration &&
+          record.status === 'active'
+        ) {
+          return { one: 1 }
+        }
+      }
+      return null
+    }
     if (sql.includes('FROM guard_device_credentials g JOIN users u')) {
       const credential = this.guardDeviceCredentials.get(String(params[0]))
       if (credential === undefined || credential.status !== 'active') {
@@ -827,6 +853,28 @@ export class MemoryStore {
         }
       }
       return { changes: 0 }
+    }
+    if (
+      sql.startsWith("UPDATE guard_device_credentials SET status = 'revoked'") &&
+      sql.includes('AND device_id = ?')
+    ) {
+      // Rotation revoke: match by (user_id, device_id, integration) not by id.
+      const userId = String(params[0])
+      const deviceId = String(params[1])
+      const integration = String(params[2])
+      let changes = 0
+      for (const record of this.guardDeviceCredentials.values()) {
+        if (
+          record.user_id === userId &&
+          record.device_id === deviceId &&
+          record.integration === integration &&
+          record.status === 'active'
+        ) {
+          record.status = 'revoked'
+          changes += 1
+        }
+      }
+      return { changes }
     }
     if (sql.startsWith("UPDATE guard_device_credentials SET status = 'revoked'")) {
       const userId = String(params[0])

@@ -96,3 +96,6 @@ export class EmailError extends ScannerError {}
  * is NOT an error, it is a generic 401 the route returns directly.
  */
 export class OtpError extends ScannerError {}
+
+/** A device registration would exceed the per-account active-device cap. Mapped to HTTP 429. */
+export class GuardDeviceLimitError extends ScannerError {}

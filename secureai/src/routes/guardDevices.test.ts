@@ -10,9 +10,14 @@ import {
 } from './guardDevices'
 
 const config = loadConfig({ SCANNER_GUARD_DEVICE_TTL_DAYS: '30' })
+const capConfig = loadConfig({ SCANNER_GUARD_DEVICE_TTL_DAYS: '30', SCANNER_GUARD_MAX_DEVICES_PER_ACCOUNT: '2' })
 
 function deps(db: GuardDeviceDeps['db']): GuardDeviceDeps {
   return { db, sessionSecret: null, config }
+}
+
+function capDeps(db: GuardDeviceDeps['db']): GuardDeviceDeps {
+  return { db, sessionSecret: null, config: capConfig }
 }
 
 function req(
@@ -83,5 +88,49 @@ describe('guard device routes', () => {
       deps(db),
     )
     expect(res.status).toBe(401)
+  })
+
+  it('rejects registration of a new device when the active cap is reached (429)', async () => {
+    const { db } = memoryDatabase()
+    const { apiKey } = await createFreeUser(db, 'cap-test@example.com')
+
+    // Fill the cap (2 devices, 2 different device IDs).
+    await handleGuardDeviceRegister(
+      req('POST', { deviceId: 'cap_dev_1', integration: 'claude-code' }, apiKey),
+      capDeps(db),
+    )
+    await handleGuardDeviceRegister(
+      req('POST', { deviceId: 'cap_dev_2', integration: 'claude-code' }, apiKey),
+      capDeps(db),
+    )
+
+    // Third NEW device should be rejected.
+    const res = await handleGuardDeviceRegister(
+      req('POST', { deviceId: 'cap_dev_3', integration: 'claude-code' }, apiKey),
+      capDeps(db),
+    )
+    expect(res.status).toBe(429)
+  })
+
+  it('re-registering an existing device at the cap still returns 201 (rotation, not a new device)', async () => {
+    const { db } = memoryDatabase()
+    const { apiKey } = await createFreeUser(db, 'cap-rotate@example.com')
+
+    // Fill the cap.
+    await handleGuardDeviceRegister(
+      req('POST', { deviceId: 'rot_dev_1', integration: 'claude-code' }, apiKey),
+      capDeps(db),
+    )
+    await handleGuardDeviceRegister(
+      req('POST', { deviceId: 'rot_dev_2', integration: 'claude-code' }, apiKey),
+      capDeps(db),
+    )
+
+    // Re-registering an already-active (deviceId, integration) is rotation, allowed at the cap.
+    const res = await handleGuardDeviceRegister(
+      req('POST', { deviceId: 'rot_dev_1', integration: 'claude-code' }, apiKey),
+      capDeps(db),
+    )
+    expect(res.status).toBe(201)
   })
 })

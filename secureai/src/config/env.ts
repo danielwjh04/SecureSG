@@ -164,6 +164,8 @@ export interface ScannerConfig {
   readonly guardLastSeenThrottleSeconds: number
   /** Lifetime, in days, for newly minted Guard device credentials. */
   readonly guardDeviceCredentialTtlDays: number
+  /** Maximum number of active Guard device credentials allowed per account. */
+  readonly guardMaxDevicesPerAccount: number
   /** Guard tool names treated as low-risk filesystem reads when paths are not sensitive. */
   readonly guardReadTools: ReadonlySet<string>
   /** Guard tool names treated as filesystem writes. */
@@ -388,6 +390,13 @@ export function loadConfig(env: Env): ScannerConfig {
     1,
     365,
   )
+  const guardMaxDevicesPerAccount = readIntInRange(
+    env,
+    'SCANNER_GUARD_MAX_DEVICES_PER_ACCOUNT',
+    25,
+    1,
+    1000,
+  )
   const guardReadTools = readSet(env, 'SCANNER_GUARD_READ_TOOLS', 'read,grep,glob,ls')
   const guardWriteTools = readSet(
     env,
@@ -585,6 +594,7 @@ export function loadConfig(env: Env): ScannerConfig {
     guardAllowAccountCredentials,
     guardLastSeenThrottleSeconds,
     guardDeviceCredentialTtlDays,
+    guardMaxDevicesPerAccount,
     guardReadTools,
     guardWriteTools,
     guardShellTools,
