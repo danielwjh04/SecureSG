@@ -452,7 +452,9 @@ export async function runCodexGuard(input, options = {}) {
   } catch {
     return failClosedOutput('hook payload did not match a supported Codex hook')
   }
-  guardPayload = applyPrivacyMode(attachLocalContext(guardPayload, config), config.privacyMode)
+  const withContext = attachLocalContext(guardPayload, config)
+  withContext.content_hash = computeContentHash(withContext)
+  guardPayload = applyPrivacyMode(withContext, config.privacyMode)
 
   const fetchImpl = options.fetchImpl ?? fetch
   let response

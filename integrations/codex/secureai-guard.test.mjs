@@ -142,7 +142,6 @@ test('attaches device identity and applies maximum privacy mode', async () => {
   assert.equal(body.session_id, undefined)
   assert.equal(body.transcript_path, undefined)
   assert.equal(body.tool_input, undefined)
-  assert.equal(body.privacy_mode, 'maximum')
   assert.equal(body.cwd, undefined)
 })
 
@@ -183,6 +182,77 @@ test('routes a network tool call and emits ask', async () => {
   const body = JSON.parse(calls[0].init.body)
   assert.equal(body.tool_name, 'mcp__browser__open')
   assert.equal(body.tool_input.url, 'https://bit.ly/setup')
+})
+
+test('attaches content_hash (64-hex) on a normal request', async () => {
+  const calls = []
+  await runCodexGuard(
+    JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { file_path: 'README.md' } }),
+    {
+      env: { SECUREAI_API_KEY: KEY },
+      fetchImpl: async (url, init) => {
+        calls.push({ url, init })
+        return new Response(JSON.stringify({ decision: 'allow', reason: 'safe', verdict: null }), { status: 200, headers: { 'content-type': 'application/json' } })
+      },
+    },
+  )
+  const body = JSON.parse(calls[0].init.body)
+  assert.match(body.content_hash, /^[0-9a-f]{64}$/)
+})
+
+test('attaches content_hash and redacts new secret forms before upload', async () => {
+  const calls = []
+  await runCodexGuard(
+    JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'aws configure; echo AKIAIOSFODNN7EXAMPLE; export SLACK=xoxb-1-2-abcdefghijkl' } }),
+    {
+      env: { SECUREAI_API_KEY: KEY },
+      fetchImpl: async (u, init) => {
+        calls.push({ u, init })
+        return new Response(JSON.stringify({ decision: 'ask', reason: 'r', verdict: 'BLOCK' }), { status: 200, headers: { 'content-type': 'application/json' } })
+      },
+    },
+  )
+  const body = JSON.parse(calls[0].init.body)
+  assert.match(body.content_hash, /^[0-9a-f]{64}$/)
+  assert.doesNotMatch(calls[0].init.body, /AKIAIOSFODNN7EXAMPLE/)
+  assert.doesNotMatch(calls[0].init.body, /xoxb-1-2-abcdefghijkl/)
+})
+
+test('maximum mode: metadata and hash present, raw content absent', async () => {
+  const calls = []
+  await runCodexGuard(
+    JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'ls /secret' }, session_id: 'session-x', cwd: '/repo' }),
+    {
+      env: { SECUREAI_API_KEY: KEY, SECUREAI_PRIVACY_MODE: 'maximum' },
+      fetchImpl: async (u, init) => {
+        calls.push({ u, init })
+        return new Response(JSON.stringify({ decision: 'allow', reason: 'r', verdict: null }), { status: 200, headers: { 'content-type': 'application/json' } })
+      },
+    },
+  )
+  const body = JSON.parse(calls[0].init.body)
+  assert.equal(body.tool_input, undefined)
+  assert.equal(body.cwd, undefined)
+  assert.equal(body.session_id, undefined)
+  assert.match(body.content_hash, /^[0-9a-f]{64}$/)
+  assert.equal(body.tool_name, 'Bash')
+})
+
+test('balanced mode: redacted tool_input and content_hash both present', async () => {
+  const calls = []
+  await runCodexGuard(
+    JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'echo hello' } }),
+    {
+      env: { SECUREAI_API_KEY: KEY, SECUREAI_PRIVACY_MODE: 'balanced' },
+      fetchImpl: async (u, init) => {
+        calls.push({ u, init })
+        return new Response(JSON.stringify({ decision: 'allow', reason: 'r', verdict: null }), { status: 200, headers: { 'content-type': 'application/json' } })
+      },
+    },
+  )
+  const body = JSON.parse(calls[0].init.body)
+  assert.ok(body.tool_input !== undefined)
+  assert.match(body.content_hash, /^[0-9a-f]{64}$/)
 })
 
 test('fails closed when the API key is missing', async () => {

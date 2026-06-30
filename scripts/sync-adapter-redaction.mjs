@@ -20,6 +20,7 @@ function sharedBlock() {
   const src = readFileSync('integrations/shared/secureai-redact.mjs', 'utf8')
   const body = src
     .replace(/^import .*$/gm, '')
+    .replace(/^export \{[^}]*\}.*$/gm, '')
     .replace(/^export (const|function) /gm, '$1 ')
   return `${BEGIN}\n${body.trim()}\n${END}`
 }

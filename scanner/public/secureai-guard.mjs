@@ -132,12 +132,6 @@ function applyPrivacyMode(payload, mode) {
 }
 // SECUREAI-REDACT:END
 
-/**
- * Read all of stdin and resolve it as a UTF-8 string. Claude Code writes the
- * hook payload to stdin and closes it, so this resolves once the stream ends.
- *
- * @returns {Promise<string>} The complete stdin contents.
- */
 function readStdin() {
   return new Promise((resolve, reject) => {
     let data = ''
@@ -150,35 +144,6 @@ function readStdin() {
   })
 }
 
-/**
- * Print a Claude Code PreToolUse hook decision to stdout, then exit 0.
- *
- * @param {'allow'|'ask'|'deny'} permissionDecision The mapped decision.
- * @param {string} permissionDecisionReason A human-readable rationale.
- */
-function emitDecision(permissionDecision, permissionDecisionReason) {
-  const output = {
-    hookSpecificOutput: {
-      hookEventName: HOOK_EVENT_NAME,
-      permissionDecision,
-      permissionDecisionReason,
-    },
-  }
-  process.stdout.write(JSON.stringify(output))
-  process.exit(0)
-}
-
-/**
- * Emit the fail-closed `deny` decision. Centralized so every failure path
- * unreadable stdin, network fault, timeout, non-2xx, malformed body, produces
- * the identical deny-by-default output. Never allows on failure.
- *
- * @param {string} reason Why the guard could not verify the call.
- */
-function failClosed(reason) {
-  emitDecision('deny', `SecureAI guard could not verify this tool call: ${reason}. Blocked fail-closed.`)
-}
-
 function nonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0
 }
@@ -188,28 +153,21 @@ function normalizePrivacyMode(value) {
   return PRIVACY_MODES.has(mode) ? mode : DEFAULT_PRIVACY_MODE
 }
 
-function attachLocalContext(payload, privacyMode) {
+function attachLocalContext(payload, privacyMode, env) {
   if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
     return payload
   }
   const output = { ...payload, privacy_mode: privacyMode }
-  if (nonEmptyString(process.env.SECUREAI_DEVICE_ID)) {
-    output.device_id = process.env.SECUREAI_DEVICE_ID.trim()
+  if (nonEmptyString(env.SECUREAI_DEVICE_ID)) {
+    output.device_id = env.SECUREAI_DEVICE_ID.trim()
   }
-  if (nonEmptyString(process.env.SECUREAI_INTEGRATION_VERSION)) {
-    output.integration_version = process.env.SECUREAI_INTEGRATION_VERSION.trim()
+  if (nonEmptyString(env.SECUREAI_INTEGRATION_VERSION)) {
+    output.integration_version = env.SECUREAI_INTEGRATION_VERSION.trim()
   }
   return output
 }
 
-/**
- * Map the server's `GuardDecision` body to a Claude Code decision and emit it.
- * A body missing the required string fields is treated as unverifiable and fails
- * closed rather than being trusted.
- *
- * @param {unknown} body The parsed JSON response from `/api/guard`.
- */
-function emitFromGuardDecision(body) {
+function mapGuardDecision(body) {
   const decision = body && typeof body === 'object' ? body.decision : undefined
   const reason =
     body && typeof body === 'object' && typeof body.reason === 'string'
@@ -217,40 +175,51 @@ function emitFromGuardDecision(body) {
       : 'no reason provided'
 
   if (decision === 'allow' || decision === 'ask' || decision === 'deny') {
-    emitDecision(decision, reason)
-    return
+    return {
+      hookSpecificOutput: {
+        hookEventName: HOOK_EVENT_NAME,
+        permissionDecision: decision,
+        permissionDecisionReason: reason,
+      },
+    }
   }
-  failClosed('scanner returned an unrecognized decision')
+  return null
+}
+
+function failClosedOutput(reason) {
+  return {
+    hookSpecificOutput: {
+      hookEventName: HOOK_EVENT_NAME,
+      permissionDecision: 'deny',
+      permissionDecisionReason: `SecureAI guard could not verify this tool call: ${reason}. Blocked fail-closed.`,
+    },
+  }
 }
 
 /**
- * Entry point: read the payload, POST it to the guard, and emit the decision.
- * Every error path routes through failClosed.
+ * Run one Claude Code PreToolUse payload through SecureAI and return the hook
+ * output object. Accepts env and fetchImpl for testability.
  */
-async function main() {
-  const apiUrl = (process.env.SECUREAI_API_URL || DEFAULT_API_URL).replace(/\/+$/, '')
-  const apiKey = process.env.SECUREAI_API_KEY
-  const privacyMode = normalizePrivacyMode(process.env.SECUREAI_PRIVACY_MODE)
-  const timeoutRaw = Number(process.env.SECUREAI_TIMEOUT_MS)
-  const timeoutMs =
-    Number.isFinite(timeoutRaw) && timeoutRaw > 0 ? timeoutRaw : DEFAULT_TIMEOUT_MS
+export async function runGuard(input, options = {}) {
+  const env = options.env ?? process.env
+  const fetchImpl = options.fetchImpl ?? fetch
 
-  let payload
+  const apiUrl = (env.SECUREAI_API_URL || DEFAULT_API_URL).replace(/\/+$/, '')
+  const apiKey = env.SECUREAI_API_KEY
+  const privacyMode = normalizePrivacyMode(env.SECUREAI_PRIVACY_MODE)
+  const timeoutRaw = Number(env.SECUREAI_TIMEOUT_MS)
+  const timeoutMs = Number.isFinite(timeoutRaw) && timeoutRaw > 0 ? timeoutRaw : DEFAULT_TIMEOUT_MS
+
+  let parsed
   try {
-    payload = await readStdin()
+    parsed = JSON.parse(input)
   } catch {
-    failClosed('could not read the hook payload from stdin')
-    return
+    return failClosedOutput('hook payload was not valid JSON')
   }
 
-  // The payload must be valid JSON; if Claude Code handed us something
-  // unparseable, we cannot safely forward it, fail closed.
-  try {
-    payload = JSON.stringify(applyPrivacyMode(attachLocalContext(JSON.parse(payload), privacyMode), privacyMode))
-  } catch {
-    failClosed('hook payload was not valid JSON')
-    return
-  }
+  const withContext = attachLocalContext(parsed, privacyMode, env)
+  withContext.content_hash = computeContentHash(withContext)
+  const guardPayload = JSON.stringify(applyPrivacyMode(withContext, privacyMode))
 
   const headers = { 'content-type': 'application/json' }
   if (typeof apiKey === 'string' && apiKey.length > 0) {
@@ -259,35 +228,51 @@ async function main() {
 
   let response
   try {
-    response = await fetch(`${apiUrl}${GUARD_PATH}`, {
+    response = await fetchImpl(`${apiUrl}${GUARD_PATH}`, {
       method: 'POST',
       headers,
-      body: payload,
+      body: guardPayload,
       signal: AbortSignal.timeout(timeoutMs),
     })
   } catch (error) {
     const detail = error && error.name === 'TimeoutError' ? `timed out after ${timeoutMs}ms` : 'network error'
-    failClosed(detail)
-    return
+    return failClosedOutput(detail)
   }
 
   if (!response.ok) {
-    failClosed(`scanner responded with HTTP ${response.status}`)
-    return
+    return failClosedOutput(`scanner responded with HTTP ${response.status}`)
   }
 
   let body
   try {
     body = await response.json()
   } catch {
-    failClosed('scanner response was not valid JSON')
+    return failClosedOutput('scanner response was not valid JSON')
+  }
+
+  return mapGuardDecision(body) ?? failClosedOutput('scanner returned an unrecognized decision')
+}
+
+/**
+ * Entry point: read stdin, run the guard, emit the decision to stdout.
+ */
+async function main() {
+  const env = process.env
+  let input
+  try {
+    input = await readStdin()
+  } catch {
+    process.stdout.write(JSON.stringify(failClosedOutput('could not read the hook payload from stdin')))
+    process.exit(0)
     return
   }
 
-  emitFromGuardDecision(body)
+  const output = await runGuard(input, { env })
+  process.stdout.write(JSON.stringify(output))
+  process.exit(0)
 }
 
 main().catch(() => {
-  // Last-resort guard: any unforeseen throw still fails closed, never allows.
-  failClosed('unexpected guard error')
+  process.stdout.write(JSON.stringify(failClosedOutput('unexpected guard error')))
+  process.exit(0)
 })
