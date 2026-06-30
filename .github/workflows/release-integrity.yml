@@ -1,0 +1,139 @@
+name: Release Integrity
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/release-integrity.yml"
+      - "docs/release-integrity.md"
+      - "integrations/**/secureai-guard.mjs"
+      - "scanner/public/install.ps1"
+      - "scanner/public/install.sh"
+      - "scanner/public/secureai-guard.mjs"
+      - "scripts/release-checksums.mjs"
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  build-assets:
+    name: Build release assets
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Build installer and guard assets
+        run: node scripts/release-checksums.mjs release-assets
+
+      - name: Verify checksums
+        run: cd release-assets && sha256sum -c SHA256SUMS.txt
+
+      - name: Check hook health output
+        run: |
+          SECUREAI_API_KEY=sk_test_release_health \
+          SECUREAI_DEVICE_ID=dev_release_health \
+          SECUREAI_PRIVACY_MODE=maximum \
+          SECUREAI_INTEGRATION_VERSION=release-check \
+          node integrations/claude-code/secureai-guard.mjs --health > health.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          raw = Path("health.json").read_text(encoding="utf-8")
+          health = json.loads(raw)
+          expected = {
+              "provider": "claude-code",
+              "status": "enabled",
+              "auth": "present",
+              "device_id": "present",
+              "privacy_mode": "maximum",
+              "integration_version": "present",
+          }
+          for key, value in expected.items():
+              if health.get(key) != value:
+                  raise SystemExit(f"{key} was {health.get(key)!r}, expected {value!r}")
+          if "sk_test_release_health" in raw or "dev_release_health" in raw:
+              raise SystemExit("health output leaked a credential or device id")
+          PY
+
+      - name: Check release docs style
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          paths = [
+              Path("README.md"),
+              Path("docs/release-integrity.md"),
+              Path(".github/workflows/release-integrity.yml"),
+          ]
+          failed = False
+          for path in paths:
+              text = path.read_text(encoding="utf-8")
+              for mark, name in {chr(8212): "em dash", chr(8211): "en dash"}.items():
+                  if mark in text:
+                      print(f"{path}: contains {name}")
+                      failed = True
+          if failed:
+              raise SystemExit(1)
+          PY
+
+      - name: Upload release asset bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: secureai-release-assets
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 30
+
+  attest-assets:
+    name: Attest release assets
+    needs: build-assets
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - name: Download release asset bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: secureai-release-assets
+          path: release-assets
+
+      - name: Attest assets
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "release-assets/*"
+
+  publish-tag-assets:
+    name: Publish tag release assets
+    needs: attest-assets
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download release asset bundle
+        uses: actions/download-artifact@v4
+        with:
+          name: secureai-release-assets
+          path: release-assets
+
+      - name: Publish assets to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" release-assets/* --title "$GITHUB_REF_NAME" --generate-notes
+          fi

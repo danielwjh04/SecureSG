@@ -120,7 +120,7 @@ The endpoint installer now creates a stable local `deviceId` in `~/.secureai/con
 
 Run a local adapter with `--health` to print a secret-free JSON status. It reports whether auth is configured, whether a device id is present, the selected privacy mode, and whether an integration version is configured. It never prints the API key or device id.
 
-Release integrity starts with `node scripts/release-checksums.mjs`. It stages the installer scripts, guard adapters, and `SHA256SUMS.txt` so release files can be verified before installing.
+Release integrity starts with `node scripts/release-checksums.mjs`. It stages the installer scripts, guard adapters, and `SHA256SUMS.txt` so release files can be verified before installing. The release workflow also publishes tag assets and requests GitHub artifact attestations. See [`docs/release-integrity.md`](docs/release-integrity.md).
 
 ## Browser extension (Chrome and Edge MV3)
 
