@@ -80,3 +80,61 @@ test('redacts alg:none JWT with empty third segment', () => {
 test('redacts HuggingFace hf_ prefixed token', () => {
   assert.doesNotMatch(redactString('use hf_abcdefghijklmnop here'), /hf_abcdefghijklmnop/)
 })
+
+// C1: PGP / armored private key blocks (suffix " BLOCK")
+test('redacts a PGP armored private key block', () => {
+  const pgp = '-----BEGIN PGP PRIVATE KEY BLOCK-----\nMIIxxxxxxxxxxxx\n-----END PGP PRIVATE KEY BLOCK-----'
+  const out = redactString(`gpg --import <<EOF\n${pgp}\nEOF`)
+  assert.doesNotMatch(out, /MIIxxxxxxxxxxxx/)
+  assert.match(out, /\[REDACTED\]/)
+})
+test('still redacts an OPENSSH private key block', () => {
+  const ossh = '-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXk\n-----END OPENSSH PRIVATE KEY-----'
+  assert.doesNotMatch(redactString(ossh), /b3BlbnNzaC1rZXk/)
+})
+
+// C2: connection-string passwords containing "@" or "/"
+test('redacts a connection password containing a slash', () => {
+  const out = redactString('redis://u:pa/ss@h')
+  assert.doesNotMatch(out, /pa\/ss/)
+  assert.match(out, /\[REDACTED\]/)
+})
+test('redacts a connection password containing an embedded @', () => {
+  const out = redactString('mongodb://admin:p@sswESC@cluster')
+  assert.doesNotMatch(out, /sswESC/)
+  assert.doesNotMatch(out, /p@sswESC/)
+  assert.match(out, /\[REDACTED\]/)
+})
+test('redacts a connection password with no username', () => {
+  assert.doesNotMatch(redactString('redis://:secretpw@h'), /secretpw/)
+})
+test('does not bleed across two space-separated connection URLs', () => {
+  const out = redactString('mongodb://a:firstpw@h1 redis://c:secondpw@h2')
+  assert.doesNotMatch(out, /firstpw/)
+  assert.doesNotMatch(out, /secondpw/)
+  assert.match(out, /@h1/)
+  assert.match(out, /@h2/)
+})
+
+// I1: Bearer/Basic value class widened to non-whitespace
+test('redacts a Bearer token containing out-of-class bytes', () => {
+  const out = redactString('Authorization: Bearer abc,def,ghi')
+  assert.doesNotMatch(out, /abc/)
+  assert.doesNotMatch(out, /def/)
+  assert.doesNotMatch(out, /ghi/)
+})
+
+// I2: JSON-as-string / colon-form secrets
+test('redacts a colon-form JSON password string', () => {
+  assert.doesNotMatch(redactString('{"password":"hunter2hunter2"}'), /hunter2hunter2/)
+})
+test('redacts a colon-form bare api_key string', () => {
+  assert.doesNotMatch(redactString('api_key: plaintextsecret2'), /plaintextsecret2/)
+})
+test('redacts a single-quoted colon-form session_key string', () => {
+  assert.doesNotMatch(redactString("{'session_key':'abc12345'}"), /abc12345/)
+})
+test('does not over-redact a non-secret colon string', () => {
+  assert.equal(redactString('ratio: 16'), 'ratio: 16')
+  assert.equal(redactString('note: hello'), 'note: hello')
+})
