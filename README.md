@@ -118,9 +118,9 @@ When `GUARD_TICKET_SECRET` is set, or an ES256 JWK pair is configured with `GUAR
 
 The endpoint installer now creates a stable local `deviceId` in `~/.secureai/config.json` and sends it with Guard requests. `SECUREAI_DEVICE_ID` can override it, and `SECUREAI_PRIVACY_MODE` can be `balanced` (default), `maximum`, or `investigation`. `balanced` sends the redacted tool input plus the content hash and metadata. `investigation` sends the same payload as `balanced` and differs only in server-side retention. `maximum` sends only the content hash and metadata (tool name, device id, integration version), removing tool input, cwd, session id, and transcript path before upload so no raw or redacted content leaves the machine.
 
-Run a local adapter with `--health` to print a secret-free JSON status. It reports whether auth is configured, whether a device id is present, the selected privacy mode, and whether an integration version is configured. It never prints the API key or device id.
+Run a local adapter with `--health` to print a secret-free JSON status. It reports whether auth is configured, whether a device id is present, whether the API URL is default or configured, the selected privacy mode, and whether an integration version is configured. It never prints the API key, raw API URL, or device id.
 
-Release integrity starts with `node scripts/release-checksums.mjs`. It stages the installer scripts, guard adapters, and `SHA256SUMS.txt` so release files can be verified before installing. The release workflow also publishes tag assets and requests GitHub artifact attestations. See [`docs/release-integrity.md`](docs/release-integrity.md).
+Release integrity starts with `node scripts/release-checksums.mjs`. It builds a release bundle containing the installer scripts, guard adapters, and `SHA256SUMS.txt` so files can be verified before installing. The Bash and PowerShell installers also verify downloaded guard adapters against `SHA256SUMS.txt` before moving them into place. The release workflow tests the adapters, checks redaction drift, builds scanner dist, verifies checksums, checks installer syntax, runs `--health` on the packaged assets, publishes tag assets, and requests GitHub artifact attestations. See [`docs/release-integrity.md`](docs/release-integrity.md).
 
 ## Browser extension (Chrome and Edge MV3)
 
