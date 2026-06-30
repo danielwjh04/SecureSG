@@ -13,6 +13,7 @@ import { PROJECT_ROOT, RELEASE_ASSETS, createReleaseBundle } from './release-che
 const tempDirs = []
 const bashPath = findUsableBash()
 const powerShellPath = findUsablePowerShell()
+const DEFAULT_RELEASE_BASE_URL = 'https://github.com/danielwjh04/SecureAI/releases/latest/download'
 
 after(async () => {
   await Promise.all(tempDirs.map((dir) => rm(dir, { recursive: true, force: true })))
@@ -345,6 +346,38 @@ test('copies the browser guard release asset from scanner dist', async () => {
   const copied = await readFile(path.join(outputDir, browserGuard.releaseName), 'utf8')
   const distSource = await readFile(path.join(root, browserGuard.sourcePath), 'utf8')
   assert.equal(copied, distSource)
+})
+
+test('installers default to the published release asset bundle', async () => {
+  const [bashInstaller, powerShellInstaller, dashboardConfig] = await Promise.all([
+    readFile(path.join(PROJECT_ROOT, 'scanner/public/install.sh'), 'utf8'),
+    readFile(path.join(PROJECT_ROOT, 'scanner/public/install.ps1'), 'utf8'),
+    readFile(path.join(PROJECT_ROOT, 'scanner/src/config.ts'), 'utf8'),
+  ])
+
+  assert.ok(bashInstaller.includes(`DEFAULT_RELEASE_BASE_URL="${DEFAULT_RELEASE_BASE_URL}"`))
+  assert.ok(
+    bashInstaller.includes(
+      'RELEASE_BASE_URL="${SECUREAI_RELEASE_BASE_URL:-${DEFAULT_RELEASE_BASE_URL}}"',
+    ),
+  )
+  assert.doesNotMatch(bashInstaller, /SECUREAI_RELEASE_BASE_URL:-\$\{API_URL\}/)
+
+  assert.ok(powerShellInstaller.includes(`$DefaultReleaseBaseUrl = '${DEFAULT_RELEASE_BASE_URL}'`))
+  assert.ok(
+    powerShellInstaller.includes(
+      '$ReleaseBaseUrl = if ($env:SECUREAI_RELEASE_BASE_URL) { $env:SECUREAI_RELEASE_BASE_URL } else { $DefaultReleaseBaseUrl }',
+    ),
+  )
+  assert.doesNotMatch(powerShellInstaller, /else \{ \$ApiUrl\.TrimEnd\('\/'\) \}/)
+
+  assert.ok(dashboardConfig.includes("'https://secureai.software/install.sh' as const"))
+  assert.ok(
+    dashboardConfig.includes(
+      'return `curl -fsSL ${GUARD_INSTALL_URL} | SECUREAI_API_KEY="${apiKey}" bash`',
+    ),
+  )
+  assert.doesNotMatch(dashboardConfig, /SECUREAI_RELEASE_BASE_URL/)
 })
 
 test('Bash installer accepts a valid local checksum manifest and adapter asset', { skip: bashPath ? false : 'usable Bash not found' }, async () => {

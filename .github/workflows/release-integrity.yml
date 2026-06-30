@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - ".github/workflows/release-integrity.yml"
+      - "README.md"
       - "docs/release-integrity.md"
       - "integrations/**/secureai-guard.mjs"
       - "integrations/**/secureai-guard.test.mjs"

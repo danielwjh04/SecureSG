@@ -1,7 +1,9 @@
 $ErrorActionPreference = 'Stop'
 
 $ApiUrl = if ($env:SECUREAI_API_URL) { $env:SECUREAI_API_URL } else { 'https://secureai.software' }
-$ReleaseBaseUrl = if ($env:SECUREAI_RELEASE_BASE_URL) { $env:SECUREAI_RELEASE_BASE_URL.TrimEnd('/') } else { $ApiUrl.TrimEnd('/') }
+$DefaultReleaseBaseUrl = 'https://github.com/danielwjh04/SecureAI/releases/latest/download'
+$ReleaseBaseUrl = if ($env:SECUREAI_RELEASE_BASE_URL) { $env:SECUREAI_RELEASE_BASE_URL } else { $DefaultReleaseBaseUrl }
+$ReleaseBaseUrl = $ReleaseBaseUrl.TrimEnd('/')
 $ChecksumsUrl = if ($env:SECUREAI_CHECKSUMS_URL) { $env:SECUREAI_CHECKSUMS_URL } else { "$ReleaseBaseUrl/SHA256SUMS.txt" }
 $SecureAiDir = if ($env:SECUREAI_DIR) { $env:SECUREAI_DIR } else { Join-Path $HOME '.secureai' }
 $ConfigPath = if ($env:SECUREAI_CONFIG_PATH) { $env:SECUREAI_CONFIG_PATH } else { Join-Path $SecureAiDir 'config.json' }

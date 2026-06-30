@@ -70,6 +70,11 @@ URL before installing guard adapters. Each selected adapter is downloaded to a
 temporary file, hashed with SHA-256, compared to its manifest entry, then moved
 into place only after a match.
 
+The default release base URL is
+`https://github.com/danielwjh04/SecureAI/releases/latest/download`.
+Set `SECUREAI_RELEASE_BASE_URL` when testing a local bundle or pinning a
+specific release directory.
+
 Installation stops on:
 
 - missing checksum manifest
