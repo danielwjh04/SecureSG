@@ -130,7 +130,7 @@ Each tier has a daily scan cap, and the AI injection judge is reserved for paid 
 
 > These caps and paid price ids mirror `secureai/wrangler.jsonc`. They are config, not code, so change them there and keep this table in sync.
 
-Free accounts subscribe to Personal or Pro through Stripe Checkout (idempotent webhooks); paid accounts manage or cancel from Settings through the Stripe billing portal. Your app navigation is How it works, Dashboard, Protection, Activity, Integrations, and Settings, with Log out on the right. The dashboard shows protection stats, a 30-day trend, recent scans, your API key (with one-click rotation), and the one-line Guard installer.
+Free accounts subscribe to Personal or Pro through Stripe Checkout (idempotent webhooks); paid accounts manage or cancel from Settings through the Stripe billing portal. Your app navigation is How it works, Dashboard, Protection, Activity, and Integrations, with Settings (and Admin for admins) as the right-side pills and sign-out on the Settings page. The dashboard shows protection stats, a 30-day trend, recent scans, your API key (with one-click rotation), and the one-line Guard installer.
 
 ## 👥 Team & admin
 
