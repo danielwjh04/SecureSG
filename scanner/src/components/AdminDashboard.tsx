@@ -391,6 +391,9 @@ function TierBreakdown({ tiers, total }: { tiers: AdminTierCounts; total: number
               outerRadius={78}
               paddingAngle={hasUsers ? 2 : 0}
               stroke="none"
+              // The hovered slice lifts outward (recharts animates the radius
+              // change), the donut analogue of the trend chart's hover response.
+              activeShape={{ outerRadius: 86 }}
               onMouseEnter={(sector, index) => {
                 if (!hasUsers) return
                 const entry = data[index]
@@ -429,6 +432,9 @@ function TierBreakdown({ tiers, total }: { tiers: AdminTierCounts; total: number
                 <Cell key={entry.name} fill={entry.color} />
               ))}
             </Pie>
+            {/* Hidden tooltip: drives recharts' active-slice state (so `activeShape`
+                fires on hover) without painting a box; the label box below is ours. */}
+            {hasUsers && <Tooltip wrapperStyle={{ display: 'none' }} />}
           </PieChart>
         </ResponsiveContainer>
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
