@@ -13,6 +13,7 @@ set -euo pipefail
 API_URL="${SECUREAI_API_URL:-https://secureai.software}"
 SECUREAI_DIR="${SECUREAI_DIR:-${HOME}/.secureai}"
 CONFIG_PATH="${SECUREAI_CONFIG_PATH:-${SECUREAI_DIR}/config.json}"
+PRIVACY_MODE="${SECUREAI_PRIVACY_MODE:-balanced}"
 
 CLAUDE_GUARD_URL="${SECUREAI_CLAUDE_GUARD_URL:-${API_URL}/secureai-guard.mjs}"
 CURSOR_GUARD_URL="${SECUREAI_CURSOR_GUARD_URL:-https://raw.githubusercontent.com/danielwjh04/SecureAI/main/integrations/cursor/secureai-guard.mjs}"
@@ -155,14 +156,53 @@ download_adapter() {
   ok "Downloaded ${label} adapter to ${path}"
 }
 
+resolve_device_id() {
+  if [ -n "${SECUREAI_DEVICE_ID:-}" ]; then
+    printf '%s\n' "${SECUREAI_DEVICE_ID}"
+    return
+  fi
+  if [ -f "${CONFIG_PATH}" ]; then
+    local existing
+    existing="$(
+      CONFIG_PATH="${CONFIG_PATH}" node <<'NODE' 2>/dev/null || true
+const fs = require('fs')
+const path = process.env.CONFIG_PATH
+try {
+  const raw = fs.readFileSync(path, 'utf8')
+  const parsed = raw.trim().length === 0 ? {} : JSON.parse(raw)
+  if (parsed && typeof parsed.deviceId === 'string' && parsed.deviceId.trim().length > 0) {
+    process.stdout.write(parsed.deviceId.trim())
+  }
+} catch {
+}
+NODE
+    )"
+    if [ -n "${existing}" ]; then
+      printf '%s\n' "${existing}"
+      return
+    fi
+  fi
+  node <<'NODE'
+const crypto = require('crypto')
+process.stdout.write(`dev_${crypto.randomUUID()}`)
+NODE
+}
+
 write_config() {
   mkdir -p "${SECUREAI_DIR}"
-  CONFIG_PATH="${CONFIG_PATH}" SECUREAI_API_KEY="${API_KEY}" SECUREAI_API_URL="${API_URL}" node <<'NODE'
+  CONFIG_PATH="${CONFIG_PATH}" \
+  SECUREAI_API_KEY="${API_KEY}" \
+  SECUREAI_API_URL="${API_URL}" \
+  SECUREAI_DEVICE_ID="${DEVICE_ID}" \
+  SECUREAI_PRIVACY_MODE="${PRIVACY_MODE}" \
+  node <<'NODE'
 const fs = require('fs')
 const path = process.env.CONFIG_PATH
 const config = {
   apiUrl: process.env.SECUREAI_API_URL,
   apiKey: process.env.SECUREAI_API_KEY,
+  deviceId: process.env.SECUREAI_DEVICE_ID,
+  privacyMode: process.env.SECUREAI_PRIVACY_MODE,
 }
 fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 })
 NODE
@@ -174,7 +214,7 @@ wire_claude() {
   download_adapter "${CLAUDE_GUARD_URL}" "${CLAUDE_GUARD_PATH}" "Claude Code"
   mkdir -p "$(dirname "${CLAUDE_SETTINGS_PATH}")"
   SETTINGS_PATH="${CLAUDE_SETTINGS_PATH}" \
-  HOOK_COMMAND="SECUREAI_API_KEY=${API_KEY} SECUREAI_API_URL=${API_URL} node \"${CLAUDE_GUARD_PATH}\"" \
+  HOOK_COMMAND="SECUREAI_API_KEY=${API_KEY} SECUREAI_API_URL=${API_URL} SECUREAI_DEVICE_ID=${DEVICE_ID} SECUREAI_PRIVACY_MODE=${PRIVACY_MODE} node \"${CLAUDE_GUARD_PATH}\"" \
   GUARD_MARKER="secureai-guard.mjs" \
   node <<'NODE'
 const fs = require('fs')
@@ -358,6 +398,7 @@ fi
 API_KEY="$(printf '%s' "${API_KEY}" | tr -d '[:space:]')"
 [ -n "${API_KEY}" ] || fail "An API key is required."
 
+DEVICE_ID="$(resolve_device_id)"
 write_config
 
 if has_agent claude; then
@@ -376,3 +417,4 @@ fi
 printf '\nSecureAI setup complete.\n\n'
 info "Selected endpoints:${SELECTED_AGENTS}"
 info "Config: ${CONFIG_PATH}"
+info "Device id: ${DEVICE_ID}"

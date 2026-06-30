@@ -22,6 +22,8 @@ const GUARD_PATH = '/api/guard'
 const PROVIDER = 'codex'
 const PRE_TOOL_USE_EVENT = 'PreToolUse'
 const BASH_TOOL_NAME = 'Bash'
+const DEFAULT_PRIVACY_MODE = 'balanced'
+const PRIVACY_MODES = new Set(['maximum', 'balanced', 'investigation'])
 const REDACTED = '[REDACTED]'
 const SECRET_KEY_PATTERN = /(token|secret|password|passwd|pwd|credential|authorization|cookie|api[_-]?key|access[_-]?key|private[_-]?key|session[_-]?key)/i
 const SECRET_ASSIGNMENT_PATTERN =
@@ -117,6 +119,21 @@ function parseArgs(argv) {
     } else if (arg === '--timeout-ms') {
       index += 1
       parsed.timeoutMs = argv[index]
+    } else if (arg.startsWith('--device-id=')) {
+      parsed.deviceId = arg.slice('--device-id='.length)
+    } else if (arg === '--device-id') {
+      index += 1
+      parsed.deviceId = argv[index]
+    } else if (arg.startsWith('--privacy-mode=')) {
+      parsed.privacyMode = arg.slice('--privacy-mode='.length)
+    } else if (arg === '--privacy-mode') {
+      index += 1
+      parsed.privacyMode = argv[index]
+    } else if (arg.startsWith('--integration-version=')) {
+      parsed.integrationVersion = arg.slice('--integration-version='.length)
+    } else if (arg === '--integration-version') {
+      index += 1
+      parsed.integrationVersion = argv[index]
     } else if (arg.startsWith('--config=')) {
       parsed.configPath = arg.slice('--config='.length)
     } else if (arg === '--config') {
@@ -149,6 +166,15 @@ function positiveInt(value, fallback) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
 }
 
+function optionalString(value) {
+  return nonEmptyString(value) ? value.trim() : undefined
+}
+
+function normalizePrivacyMode(value) {
+  const mode = nonEmptyString(value) ? value.trim().toLowerCase() : DEFAULT_PRIVACY_MODE
+  return PRIVACY_MODES.has(mode) ? mode : DEFAULT_PRIVACY_MODE
+}
+
 function normalizeApiUrl(value) {
   return String(value).replace(/\/+$/, '')
 }
@@ -171,8 +197,38 @@ function resolveConfig(options = {}) {
     flags.timeoutMs ?? env.SECUREAI_TIMEOUT_MS ?? fileConfig.timeoutMs,
     DEFAULT_TIMEOUT_MS,
   )
+  const deviceId = optionalString(flags.deviceId ?? env.SECUREAI_DEVICE_ID ?? fileConfig.deviceId)
+  const privacyMode = normalizePrivacyMode(
+    flags.privacyMode ?? env.SECUREAI_PRIVACY_MODE ?? fileConfig.privacyMode,
+  )
+  const integrationVersion = optionalString(
+    flags.integrationVersion ?? env.SECUREAI_INTEGRATION_VERSION ?? fileConfig.integrationVersion,
+  )
 
-  return { apiUrl, apiKey, timeoutMs }
+  return { apiUrl, apiKey, timeoutMs, deviceId, privacyMode, integrationVersion }
+}
+
+function attachLocalContext(payload, config) {
+  const output = { ...payload, privacy_mode: config.privacyMode }
+  if (nonEmptyString(config.deviceId)) {
+    output.device_id = config.deviceId
+  }
+  if (nonEmptyString(config.integrationVersion)) {
+    output.integration_version = config.integrationVersion
+  }
+  return output
+}
+
+function applyPrivacyMode(payload, privacyMode) {
+  const output = redactSecrets(payload)
+  if (privacyMode === 'maximum') {
+    delete output.session_id
+    delete output.transcript_path
+    if (isRecord(output.tool_input)) {
+      delete output.tool_input.cwd
+    }
+  }
+  return output
 }
 
 function normalizeToolInput(value) {
@@ -313,7 +369,7 @@ export async function runCodexGuard(input, options = {}) {
   } catch {
     return failClosedOutput('hook payload did not match a supported Codex hook')
   }
-  guardPayload = redactSecrets(guardPayload)
+  guardPayload = applyPrivacyMode(attachLocalContext(guardPayload, config), config.privacyMode)
 
   const fetchImpl = options.fetchImpl ?? fetch
   let response

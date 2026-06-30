@@ -203,6 +203,12 @@ export interface GuardToolCall {
   session_id?: string
   transcript_path?: string
   cwd?: string
+  provider?: string
+  agent?: string
+  device_id?: string
+  integration_version?: string
+  privacy_mode?: 'maximum' | 'balanced' | 'investigation'
+  content_hash?: string
 }
 
 /**

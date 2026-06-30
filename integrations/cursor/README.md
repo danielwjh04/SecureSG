@@ -75,9 +75,15 @@ The adapter reads config in this order:
 | API URL | `--api-url` | `SECUREAI_API_URL` | `apiUrl` | `https://secureai.software` |
 | API key | `--api-key` | `SECUREAI_API_KEY` | `apiKey` | Required |
 | Timeout | `--timeout-ms` | `SECUREAI_TIMEOUT_MS` | `timeoutMs` | `5000` |
+| Device ID | `--device-id` | `SECUREAI_DEVICE_ID` | `deviceId` | Optional |
+| Privacy mode | `--privacy-mode` | `SECUREAI_PRIVACY_MODE` | `privacyMode` | `balanced` |
+| Integration version | `--integration-version` | `SECUREAI_INTEGRATION_VERSION` | `integrationVersion` | Optional |
 | Config path | `--config` | `SECUREAI_CONFIG_PATH` | n/a | `~/.secureai/config.json` |
 
 The API key is required. If it is missing, the adapter denies the action.
+Privacy mode can be `maximum`, `balanced`, or `investigation`. Maximum privacy
+drops session and transcript context before upload while preserving the redacted
+tool input SecureAI needs for enforcement.
 
 ## Verify
 

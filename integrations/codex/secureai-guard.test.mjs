@@ -110,6 +110,41 @@ test('redacts obvious secrets before forwarding guard payloads', async () => {
   assert.doesNotMatch(calls[0].init.body, /secret-token/)
 })
 
+test('attaches device identity and applies maximum privacy mode', async () => {
+  const calls = []
+  await runCodexGuard(
+    JSON.stringify({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Bash',
+      tool_input: { command: 'ls', cwd: '/repo' },
+      session_id: 'session-1',
+      transcript_path: '/repo/.codex/transcript.json',
+      cwd: '/repo',
+    }),
+    {
+      env: {
+        SECUREAI_API_KEY: KEY,
+        SECUREAI_DEVICE_ID: 'dev_test',
+        SECUREAI_PRIVACY_MODE: 'maximum',
+        SECUREAI_INTEGRATION_VERSION: 'codex-test',
+      },
+      fetchImpl: async (url, init) => {
+        calls.push({ url, init })
+        return okDecision('allow', 'safe')
+      },
+    },
+  )
+
+  const body = JSON.parse(calls[0].init.body)
+  assert.equal(body.device_id, 'dev_test')
+  assert.equal(body.privacy_mode, 'maximum')
+  assert.equal(body.integration_version, 'codex-test')
+  assert.equal(body.session_id, undefined)
+  assert.equal(body.transcript_path, undefined)
+  assert.equal(body.tool_input.cwd, undefined)
+  assert.equal(body.cwd, '/repo')
+})
+
 test('routes a network tool call and emits ask', async () => {
   const calls = []
   const output = await runCodexGuard(

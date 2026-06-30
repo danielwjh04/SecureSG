@@ -94,6 +94,9 @@ Everything is configured via the environment, nothing is hardcoded in the hook.
 | `SECUREAI_API_URL`   | `https://secureai.software` | Base URL of the SecureAI scanner.                  |
 | `SECUREAI_API_KEY`   | _(unset)_                      | Required for hosted or DB-backed Guard decisions.  |
 | `SECUREAI_TIMEOUT_MS`| `5000`                         | Per-request timeout in milliseconds.               |
+| `SECUREAI_DEVICE_ID` | _(unset)_                      | Stable local device id included in Guard requests. |
+| `SECUREAI_PRIVACY_MODE` | `balanced`                  | `maximum`, `balanced`, or `investigation`.         |
+| `SECUREAI_INTEGRATION_VERSION` | _(unset)_            | Optional adapter version bound into cache context. |
 
 Set them in the shell that launches Claude Code, or inline in the hook command,
 e.g.:

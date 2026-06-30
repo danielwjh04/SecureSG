@@ -30,6 +30,8 @@ const DEFAULT_API_URL = 'https://secureai.software'
 const DEFAULT_TIMEOUT_MS = 5000
 const HOOK_EVENT_NAME = 'PreToolUse'
 const GUARD_PATH = '/api/guard'
+const DEFAULT_PRIVACY_MODE = 'balanced'
+const PRIVACY_MODES = new Set(['maximum', 'balanced', 'investigation'])
 const REDACTED = '[REDACTED]'
 const SECRET_KEY_PATTERN = /(token|secret|password|passwd|pwd|credential|authorization|cookie|api[_-]?key|access[_-]?key|private[_-]?key|session[_-]?key)/i
 const SECRET_ASSIGNMENT_PATTERN =
@@ -88,6 +90,15 @@ function failClosed(reason) {
   emitDecision('deny', `SecureAI guard could not verify this tool call: ${reason}. Blocked fail-closed.`)
 }
 
+function nonEmptyString(value) {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function normalizePrivacyMode(value) {
+  const mode = nonEmptyString(value) ? value.trim().toLowerCase() : DEFAULT_PRIVACY_MODE
+  return PRIVACY_MODES.has(mode) ? mode : DEFAULT_PRIVACY_MODE
+}
+
 function redactString(value) {
   return value
     .replace(SECRET_ASSIGNMENT_PATTERN, (_match, key) => `${key}=${REDACTED}`)
@@ -112,6 +123,32 @@ function redactSecrets(value) {
     return output
   }
   return value
+}
+
+function attachLocalContext(payload, privacyMode) {
+  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) {
+    return payload
+  }
+  const output = { ...payload, privacy_mode: privacyMode }
+  if (nonEmptyString(process.env.SECUREAI_DEVICE_ID)) {
+    output.device_id = process.env.SECUREAI_DEVICE_ID.trim()
+  }
+  if (nonEmptyString(process.env.SECUREAI_INTEGRATION_VERSION)) {
+    output.integration_version = process.env.SECUREAI_INTEGRATION_VERSION.trim()
+  }
+  return output
+}
+
+function applyPrivacyMode(payload, privacyMode) {
+  const output = redactSecrets(payload)
+  if (privacyMode === 'maximum' && output !== null && typeof output === 'object' && !Array.isArray(output)) {
+    delete output.session_id
+    delete output.transcript_path
+    if (output.tool_input !== null && typeof output.tool_input === 'object' && !Array.isArray(output.tool_input)) {
+      delete output.tool_input.cwd
+    }
+  }
+  return output
 }
 
 /**
@@ -142,6 +179,7 @@ function emitFromGuardDecision(body) {
 async function main() {
   const apiUrl = (process.env.SECUREAI_API_URL || DEFAULT_API_URL).replace(/\/+$/, '')
   const apiKey = process.env.SECUREAI_API_KEY
+  const privacyMode = normalizePrivacyMode(process.env.SECUREAI_PRIVACY_MODE)
   const timeoutRaw = Number(process.env.SECUREAI_TIMEOUT_MS)
   const timeoutMs =
     Number.isFinite(timeoutRaw) && timeoutRaw > 0 ? timeoutRaw : DEFAULT_TIMEOUT_MS
@@ -157,7 +195,7 @@ async function main() {
   // The payload must be valid JSON; if Claude Code handed us something
   // unparseable, we cannot safely forward it, fail closed.
   try {
-    payload = JSON.stringify(redactSecrets(JSON.parse(payload)))
+    payload = JSON.stringify(applyPrivacyMode(attachLocalContext(JSON.parse(payload), privacyMode), privacyMode))
   } catch {
     failClosed('hook payload was not valid JSON')
     return

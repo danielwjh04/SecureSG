@@ -3,6 +3,7 @@ $ErrorActionPreference = 'Stop'
 $ApiUrl = if ($env:SECUREAI_API_URL) { $env:SECUREAI_API_URL } else { 'https://secureai.software' }
 $SecureAiDir = if ($env:SECUREAI_DIR) { $env:SECUREAI_DIR } else { Join-Path $HOME '.secureai' }
 $ConfigPath = if ($env:SECUREAI_CONFIG_PATH) { $env:SECUREAI_CONFIG_PATH } else { Join-Path $SecureAiDir 'config.json' }
+$PrivacyMode = if ($env:SECUREAI_PRIVACY_MODE) { $env:SECUREAI_PRIVACY_MODE } else { 'balanced' }
 
 $ClaudeGuardUrl = if ($env:SECUREAI_CLAUDE_GUARD_URL) { $env:SECUREAI_CLAUDE_GUARD_URL } else { "$ApiUrl/secureai-guard.mjs" }
 $CursorGuardUrl = if ($env:SECUREAI_CURSOR_GUARD_URL) { $env:SECUREAI_CURSOR_GUARD_URL } else { 'https://raw.githubusercontent.com/danielwjh04/SecureAI/main/integrations/cursor/secureai-guard.mjs' }
@@ -93,17 +94,40 @@ function Invoke-NodeScript([string]$Script) {
   }
 }
 
+function Resolve-DeviceId {
+  if ($env:SECUREAI_DEVICE_ID) {
+    return $env:SECUREAI_DEVICE_ID
+  }
+  if (Test-Path $ConfigPath) {
+    try {
+      $raw = Get-Content -Raw -Path $ConfigPath
+      if ($raw.Trim().Length -gt 0) {
+        $parsed = $raw | ConvertFrom-Json
+        if ($parsed.deviceId) {
+          return [string]$parsed.deviceId
+        }
+      }
+    } catch {
+    }
+  }
+  return "dev_$([guid]::NewGuid().ToString())"
+}
+
 function Write-SecureAiConfig([string]$ApiKey) {
   New-Item -ItemType Directory -Path $SecureAiDir -Force | Out-Null
   $env:CONFIG_PATH = $ConfigPath
   $env:SECUREAI_API_KEY = $ApiKey
   $env:SECUREAI_API_URL = $ApiUrl
+  $env:SECUREAI_DEVICE_ID = $DeviceId
+  $env:SECUREAI_PRIVACY_MODE = $PrivacyMode
   Invoke-NodeScript @'
 const fs = require('fs')
 const path = process.env.CONFIG_PATH
 const config = {
   apiUrl: process.env.SECUREAI_API_URL,
   apiKey: process.env.SECUREAI_API_KEY,
+  deviceId: process.env.SECUREAI_DEVICE_ID,
+  privacyMode: process.env.SECUREAI_PRIVACY_MODE,
 }
 fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 })
 '@
@@ -116,8 +140,10 @@ function Wire-Claude([string]$ApiKey) {
   $escapedPath = $ClaudeGuardPath.Replace("'", "''")
   $escapedKey = $ApiKey.Replace("'", "''")
   $escapedUrl = $ApiUrl.Replace("'", "''")
+  $escapedDeviceId = $DeviceId.Replace("'", "''")
+  $escapedPrivacyMode = $PrivacyMode.Replace("'", "''")
   $env:SETTINGS_PATH = $ClaudeSettingsPath
-  $env:HOOK_COMMAND = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"`$env:SECUREAI_API_KEY='$escapedKey'; `$env:SECUREAI_API_URL='$escapedUrl'; node '$escapedPath'`""
+  $env:HOOK_COMMAND = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"`$env:SECUREAI_API_KEY='$escapedKey'; `$env:SECUREAI_API_URL='$escapedUrl'; `$env:SECUREAI_DEVICE_ID='$escapedDeviceId'; `$env:SECUREAI_PRIVACY_MODE='$escapedPrivacyMode'; node '$escapedPath'`""
   $env:GUARD_MARKER = 'secureai-guard.mjs'
   Invoke-NodeScript @'
 const fs = require('fs')
@@ -267,6 +293,7 @@ if (-not $apiKey) {
 $apiKey = ($apiKey -replace '\s', '')
 if (-not $apiKey) { Fail 'An API key is required.' }
 
+$DeviceId = Resolve-DeviceId
 $agents = Normalize-Agents (Get-AgentSelection)
 Write-SecureAiConfig $apiKey
 
@@ -280,3 +307,4 @@ Write-Host 'SecureAI setup complete.'
 Write-Host ''
 Info "Selected endpoints: $($agents -join ' ')"
 Info "Config: $ConfigPath"
+Info "Device id: $DeviceId"
