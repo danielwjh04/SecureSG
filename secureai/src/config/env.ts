@@ -364,7 +364,7 @@ export function loadConfig(env: Env): ScannerConfig {
   const guardSensitivePathMarkers = readSet(
     env,
     'SCANNER_GUARD_SENSITIVE_PATH_MARKERS',
-    '.env,.dev.vars,.npmrc,.pypirc,.netrc,.ssh/id_rsa,.ssh/id_ed25519,.aws/credentials,.config/gcloud,credentials,secret,secrets,token,kube/config',
+    '.env,.dev.vars,.npmrc,.pypirc,.netrc,.ssh/id_rsa,.ssh/id_ed25519,.aws/credentials,.config/gcloud,credentials,secret,secrets,token,kube/config,/etc/shadow,/etc/passwd,/etc/sudoers,/etc/ssh,/root/,/proc/self/environ',
   )
   const guardConfigPathMarkers = readSet(
     env,

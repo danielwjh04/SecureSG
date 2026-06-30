@@ -194,6 +194,13 @@ export function evaluateGuardActionPolicy(
         detail: `tool call changes configuration path ${path}`,
       })
     }
+    if (isAbsolutePathOutsideWorkspace(path, action.workspaceRoot)) {
+      record({
+        ruleId: 'guard.path_outside_workspace',
+        severity: REVIEW,
+        detail: `tool call targets a path outside the workspace: ${path}`,
+      })
+    }
   }
 
   if (action.operation === 'mcp_tool_call') {
@@ -556,4 +563,25 @@ function matchesMarker(path: string, markers: ReadonlySet<string>): boolean {
     }
   }
   return false
+}
+
+/**
+ * True when an absolute path is not contained within a known workspace root.
+ * When no workspace root is known the check is skipped (returns false) to avoid
+ * flagging every cwd-less call; system secret paths are still caught by the
+ * sensitive-path markers, so this is a defense-in-depth layer, not the only one.
+ *
+ * Time complexity: O(1). Space complexity: O(1).
+ */
+function isAbsolutePathOutsideWorkspace(path: string, workspaceRoot: string | null): boolean {
+  if (workspaceRoot === null) {
+    return false
+  }
+  const normalized = path.replaceAll('\\', '/')
+  const isAbsolute = normalized.startsWith('/') || normalized.startsWith('~') || /^[a-z]:\//i.test(normalized)
+  if (!isAbsolute) {
+    return false
+  }
+  const root = workspaceRoot.replaceAll('\\', '/').replace(/\/+$/, '')
+  return normalized !== root && !normalized.startsWith(`${root}/`)
 }

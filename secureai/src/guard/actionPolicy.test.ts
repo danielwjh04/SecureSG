@@ -6,10 +6,14 @@ import { evaluateGuardActionPolicy, normalizeGuardAction } from './actionPolicy'
 const config = loadConfig({})
 
 function payload(toolName: string, toolInput: Record<string, unknown>): PreToolUsePayload {
+  // Mirror real Claude Code hook shape: cwd is a top-level field, not part of
+  // tool_input. Hoist it here so tests can pass it naturally in the input dict.
+  const { cwd, ...restInput } = toolInput
   return {
     hook_event_name: 'PreToolUse',
     tool_name: toolName,
-    tool_input: toolInput,
+    tool_input: restInput,
+    ...(typeof cwd === 'string' ? { cwd } : {}),
   }
 }
 
@@ -110,5 +114,23 @@ describe('guard action policy', () => {
     const action = normalizeGuardAction(payload('Bash', { command: 'echo ok&&rm -rf /' }), config)
     const policy = evaluateGuardActionPolicy(action, config)
     expect(policy.verdict).toBe('HUMAN_APPROVAL_REQUIRED')
+  })
+
+  it('requires review for a read of a system secret file', () => {
+    const action = normalizeGuardAction(payload('Read', { file_path: '/etc/shadow' }), config)
+    const policy = evaluateGuardActionPolicy(action, config)
+    expect(policy.verdict).toBe('HUMAN_APPROVAL_REQUIRED')
+  })
+
+  it('requires review for an absolute read outside the workspace root', () => {
+    const action = normalizeGuardAction(
+      payload('Read', { file_path: '/var/secrets/key', cwd: '/home/me/project' }),
+      config,
+    )
+    const policy = evaluateGuardActionPolicy(action, config)
+    expect(policy.verdict).toBe('HUMAN_APPROVAL_REQUIRED')
+    expect(policy.findings).toContainEqual(
+      expect.objectContaining({ ruleId: 'guard.path_outside_workspace' }),
+    )
   })
 })

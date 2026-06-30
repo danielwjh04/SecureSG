@@ -123,7 +123,8 @@
 		"SCANNER_GUARD_SHELL_TOOLS": "bash,shell",
 		"SCANNER_GUARD_NETWORK_TOOLS": "webfetch,websearch,fetch",
 		"SCANNER_GUARD_MCP_TOOL_PREFIXES": "mcp__,mcp_",
-		"SCANNER_GUARD_SENSITIVE_PATH_MARKERS": ".env,.dev.vars,.npmrc,.pypirc,.netrc,.ssh/id_rsa,.ssh/id_ed25519,.aws/credentials,.config/gcloud,credentials,secret,secrets,token,kube/config",
+		// Secret-path denylist for the guard policy. Paths matching any marker trigger HUMAN_APPROVAL_REQUIRED.
+		"SCANNER_GUARD_SENSITIVE_PATH_MARKERS": ".env,.dev.vars,.npmrc,.pypirc,.netrc,.ssh/id_rsa,.ssh/id_ed25519,.aws/credentials,.config/gcloud,credentials,secret,secrets,token,kube/config,/etc/shadow,/etc/passwd,/etc/sudoers,/etc/ssh,/root/,/proc/self/environ",
 		"SCANNER_GUARD_CONFIG_PATH_MARKERS": ".claude,.cursor,.codex,.mcp,.git/config,package.json,package-lock.json,pnpm-lock.yaml,yarn.lock,bun.lock,wrangler.jsonc,tsconfig.json",
 		"SCANNER_GUARD_SAFE_SHELL_COMMANDS": "ls,pwd,cat,type,dir,echo",
 		"SCANNER_GUARD_DESTRUCTIVE_COMMANDS": "rm,rmdir,del,erase,remove-item,mv,move,move-item,cp,copy,copy-item",

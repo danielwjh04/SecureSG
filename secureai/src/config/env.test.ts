@@ -242,4 +242,10 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ SCANNER_CONTACT_RATE_PER_HOUR: '0' })).toThrow(ConfigError)
     expect(() => loadConfig({ SCANNER_CONTACT_RATE_PER_HOUR: '101' })).toThrow(ConfigError)
   })
+
+  it('includes system secret paths in the default sensitive markers', () => {
+    const markers = loadConfig({}).guardSensitivePathMarkers
+    expect(markers.has('/etc/shadow')).toBe(true)
+    expect(markers.has('/etc/passwd')).toBe(true)
+  })
 })
