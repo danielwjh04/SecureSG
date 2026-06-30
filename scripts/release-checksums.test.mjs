@@ -12,6 +12,7 @@ import { PROJECT_ROOT, RELEASE_ASSETS, createReleaseBundle } from './release-che
 
 const tempDirs = []
 const bashPath = findUsableBash()
+const powerShellPath = findUsablePowerShell()
 
 after(async () => {
   await Promise.all(tempDirs.map((dir) => rm(dir, { recursive: true, force: true })))
@@ -79,6 +80,30 @@ function findUsableBash() {
   return null
 }
 
+function findUsablePowerShell() {
+  const candidates = [
+    process.env.SECUREAI_TEST_POWERSHELL,
+    'powershell',
+    'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe',
+  ].filter(Boolean)
+
+  for (const candidate of candidates) {
+    const result = spawnSync(
+      candidate,
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', 'Write-Output ok'],
+      { encoding: 'utf8', timeout: 5000 },
+    )
+    if (result.status === 0 && result.stdout.trim() === 'ok') {
+      return candidate
+    }
+  }
+  return null
+}
+
+function powerShellLiteral(value) {
+  return `'${value.replace(/'/g, "''")}'`
+}
+
 async function startDeviceRegistrationServer() {
   const requests = []
   const server = createServer((request, response) => {
@@ -131,6 +156,26 @@ function installerEnv(root, overrides = {}) {
   }
 }
 
+function powerShellInstallerEnv(root, overrides = {}) {
+  const secureAiDir = path.join(root, 'secureai')
+  const homeDir = path.join(root, 'home')
+  return {
+    ...process.env,
+    HOME: homeDir,
+    USERPROFILE: homeDir,
+    SECUREAI_AGENTS: 'claude',
+    SECUREAI_API_KEY: 'test_account_key',
+    SECUREAI_NONINTERACTIVE: '1',
+    SECUREAI_DIR: secureAiDir,
+    SECUREAI_CONFIG_PATH: path.join(secureAiDir, 'config.json'),
+    SECUREAI_CLAUDE_GUARD_PATH: path.join(secureAiDir, 'secureai-guard.mjs'),
+    SECUREAI_CLAUDE_SETTINGS_PATH: path.join(root, 'hooks', 'claude-settings.json'),
+    SECUREAI_CURSOR_HOOKS_PATH: path.join(root, 'hooks', 'cursor-hooks.json'),
+    SECUREAI_CODEX_HOOKS_PATH: path.join(root, 'hooks', 'codex-hooks.json'),
+    ...overrides,
+  }
+}
+
 async function runBashInstaller(root, overrides = {}) {
   assert.ok(bashPath, 'usable Bash is required for this helper')
   return await new Promise((resolve) => {
@@ -152,6 +197,52 @@ async function runBashInstaller(root, overrides = {}) {
     })
     child.on('close', (status) => {
       resolve({ status, stdout, stderr })
+    })
+  })
+}
+
+async function runPowerShellInstaller(root, overrides = {}) {
+  assert.ok(powerShellPath, 'usable PowerShell is required for this helper')
+  return await new Promise((resolve) => {
+    const child = spawn(
+      powerShellPath,
+      [
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-File',
+        path.join(PROJECT_ROOT, 'scanner/public/install.ps1'),
+      ],
+      {
+        cwd: PROJECT_ROOT,
+        env: powerShellInstallerEnv(root, overrides),
+        windowsHide: true,
+      },
+    )
+    let stdout = ''
+    let stderr = ''
+    let timedOut = false
+    const timer = setTimeout(() => {
+      timedOut = true
+      child.kill()
+    }, 30000)
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk
+    })
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk
+    })
+    child.on('error', (error) => {
+      clearTimeout(timer)
+      resolve({ status: null, stdout, stderr: `${stderr}${error.message}` })
+    })
+    child.on('close', (status) => {
+      clearTimeout(timer)
+      resolve({
+        status,
+        stdout,
+        stderr: timedOut ? `${stderr}PowerShell installer timed out` : stderr,
+      })
     })
   })
 }
@@ -385,6 +476,254 @@ test('Bash installer rejects a missing checksum entry', { skip: bashPath ? false
 test('Bash installer dry run does not require network or checksums', { skip: bashPath ? false : 'usable Bash not found' }, async () => {
   const root = await tempWorkspaceRoot()
   const result = await runBashInstaller(root, {
+    SECUREAI_API_URL: 'http://127.0.0.1:1',
+    SECUREAI_RELEASE_BASE_URL: 'file:///missing-release-base',
+    SECUREAI_CHECKSUMS_URL: 'file:///missing-checksums',
+    SECUREAI_DRY_RUN: '1',
+  })
+
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /Prepared Claude Code adapter/)
+  assert.equal(
+    await readFile(path.join(root, 'secureai', 'secureai-guard.mjs'), 'utf8'),
+    '#!/usr/bin/env node\nprocess.stdout.write("{}")\n',
+  )
+})
+
+test('PowerShell installer parser tokenization succeeds', { skip: powerShellPath ? false : 'usable PowerShell not found' }, () => {
+  const scriptPath = path.join(PROJECT_ROOT, 'scanner/public/install.ps1')
+  const command = [
+    `$content = Get-Content -Raw -LiteralPath ${powerShellLiteral(scriptPath)}`,
+    '$errors = $null',
+    '[System.Management.Automation.PSParser]::Tokenize($content, [ref]$errors) | Out-Null',
+    'if ($errors) { $errors | Format-List; exit 1 }',
+  ].join('; ')
+  const result = spawnSync(
+    powerShellPath,
+    ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', command],
+    { cwd: PROJECT_ROOT, encoding: 'utf8', timeout: 10000 },
+  )
+
+  assert.equal(result.status, 0, `${result.stdout}${result.stderr}`)
+})
+
+test('PowerShell installer accepts a valid local checksum manifest and adapter asset', { skip: powerShellPath ? false : 'usable PowerShell not found' }, async () => {
+  const root = await tempWorkspaceRoot()
+  const adapterContent = '#!/usr/bin/env node\nprocess.stdout.write("{}")\n'
+  const urls = await writeInstallerReleaseAsset(
+    root,
+    adapterContent,
+    `${sha256Text(adapterContent)}  secureai-claude-code-guard.mjs\n`,
+  )
+  const server = await startDeviceRegistrationServer()
+  try {
+    const result = await runPowerShellInstaller(root, {
+      SECUREAI_API_URL: server.url,
+      SECUREAI_RELEASE_BASE_URL: urls.releaseBaseUrl,
+      SECUREAI_CHECKSUMS_URL: urls.checksumsUrl,
+    })
+
+    assert.equal(result.status, 0, result.stderr)
+    assert.match(result.stdout, /Verified Claude Code adapter checksum/)
+    assert.equal(
+      await readFile(path.join(root, 'secureai', 'secureai-guard.mjs'), 'utf8'),
+      adapterContent,
+    )
+    assert.equal(server.requests.length, 1)
+  } finally {
+    await server.close()
+  }
+})
+
+test('PowerShell installer verifies Claude Code, Cursor, and Codex adapter mappings', { skip: powerShellPath ? false : 'usable PowerShell not found' }, async () => {
+  const root = await tempWorkspaceRoot()
+  const assets = [
+    {
+      name: 'secureai-claude-code-guard.mjs',
+      path: path.join(root, 'secureai', 'secureai-guard.mjs'),
+      content: '#!/usr/bin/env node\nprocess.stdout.write("claude")\n',
+      label: 'Claude Code',
+    },
+    {
+      name: 'secureai-cursor-guard.mjs',
+      path: path.join(root, 'secureai', 'secureai-cursor-guard.mjs'),
+      content: '#!/usr/bin/env node\nprocess.stdout.write("cursor")\n',
+      label: 'Cursor',
+    },
+    {
+      name: 'secureai-codex-guard.mjs',
+      path: path.join(root, 'secureai', 'secureai-codex-guard.mjs'),
+      content: '#!/usr/bin/env node\nprocess.stdout.write("codex")\n',
+      label: 'Codex',
+    },
+  ]
+  const urls = await writeInstallerReleaseAssets(root, assets)
+  const server = await startDeviceRegistrationServer()
+  try {
+    const result = await runPowerShellInstaller(root, {
+      SECUREAI_API_URL: server.url,
+      SECUREAI_AGENTS: 'claude,cursor,codex',
+      SECUREAI_RELEASE_BASE_URL: urls.releaseBaseUrl,
+    })
+
+    assert.equal(result.status, 0, result.stderr)
+    for (const asset of assets) {
+      assert.match(result.stdout, new RegExp(`Verified ${asset.label} adapter checksum`))
+      assert.equal(await readFile(asset.path, 'utf8'), asset.content)
+    }
+  } finally {
+    await server.close()
+  }
+})
+
+test('PowerShell installer rejects malformed existing config JSON before registration', { skip: powerShellPath ? false : 'usable PowerShell not found' }, async () => {
+  const root = await tempWorkspaceRoot()
+  const adapterContent = '#!/usr/bin/env node\nprocess.stdout.write("{}")\n'
+  const urls = await writeInstallerReleaseAsset(
+    root,
+    adapterContent,
+    `${sha256Text(adapterContent)}  secureai-claude-code-guard.mjs\n`,
+  )
+  await writeFixture(root, 'secureai/config.json', '{bad json\n')
+  const server = await startDeviceRegistrationServer()
+  try {
+    const result = await runPowerShellInstaller(root, {
+      SECUREAI_API_URL: server.url,
+      SECUREAI_RELEASE_BASE_URL: urls.releaseBaseUrl,
+      SECUREAI_CHECKSUMS_URL: urls.checksumsUrl,
+    })
+
+    assert.notEqual(result.status, 0)
+    assert.match(result.stderr, /Existing SecureAI config is malformed JSON/)
+    assert.equal(server.requests.length, 0)
+    await assert.rejects(
+      readFile(path.join(root, 'secureai', 'secureai-guard.mjs'), 'utf8'),
+      /ENOENT/,
+    )
+  } finally {
+    await server.close()
+  }
+})
+
+test('PowerShell installer rejects a tampered adapter file', { skip: powerShellPath ? false : 'usable PowerShell not found' }, async () => {
+  const root = await tempWorkspaceRoot()
+  const expectedContent = '#!/usr/bin/env node\nprocess.stdout.write("expected")\n'
+  const tamperedContent = '#!/usr/bin/env node\nprocess.stdout.write("tampered")\n'
+  const urls = await writeInstallerReleaseAsset(
+    root,
+    tamperedContent,
+    `${sha256Text(expectedContent)}  secureai-claude-code-guard.mjs\n`,
+  )
+  const server = await startDeviceRegistrationServer()
+  try {
+    const result = await runPowerShellInstaller(root, {
+      SECUREAI_API_URL: server.url,
+      SECUREAI_CLAUDE_GUARD_URL: urls.guardUrl,
+      SECUREAI_RELEASE_BASE_URL: urls.releaseBaseUrl,
+      SECUREAI_CHECKSUMS_URL: urls.checksumsUrl,
+    })
+
+    assert.notEqual(result.status, 0)
+    assert.match(result.stderr, /Checksum mismatch for Claude Code adapter/)
+    await assert.rejects(
+      readFile(path.join(root, 'secureai', 'secureai-guard.mjs'), 'utf8'),
+      /ENOENT/,
+    )
+  } finally {
+    await server.close()
+  }
+})
+
+test('PowerShell installer rejects a missing checksum entry', { skip: powerShellPath ? false : 'usable PowerShell not found' }, async () => {
+  const root = await tempWorkspaceRoot()
+  const adapterContent = '#!/usr/bin/env node\nprocess.stdout.write("{}")\n'
+  const urls = await writeInstallerReleaseAsset(
+    root,
+    adapterContent,
+    `${sha256Text('other asset')}  secureai-codex-guard.mjs\n`,
+  )
+  const server = await startDeviceRegistrationServer()
+  try {
+    const result = await runPowerShellInstaller(root, {
+      SECUREAI_API_URL: server.url,
+      SECUREAI_CLAUDE_GUARD_URL: urls.guardUrl,
+      SECUREAI_RELEASE_BASE_URL: urls.releaseBaseUrl,
+      SECUREAI_CHECKSUMS_URL: urls.checksumsUrl,
+    })
+
+    assert.notEqual(result.status, 0)
+    assert.match(result.stderr, /Checksum manifest has no entry for secureai-claude-code-guard\.mjs/)
+    await assert.rejects(
+      readFile(path.join(root, 'secureai', 'secureai-guard.mjs'), 'utf8'),
+      /ENOENT/,
+    )
+  } finally {
+    await server.close()
+  }
+})
+
+test('PowerShell installer rejects malformed checksum manifest lines', { skip: powerShellPath ? false : 'usable PowerShell not found' }, async () => {
+  const root = await tempWorkspaceRoot()
+  const adapterContent = '#!/usr/bin/env node\nprocess.stdout.write("{}")\n'
+  const urls = await writeInstallerReleaseAsset(
+    root,
+    adapterContent,
+    `${sha256Text(adapterContent)}  secureai-claude-code-guard.mjs extra-field\n`,
+  )
+  const server = await startDeviceRegistrationServer()
+  try {
+    const result = await runPowerShellInstaller(root, {
+      SECUREAI_API_URL: server.url,
+      SECUREAI_CLAUDE_GUARD_URL: urls.guardUrl,
+      SECUREAI_RELEASE_BASE_URL: urls.releaseBaseUrl,
+      SECUREAI_CHECKSUMS_URL: urls.checksumsUrl,
+    })
+
+    assert.notEqual(result.status, 0)
+    assert.match(result.stderr, /Checksum manifest is malformed/)
+    await assert.rejects(
+      readFile(path.join(root, 'secureai', 'secureai-guard.mjs'), 'utf8'),
+      /ENOENT/,
+    )
+  } finally {
+    await server.close()
+  }
+})
+
+test('PowerShell installer rejects duplicate checksum entries', { skip: powerShellPath ? false : 'usable PowerShell not found' }, async () => {
+  const root = await tempWorkspaceRoot()
+  const adapterContent = '#!/usr/bin/env node\nprocess.stdout.write("{}")\n'
+  const urls = await writeInstallerReleaseAsset(
+    root,
+    adapterContent,
+    [
+      `${sha256Text(adapterContent)}  secureai-claude-code-guard.mjs`,
+      `${sha256Text(adapterContent)}  secureai-claude-code-guard.mjs`,
+    ].join('\n') + '\n',
+  )
+  const server = await startDeviceRegistrationServer()
+  try {
+    const result = await runPowerShellInstaller(root, {
+      SECUREAI_API_URL: server.url,
+      SECUREAI_CLAUDE_GUARD_URL: urls.guardUrl,
+      SECUREAI_RELEASE_BASE_URL: urls.releaseBaseUrl,
+      SECUREAI_CHECKSUMS_URL: urls.checksumsUrl,
+    })
+
+    assert.notEqual(result.status, 0)
+    assert.match(result.stderr, /Checksum manifest has duplicate entries for secureai-claude-code-guard\.mjs/)
+    await assert.rejects(
+      readFile(path.join(root, 'secureai', 'secureai-guard.mjs'), 'utf8'),
+      /ENOENT/,
+    )
+  } finally {
+    await server.close()
+  }
+})
+
+test('PowerShell installer dry run does not require network or checksums', { skip: powerShellPath ? false : 'usable PowerShell not found' }, async () => {
+  const root = await tempWorkspaceRoot()
+  const result = await runPowerShellInstaller(root, {
     SECUREAI_API_URL: 'http://127.0.0.1:1',
     SECUREAI_RELEASE_BASE_URL: 'file:///missing-release-base',
     SECUREAI_CHECKSUMS_URL: 'file:///missing-checksums',

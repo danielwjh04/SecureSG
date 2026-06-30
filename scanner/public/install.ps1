@@ -1,13 +1,19 @@
 $ErrorActionPreference = 'Stop'
 
 $ApiUrl = if ($env:SECUREAI_API_URL) { $env:SECUREAI_API_URL } else { 'https://secureai.software' }
+$ReleaseBaseUrl = if ($env:SECUREAI_RELEASE_BASE_URL) { $env:SECUREAI_RELEASE_BASE_URL.TrimEnd('/') } else { $ApiUrl.TrimEnd('/') }
+$ChecksumsUrl = if ($env:SECUREAI_CHECKSUMS_URL) { $env:SECUREAI_CHECKSUMS_URL } else { "$ReleaseBaseUrl/SHA256SUMS.txt" }
 $SecureAiDir = if ($env:SECUREAI_DIR) { $env:SECUREAI_DIR } else { Join-Path $HOME '.secureai' }
 $ConfigPath = if ($env:SECUREAI_CONFIG_PATH) { $env:SECUREAI_CONFIG_PATH } else { Join-Path $SecureAiDir 'config.json' }
 $PrivacyMode = if ($env:SECUREAI_PRIVACY_MODE) { $env:SECUREAI_PRIVACY_MODE } else { 'balanced' }
 
-$ClaudeGuardUrl = if ($env:SECUREAI_CLAUDE_GUARD_URL) { $env:SECUREAI_CLAUDE_GUARD_URL } else { "$ApiUrl/secureai-guard.mjs" }
-$CursorGuardUrl = if ($env:SECUREAI_CURSOR_GUARD_URL) { $env:SECUREAI_CURSOR_GUARD_URL } else { 'https://raw.githubusercontent.com/danielwjh04/SecureAI/main/integrations/cursor/secureai-guard.mjs' }
-$CodexGuardUrl = if ($env:SECUREAI_CODEX_GUARD_URL) { $env:SECUREAI_CODEX_GUARD_URL } else { 'https://raw.githubusercontent.com/danielwjh04/SecureAI/main/integrations/codex/secureai-guard.mjs' }
+$ClaudeGuardReleaseName = if ($env:SECUREAI_CLAUDE_GUARD_RELEASE_NAME) { $env:SECUREAI_CLAUDE_GUARD_RELEASE_NAME } else { 'secureai-claude-code-guard.mjs' }
+$CursorGuardReleaseName = if ($env:SECUREAI_CURSOR_GUARD_RELEASE_NAME) { $env:SECUREAI_CURSOR_GUARD_RELEASE_NAME } else { 'secureai-cursor-guard.mjs' }
+$CodexGuardReleaseName = if ($env:SECUREAI_CODEX_GUARD_RELEASE_NAME) { $env:SECUREAI_CODEX_GUARD_RELEASE_NAME } else { 'secureai-codex-guard.mjs' }
+
+$ClaudeGuardUrl = if ($env:SECUREAI_CLAUDE_GUARD_URL) { $env:SECUREAI_CLAUDE_GUARD_URL } else { "$ReleaseBaseUrl/$ClaudeGuardReleaseName" }
+$CursorGuardUrl = if ($env:SECUREAI_CURSOR_GUARD_URL) { $env:SECUREAI_CURSOR_GUARD_URL } else { "$ReleaseBaseUrl/$CursorGuardReleaseName" }
+$CodexGuardUrl = if ($env:SECUREAI_CODEX_GUARD_URL) { $env:SECUREAI_CODEX_GUARD_URL } else { "$ReleaseBaseUrl/$CodexGuardReleaseName" }
 
 $ClaudeGuardPath = if ($env:SECUREAI_CLAUDE_GUARD_PATH) { $env:SECUREAI_CLAUDE_GUARD_PATH } else { Join-Path $SecureAiDir 'secureai-guard.mjs' }
 $CursorGuardPath = if ($env:SECUREAI_CURSOR_GUARD_PATH) { $env:SECUREAI_CURSOR_GUARD_PATH } else { Join-Path $SecureAiDir 'secureai-cursor-guard.mjs' }
@@ -20,10 +26,94 @@ $CodexHooksPath = if ($env:SECUREAI_CODEX_HOOKS_PATH) { $env:SECUREAI_CODEX_HOOK
 $BrowserStoreUrl = if ($env:SECUREAI_BROWSER_STORE_URL) { $env:SECUREAI_BROWSER_STORE_URL } else { '' }
 $BrowserPairingUrl = if ($env:SECUREAI_BROWSER_PAIRING_URL) { $env:SECUREAI_BROWSER_PAIRING_URL } else { "$ApiUrl/#browser-pair=" }
 $DryRun = $env:SECUREAI_DRY_RUN -eq '1'
+$script:ChecksumManifestContent = $null
 
 function Info([string]$Message) { Write-Host "  $Message" }
 function Ok([string]$Message) { Write-Host "[ok] $Message" }
 function Fail([string]$Message) { Write-Error "[error] $Message"; exit 1 }
+
+function Get-LocalFilePathFromUrl([string]$Url) {
+  try {
+    $uri = [System.Uri]$Url
+  } catch {
+    return $null
+  }
+  if ($uri.IsFile) {
+    return $uri.LocalPath
+  }
+  return $null
+}
+
+function Read-UrlText([string]$Url) {
+  $localPath = Get-LocalFilePathFromUrl $Url
+  if ($localPath) {
+    return Get-Content -Raw -LiteralPath $localPath
+  }
+  $response = Invoke-WebRequest -Uri $Url -UseBasicParsing
+  return [string]$response.Content
+}
+
+function Save-UrlToFile([string]$Url, [string]$Path) {
+  $localPath = Get-LocalFilePathFromUrl $Url
+  if ($localPath) {
+    Copy-Item -Force -LiteralPath $localPath -Destination $Path
+    return
+  }
+  Invoke-WebRequest -Uri $Url -OutFile $Path -UseBasicParsing
+}
+
+function Get-ChecksumManifest {
+  if ($null -ne $script:ChecksumManifestContent) {
+    return $script:ChecksumManifestContent
+  }
+  try {
+    $script:ChecksumManifestContent = Read-UrlText $ChecksumsUrl
+  } catch {
+    Fail 'Could not download checksum manifest.'
+  }
+  if (-not $script:ChecksumManifestContent -or $script:ChecksumManifestContent.Trim().Length -eq 0) {
+    Fail 'Checksum manifest is empty.'
+  }
+  return $script:ChecksumManifestContent
+}
+
+function Get-ExpectedHash([string]$ReleaseName) {
+  $expected = $null
+  $manifest = Get-ChecksumManifest
+  foreach ($line in ($manifest -split '\r?\n')) {
+    $trimmed = $line.Trim()
+    if (-not $trimmed -or $trimmed.StartsWith('#')) {
+      continue
+    }
+    $parts = $trimmed -split '\s+'
+    if ($parts.Count -ne 2) {
+      Fail 'Checksum manifest is malformed.'
+    }
+    $hash = $parts[0]
+    $filename = $parts[1]
+    if ($hash -notmatch '^[0-9a-fA-F]{64}$') {
+      Fail "Checksum manifest has a malformed hash for $filename."
+    }
+    if ($filename -eq $ReleaseName) {
+      if ($expected) {
+        Fail "Checksum manifest has duplicate entries for $ReleaseName."
+      }
+      $expected = $hash.ToLowerInvariant()
+    }
+  }
+  if (-not $expected) {
+    Fail "Checksum manifest has no entry for $ReleaseName."
+  }
+  return $expected
+}
+
+function Get-Sha256File([string]$Path, [string]$Label) {
+  try {
+    return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+  } catch {
+    Fail "Could not compute SHA-256 for $Label adapter."
+  }
+}
 
 function Ensure-Node {
   $node = Get-Command node -ErrorAction SilentlyContinue
@@ -69,20 +159,35 @@ function Normalize-Agents([string]$Raw) {
   return $selected | Select-Object -Unique
 }
 
-function Download-Adapter([string]$Url, [string]$Path, [string]$Label) {
+function Download-Adapter([string]$Url, [string]$Path, [string]$Label, [string]$ReleaseName) {
   New-Item -ItemType Directory -Path (Split-Path -Parent $Path) -Force | Out-Null
   if ($DryRun) {
-    Set-Content -Path $Path -Value "#!/usr/bin/env node`nprocess.stdout.write('{}')`n" -Encoding UTF8
+    $adapterContent = "#!/usr/bin/env node`nprocess.stdout.write(" + '"{}"' + ")`n"
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($Path, $adapterContent, $utf8NoBom)
     Ok "Prepared $Label adapter at $Path (dry run)"
     return
   }
-  $tmp = "$Path.tmp"
+
+  $expectedHash = Get-ExpectedHash $ReleaseName
+  $tmp = "$Path.tmp.$([guid]::NewGuid().ToString('N'))"
   try {
-    Invoke-WebRequest -Uri $Url -OutFile $tmp -UseBasicParsing
-    Move-Item -Force -Path $tmp -Destination $Path
+    Save-UrlToFile $Url $tmp
   } catch {
     Remove-Item -Force -Path $tmp -ErrorAction SilentlyContinue
     Fail "Could not download $Label adapter from $Url."
+  }
+  $actualHash = Get-Sha256File $tmp $Label
+  if ($actualHash -ne $expectedHash) {
+    Remove-Item -Force -Path $tmp -ErrorAction SilentlyContinue
+    Fail "Checksum mismatch for $Label adapter."
+  }
+  Ok "Verified $Label adapter checksum"
+  try {
+    Move-Item -Force -LiteralPath $tmp -Destination $Path
+  } catch {
+    Remove-Item -Force -Path $tmp -ErrorAction SilentlyContinue
+    Fail "Could not install $Label adapter at $Path."
   }
   Ok "Downloaded $Label adapter to $Path"
 }
@@ -108,6 +213,7 @@ function Resolve-DeviceId {
         }
       }
     } catch {
+      Fail 'Existing SecureAI config is malformed JSON.'
     }
   }
   return "dev_$([guid]::NewGuid().ToString())"
@@ -128,6 +234,10 @@ const config = {
   apiKey: process.env.SECUREAI_API_KEY,
   deviceId: process.env.SECUREAI_DEVICE_ID,
   privacyMode: process.env.SECUREAI_PRIVACY_MODE,
+}
+fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 })
+'@
+  Ok "Saved config to $ConfigPath"
 }
 
 function Register-GuardDevice([string]$AccountApiKey) {
@@ -176,13 +286,9 @@ main().catch((error) => {
   }
   return $credential
 }
-fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 })
-'@
-  Ok "Saved config to $ConfigPath"
-}
 
 function Wire-Claude([string]$ApiKey) {
-  Download-Adapter $ClaudeGuardUrl $ClaudeGuardPath 'Claude Code'
+  Download-Adapter $ClaudeGuardUrl $ClaudeGuardPath 'Claude Code' $ClaudeGuardReleaseName
   New-Item -ItemType Directory -Path (Split-Path -Parent $ClaudeSettingsPath) -Force | Out-Null
   $escapedPath = $ClaudeGuardPath.Replace("'", "''")
   $escapedKey = $ApiKey.Replace("'", "''")
@@ -223,7 +329,7 @@ fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n')
 }
 
 function Wire-Cursor {
-  Download-Adapter $CursorGuardUrl $CursorGuardPath 'Cursor'
+  Download-Adapter $CursorGuardUrl $CursorGuardPath 'Cursor' $CursorGuardReleaseName
   New-Item -ItemType Directory -Path (Split-Path -Parent $CursorHooksPath) -Force | Out-Null
   $env:HOOKS_PATH = $CursorHooksPath
   $env:HOOK_COMMAND = "node `"$CursorGuardPath`""
@@ -262,7 +368,7 @@ fs.writeFileSync(hooksPath, JSON.stringify(settings, null, 2) + '\n')
 }
 
 function Wire-Codex {
-  Download-Adapter $CodexGuardUrl $CodexGuardPath 'Codex'
+  Download-Adapter $CodexGuardUrl $CodexGuardPath 'Codex' $CodexGuardReleaseName
   New-Item -ItemType Directory -Path (Split-Path -Parent $CodexHooksPath) -Force | Out-Null
   $env:HOOKS_PATH = $CodexHooksPath
   $env:HOOK_COMMAND = "node `"$CodexGuardPath`""
