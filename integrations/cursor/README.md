@@ -13,9 +13,24 @@ stdout. SecureAI maps them to the existing `/api/guard` contract.
 - MCP tool calls through `beforeMCPExecution`.
 - Network errors, timeouts, malformed responses, missing API keys, and unknown
   decisions all return `permission: "deny"`.
-- Likely local secrets are redacted before the adapter calls `/api/guard`,
-  including token-like fields, passwords, cookies, authorization headers,
-  bearer values, basic auth values, and query-string credentials.
+- Likely local secrets are redacted in the local Node process before the adapter
+  calls `/api/guard`. The following are replaced with `[REDACTED]`:
+  secret-keyword assignments (`API_KEY=...`, `TOKEN=...`, etc.); object or JSON
+  fields whose key looks secret (token, secret, password, credential,
+  authorization, cookie, api_key, access_key, private_key, session_key);
+  `Authorization: Bearer ...` and `Authorization: Basic ...` header values;
+  connection-string credentials (`scheme://user:pass@host`); vendor-prefixed API
+  tokens (GitHub `ghp_`/`gho_`/`ghu_`/`ghs_`/`ghr_`/`github_pat_`, GitLab
+  `glpat-`, Hugging Face `hf_`, Stripe-style `sk_live`/`sk_test`/`sk_`/
+  `pk_live`/`pk_test`, Brevo `xkeysib-`, Shopify `shpat_`); Slack tokens
+  (`xoxb-`, `xoxa-`, `xoxp-`, `xoxr-`, `xoxs-`); AWS access key IDs (`AKIA...`,
+  `ASIA...`, and other AWS prefixes); PEM private key blocks; JSON Web Tokens
+  (`eyJ...` three-part tokens); and credentials in URL query strings
+  (`?token=...`, `&api_key=...`, etc.).
+- After redaction, a `content_hash` is computed: a deterministic lowercase-hex
+  SHA-256 over the canonical JSON of the redacted `{tool_name, tool_input}`. It
+  is attached to every request so the server can correlate decisions without
+  receiving the raw content.
 
 ## Install
 
@@ -81,9 +96,17 @@ The adapter reads config in this order:
 | Config path | `--config` | `SECUREAI_CONFIG_PATH` | n/a | `~/.secureai/config.json` |
 
 The API key is required. If it is missing, the adapter denies the action.
-Privacy mode can be `maximum`, `balanced`, or `investigation`. Maximum privacy
-drops session and transcript context before upload while preserving the redacted
-tool input SecureAI needs for enforcement.
+Privacy mode can be `maximum`, `balanced`, or `investigation`.
+
+- `balanced` (default): sends the redacted `tool_input` plus the `content_hash`
+  and metadata (tool name, cwd, session id, transcript path, device id,
+  integration version).
+- `investigation`: same payload as `balanced`. It differs only in server-side
+  retention, not in what the adapter sends.
+- `maximum`: sends only the `content_hash` and metadata (tool name, device id,
+  integration version). It removes `tool_input`, `cwd`, `session_id`, and
+  `transcript_path` before upload. No raw or redacted content leaves the
+  machine.
 
 ## Verify
 

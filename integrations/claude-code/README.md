@@ -27,9 +27,41 @@ and new network destinations require review or stronger enforcement based on
 policy.
 
 Before the hook calls `/api/guard`, it redacts likely local secrets from the
-payload. Token-like fields, passwords, cookies, authorization headers, bearer
-values, basic auth values, and query-string credentials are replaced with
-`[REDACTED]` in the local Node process.
+payload in the local Node process. The following are replaced with `[REDACTED]`
+before anything leaves the machine:
+
+- Secret-keyword assignments: `API_KEY=...`, `TOKEN=...`, `PASSWORD=...`, and
+  similar patterns.
+- Object or JSON fields whose key looks secret (token, secret, password,
+  credential, authorization, cookie, api_key, access_key, private_key,
+  session_key).
+- `Authorization: Bearer ...` and `Authorization: Basic ...` header values.
+- Connection-string credentials: the password in `scheme://user:pass@host` URLs.
+- Vendor-prefixed API tokens: GitHub (`ghp_`, `gho_`, `ghu_`, `ghs_`, `ghr_`,
+  `github_pat_`), GitLab (`glpat-`), Hugging Face (`hf_`), Stripe-style
+  (`sk_live`, `sk_test`, `sk_`, `pk_live`, `pk_test`), Brevo (`xkeysib-`),
+  Shopify (`shpat_`).
+- Slack tokens (`xoxb-`, `xoxa-`, `xoxp-`, `xoxr-`, `xoxs-`).
+- AWS access key IDs (`AKIA...`, `ASIA...`, and other AWS prefixes).
+- PEM private key blocks.
+- JSON Web Tokens (`eyJ...` three-part tokens).
+- Credentials in URL query strings (`?token=...`, `&api_key=...`, etc.).
+
+After redaction, the adapter computes a `content_hash`: a deterministic
+lowercase-hex SHA-256 over the canonical (sorted-key) JSON of the redacted
+`{tool_name, tool_input}`. This hash is attached to every request so the server
+can correlate and verify a decision without receiving the raw content.
+
+The `SECUREAI_PRIVACY_MODE` variable controls what is uploaded after redaction:
+
+- `balanced` (default): sends the redacted `tool_input` plus the `content_hash`
+  and metadata (tool name, cwd, session id, transcript path, device id,
+  integration version).
+- `investigation`: same payload as `balanced`. It differs only in server-side
+  retention, not in what the adapter sends.
+- `maximum`: sends only the `content_hash` and metadata (tool name, device id,
+  integration version). It removes `tool_input`, `cwd`, `session_id`, and
+  `transcript_path` before upload. No raw or redacted content leaves the machine.
 
 ## The fail-closed guarantee
 
