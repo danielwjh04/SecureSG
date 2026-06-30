@@ -9,7 +9,10 @@ on:
       - "scanner/public/install.ps1"
       - "scanner/public/install.sh"
       - "scanner/public/secureai-guard.mjs"
+      - "scanner/package-lock.json"
+      - "scanner/package.json"
       - "scripts/release-checksums.mjs"
+      - "scripts/release-checksums.test.mjs"
   push:
     tags:
       - "v*"
@@ -30,7 +33,16 @@ jobs:
         with:
           node-version: "24"
 
-      - name: Build installer and guard assets
+      - name: Install scanner dependencies
+        run: npm --prefix scanner ci
+
+      - name: Run release checksum tests
+        run: node --test scripts/release-checksums.test.mjs
+
+      - name: Build scanner dist
+        run: npm --prefix scanner run build
+
+      - name: Build release asset bundle
         run: node scripts/release-checksums.mjs release-assets
 
       - name: Verify checksums
