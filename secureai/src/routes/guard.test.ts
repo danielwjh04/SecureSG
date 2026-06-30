@@ -552,12 +552,14 @@ describe('handleGuard', () => {
     expect(body.decision).toBeUndefined()
   })
 
-  it('a ticket carrying decision deny is never honored as ALLOW', async () => {
+  it('only a ticket with decision allow is honored; deny and ask tickets fall through to the pipeline', async () => {
     const d1 = new MemoryD1(new MemoryStore()) as unknown as D1Database
     const db = d1Database(d1)
     const { user } = await createFreeUser(db, 'deny-ticket@example.com')
     const credential = await guardCredentialFor(db, user.id)
     const env = { DB: d1, GUARD_TICKET_SECRET: 'guard-ticket-secret' }
+
+    // The base payload. cwd is required by the ticket signer.
     const payload = {
       hook_event_name: 'PreToolUse',
       tool_name: 'Read',
@@ -565,46 +567,62 @@ describe('handleGuard', () => {
       cwd: '/workspace/project',
     }
 
-    // Obtain a normal allow ticket first so we know the ticket context is valid.
-    const allowRes = await handleGuard(
-      post(payload, undefined, { Authorization: `Bearer ${credential}` }),
-      env,
-      config,
-    )
-    const allowDecision = (await allowRes.json()) as GuardDecision
-    expect(allowDecision.decision).toBe('allow')
-    expect(allowDecision.ticket).toBeDefined()
+    // bindGuardIdentity sets device_id = ctx.deviceId on the payload before
+    // hashing. The guardCredentialFor helper mints deviceId as `dev_${userId}`,
+    // so we must use the same value here so the action hash matches.
+    const boundPayload = {
+      ...payload,
+      device_id: `dev_${user.id}`,
+    } as Parameters<typeof signGuardDecisionTicket>[0]
 
-    // Build a deny ticket manually using the same signer the route uses.
-    const now = new Date()
+    // The route builds its ticket context from config.guardTicketKeyId (default
+    // 'guard-ticket-v1') and env.GUARD_TICKET_SECRET. Mirror that exactly so the
+    // verifier finds a matching kid+secret pair.
     const ticketContext = {
-      signer: { alg: 'HS256' as const, kid: 'guard-ticket-kid', secret: 'guard-ticket-secret' },
-      verifiers: [{ alg: 'HS256' as const, kid: 'guard-ticket-kid', secret: 'guard-ticket-secret' }],
+      signer: { alg: 'HS256' as const, kid: config.guardTicketKeyId, secret: 'guard-ticket-secret' },
+      verifiers: [{ alg: 'HS256' as const, kid: config.guardTicketKeyId, secret: 'guard-ticket-secret' }],
       policyVersion: config.guardPolicyVersion,
       trustRevision: config.guardTrustRevision,
       ttlSeconds: config.guardTicketTtlSeconds,
-      now,
+      now: new Date(),
     }
-    const denyTicket = await signGuardDecisionTicket(
-      { ...payload } as Parameters<typeof signGuardDecisionTicket>[0],
-      'deny',
-      ticketContext,
-    )
-    expect(denyTicket).not.toBeNull()
 
-    // Present the deny ticket to the guard route. It must NOT be honored as allow.
-    const denyRes = await handleGuard(
-      post({ ...payload, decision_ticket: denyTicket }, undefined, {
+    // POSITIVE CONTROL: an allow ticket with a correct kid, secret, and device
+    // binding must be honored. This proves every ticket field is valid so the
+    // only variable in the negative cases below is the decision field.
+    const allowTicket = await signGuardDecisionTicket(boundPayload, 'allow', ticketContext)
+    expect(allowTicket).not.toBeNull()
+    const allowRes = await handleGuard(
+      post({ ...payload, decision_ticket: allowTicket }, undefined, {
         Authorization: `Bearer ${credential}`,
       }),
       env,
       config,
     )
-    expect(denyRes.status).toBe(200)
-    const denyDecision = (await denyRes.json()) as GuardDecision
-    expect(denyDecision.reason).not.toBe('valid signed decision ticket')
-    // The pipeline runs normally and produces the real verdict, not a ticket fast-path allow.
-    expect(denyDecision.decision).toBe('allow')
+    expect(allowRes.status).toBe(200)
+    const allowDecision = (await allowRes.json()) as GuardDecision
+    expect(allowDecision.reason).toBe('valid signed decision ticket')
+
+    // NEGATIVE: deny and ask tickets share the same kid, secret, device binding,
+    // and action hash as the allow ticket above. The only difference is the
+    // decision field. Neither must be honored; the pipeline runs and produces the
+    // real verdict for this benign Read action (allow).
+    for (const badDecision of ['deny', 'ask'] as const) {
+      const badTicket = await signGuardDecisionTicket(boundPayload, badDecision, ticketContext)
+      expect(badTicket).not.toBeNull()
+      const res = await handleGuard(
+        post({ ...payload, decision_ticket: badTicket }, undefined, {
+          Authorization: `Bearer ${credential}`,
+        }),
+        env,
+        config,
+      )
+      expect(res.status).toBe(200)
+      const decision = (await res.json()) as GuardDecision
+      expect(decision.reason).not.toBe('valid signed decision ticket')
+      // The pipeline ran and produced the real verdict, not a ticket fast-path.
+      expect(decision.decision).toBe('allow')
+    }
   })
 
   it('a cached decision is not reused after the feed version changes', async () => {
