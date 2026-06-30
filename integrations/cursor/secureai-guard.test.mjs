@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { mapCursorPayload, runCursorGuard } from './secureai-guard.mjs'
+import { cursorGuardHealth, mapCursorPayload, runCursorGuard } from './secureai-guard.mjs'
 
 const KEY = 'sk_secureai_test'
 
@@ -109,6 +109,26 @@ test('attaches device identity and applies maximum privacy mode', async () => {
   assert.equal(body.transcript_path, undefined)
   assert.equal(body.tool_input.cwd, undefined)
   assert.equal(body.cwd, '/repo')
+})
+
+test('reports hook health without exposing secrets', () => {
+  const health = cursorGuardHealth({
+    env: {
+      SECUREAI_API_KEY: KEY,
+      SECUREAI_DEVICE_ID: 'dev_test',
+      SECUREAI_PRIVACY_MODE: 'maximum',
+      SECUREAI_INTEGRATION_VERSION: 'cursor-test',
+    },
+  })
+
+  assert.equal(health.provider, 'cursor')
+  assert.equal(health.status, 'enabled')
+  assert.equal(health.auth, 'present')
+  assert.equal(health.device_id, 'present')
+  assert.equal(health.privacy_mode, 'maximum')
+  assert.equal(health.integration_version, 'present')
+  assert.doesNotMatch(JSON.stringify(health), new RegExp(KEY))
+  assert.doesNotMatch(JSON.stringify(health), /dev_test/)
 })
 
 test('maps beforeMCPExecution payloads and emits ask', async () => {

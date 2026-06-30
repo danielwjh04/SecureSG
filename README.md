@@ -116,6 +116,10 @@ When `GUARD_TICKET_SECRET` is set, `/api/guard` also returns a short-lived signe
 
 The endpoint installer now creates a stable local `deviceId` in `~/.secureai/config.json` and sends it with Guard requests. `SECUREAI_DEVICE_ID` can override it, and `SECUREAI_PRIVACY_MODE` can be `balanced`, `maximum`, or `investigation`. Maximum privacy drops session and transcript context before upload while still sending the redacted tool input needed for enforcement.
 
+Run a local adapter with `--health` to print a secret-free JSON status. It reports whether auth is configured, whether a device id is present, the selected privacy mode, and whether an integration version is configured. It never prints the API key or device id.
+
+Release integrity starts with `node scripts/release-checksums.mjs`. It stages the installer scripts, guard adapters, and `SHA256SUMS.txt` so release files can be verified before installing.
+
 ## Browser extension (Chrome and Edge MV3)
 
 The browser extension lives in `extensions/chrome/`. It adds "Scan with SecureAI" on supported GitHub and raw GitHub pages, scans selected or pasted text, and guards supported browser AI pages before content is sent.

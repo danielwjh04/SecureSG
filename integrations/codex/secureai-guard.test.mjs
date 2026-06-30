@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { mapCodexPayload, runCodexGuard } from './secureai-guard.mjs'
+import { codexGuardHealth, mapCodexPayload, runCodexGuard } from './secureai-guard.mjs'
 
 const KEY = 'sk_secureai_test'
 
@@ -143,6 +143,26 @@ test('attaches device identity and applies maximum privacy mode', async () => {
   assert.equal(body.transcript_path, undefined)
   assert.equal(body.tool_input.cwd, undefined)
   assert.equal(body.cwd, '/repo')
+})
+
+test('reports hook health without exposing secrets', () => {
+  const health = codexGuardHealth({
+    env: {
+      SECUREAI_API_KEY: KEY,
+      SECUREAI_DEVICE_ID: 'dev_test',
+      SECUREAI_PRIVACY_MODE: 'maximum',
+      SECUREAI_INTEGRATION_VERSION: 'codex-test',
+    },
+  })
+
+  assert.equal(health.provider, 'codex')
+  assert.equal(health.status, 'enabled')
+  assert.equal(health.auth, 'present')
+  assert.equal(health.device_id, 'present')
+  assert.equal(health.privacy_mode, 'maximum')
+  assert.equal(health.integration_version, 'present')
+  assert.doesNotMatch(JSON.stringify(health), new RegExp(KEY))
+  assert.doesNotMatch(JSON.stringify(health), /dev_test/)
 })
 
 test('routes a network tool call and emits ask', async () => {

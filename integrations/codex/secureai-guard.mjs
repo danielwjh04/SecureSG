@@ -208,6 +208,39 @@ function resolveConfig(options = {}) {
   return { apiUrl, apiKey, timeoutMs, deviceId, privacyMode, integrationVersion }
 }
 
+function healthFromConfig(provider, config) {
+  return {
+    provider,
+    status: nonEmptyString(config.apiKey) ? 'enabled' : 'disabled',
+    api_url: config.apiUrl,
+    auth: nonEmptyString(config.apiKey) ? 'present' : 'missing',
+    device_id: nonEmptyString(config.deviceId) ? 'present' : 'missing',
+    privacy_mode: config.privacyMode,
+    integration_version: nonEmptyString(config.integrationVersion) ? 'present' : 'missing',
+  }
+}
+
+export function codexGuardHealth(options = {}) {
+  try {
+    return healthFromConfig(PROVIDER, resolveConfig({
+      env: options.env ?? process.env,
+      argv: options.argv ?? [],
+      homeDir: options.homeDir,
+      readFileSync: options.readFileSync,
+    }))
+  } catch {
+    return {
+      provider: PROVIDER,
+      status: 'unknown',
+      api_url: 'unknown',
+      auth: 'unknown',
+      device_id: 'unknown',
+      privacy_mode: 'unknown',
+      integration_version: 'unknown',
+    }
+  }
+}
+
 function attachLocalContext(payload, config) {
   const output = { ...payload, privacy_mode: config.privacyMode }
   if (nonEmptyString(config.deviceId)) {
@@ -406,8 +439,13 @@ export async function runCodexGuard(input, options = {}) {
 }
 
 async function main() {
+  const argv = process.argv.slice(2)
+  if (argv.includes('--health')) {
+    process.stdout.write(JSON.stringify(codexGuardHealth({ argv })))
+    return
+  }
   const input = await readStdin()
-  const output = await runCodexGuard(input, { argv: process.argv.slice(2) })
+  const output = await runCodexGuard(input, { argv })
   process.stdout.write(JSON.stringify(output))
 }
 

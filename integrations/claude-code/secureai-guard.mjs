@@ -151,6 +151,23 @@ function applyPrivacyMode(payload, privacyMode) {
   return output
 }
 
+function guardHealth() {
+  const apiUrl = (process.env.SECUREAI_API_URL || DEFAULT_API_URL).replace(/\/+$/, '')
+  const apiKey = process.env.SECUREAI_API_KEY
+  const privacyMode = normalizePrivacyMode(process.env.SECUREAI_PRIVACY_MODE)
+  return {
+    provider: 'claude-code',
+    status: nonEmptyString(apiKey) ? 'enabled' : 'disabled',
+    api_url: apiUrl,
+    auth: nonEmptyString(apiKey) ? 'present' : 'missing',
+    device_id: nonEmptyString(process.env.SECUREAI_DEVICE_ID) ? 'present' : 'missing',
+    privacy_mode: privacyMode,
+    integration_version: nonEmptyString(process.env.SECUREAI_INTEGRATION_VERSION)
+      ? 'present'
+      : 'missing',
+  }
+}
+
 /**
  * Map the server's `GuardDecision` body to a Claude Code decision and emit it.
  * A body missing the required string fields is treated as unverifiable and fails
@@ -234,6 +251,11 @@ async function main() {
   }
 
   emitFromGuardDecision(body)
+}
+
+if (process.argv.includes('--health')) {
+  process.stdout.write(JSON.stringify(guardHealth()))
+  process.exit(0)
 }
 
 main().catch(() => {
