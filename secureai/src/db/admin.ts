@@ -482,6 +482,7 @@ export async function setUserRole(
 export async function deleteMember(db: Database, userId: string): Promise<number> {
   try {
     await db.execute('DELETE FROM api_keys WHERE user_id = ?', [userId])
+    await db.execute('DELETE FROM guard_device_credentials WHERE user_id = ?', [userId])
     await db.execute('DELETE FROM usage WHERE subject = ?', [userId])
     await db.execute(
       'DELETE FROM scan_details WHERE scan_id IN (SELECT id FROM scan_history WHERE user_id = ?)',

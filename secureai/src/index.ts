@@ -14,9 +14,15 @@ import type { ContactDeps, ContactRateLimitKv } from './routes/contact'
 import type { StatsDeps } from './routes/stats'
 import type { RecentScansDeps } from './routes/recentScans'
 import type { AdminDeps } from './routes/admin'
+import type { GuardDeviceDeps } from './routes/guardDevices'
 import type { RateLimitKv } from './middleware/rateLimit'
 import { loadConfig } from './config/env'
 import { handleGuard } from './routes/guard'
+import {
+  handleGuardDeviceList,
+  handleGuardDeviceRegister,
+  handleGuardDeviceRevoke,
+} from './routes/guardDevices'
 import { handleScan } from './routes/scan'
 import { handleSignup } from './routes/signup'
 import { handleVerify } from './routes/verify'
@@ -58,6 +64,8 @@ import { breakerFor, type BreakerStore } from './resilience/circuitBreaker'
 const ROUTE_SCAN = '/api/scan'
 const ROUTE_VERIFY = '/api/verify'
 const ROUTE_GUARD = '/api/guard'
+const ROUTE_GUARD_DEVICES = '/api/guard/devices'
+const ROUTE_GUARD_DEVICES_REVOKE = '/api/guard/devices/revoke'
 const ROUTE_SIGNUP = '/api/signup'
 const ROUTE_CONTACT = '/api/contact'
 const ROUTE_CHECKOUT = '/api/checkout'
@@ -150,6 +158,23 @@ export default {
       }
       // handleGuard owns its own error→status mapping and never throws.
       return await stamp(handleGuard(request, env, config, db))
+    }
+
+    if (url.pathname === ROUTE_GUARD_DEVICES) {
+      if (request.method === 'POST') {
+        return await stamp(handleGuardDeviceRegister(request, guardDeviceDeps(env, config, db)))
+      }
+      if (request.method === 'GET') {
+        return await stamp(handleGuardDeviceList(request, guardDeviceDeps(env, config, db)))
+      }
+      return jsonError('method not allowed', 405)
+    }
+
+    if (url.pathname === ROUTE_GUARD_DEVICES_REVOKE) {
+      if (request.method !== 'POST') {
+        return jsonError('method not allowed', 405)
+      }
+      return await stamp(handleGuardDeviceRevoke(request, guardDeviceDeps(env, config, db)))
     }
 
     if (url.pathname === ROUTE_SIGNUP) {
@@ -406,6 +431,11 @@ function authDeps(env: Env, config: ScannerConfig, db: Database | null): AuthDep
     emailSender: buildEmailSender(env, config),
     kv: env.KV !== undefined && env.KV !== null ? (env.KV as RateLimitKv) : null,
   }
+}
+
+/** Assemble the Guard device-management dependencies. */
+function guardDeviceDeps(env: Env, config: ScannerConfig, db: Database | null): GuardDeviceDeps {
+  return { db, sessionSecret: sessionSecretOf(env), config }
 }
 
 /**

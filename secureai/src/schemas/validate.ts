@@ -241,6 +241,29 @@ export const loginResendSchema = z
 /** The validated payload `POST /api/login/resend` operates on. */
 export type LoginResendPayload = z.infer<typeof loginResendSchema>
 
+/** Body of `POST /api/guard/devices`: register one local Guard installation. */
+export const guardDeviceRegisterSchema = z
+  .object({
+    deviceId: z.string().trim().min(1).max(128).optional(),
+    name: z.string().trim().min(1).max(120).optional(),
+    integration: z.string().trim().min(1).max(80),
+    scopes: z.array(z.enum(['guard:decision'])).min(1).max(4).optional(),
+  })
+  .strict()
+
+/** The validated payload `POST /api/guard/devices` operates on. */
+export type GuardDeviceRegisterPayload = z.infer<typeof guardDeviceRegisterSchema>
+
+/** Body of `POST /api/guard/devices/revoke`: revoke one device credential. */
+export const guardDeviceRevokeSchema = z
+  .object({
+    id: z.string().trim().min(1).max(100),
+  })
+  .strict()
+
+/** The validated payload `POST /api/guard/devices/revoke` operates on. */
+export type GuardDeviceRevokePayload = z.infer<typeof guardDeviceRevokeSchema>
+
 /**
  * Body of `POST /api/admin/members/role`: the target account id plus the role to
  * grant it. `role` is allowlisted to exactly {`member`, `admin`} at the boundary

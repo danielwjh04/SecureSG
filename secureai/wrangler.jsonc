@@ -113,6 +113,10 @@
 		// Short-lived signed Guard allow tickets. Set GUARD_TICKET_SECRET with
 		// `wrangler secret put GUARD_TICKET_SECRET`; this TTL only controls expiry.
 		"SCANNER_GUARD_TICKET_TTL_S": "300",
+		// Device-scoped Guard credentials. Keep account credential fallback false
+		// for production Guard so broad account keys do not authorize runtime hooks.
+		"SCANNER_GUARD_ALLOW_ACCOUNT_CREDENTIALS": "false",
+		"SCANNER_GUARD_DEVICE_TTL_DAYS": "90",
 		"SCANNER_GUARD_READ_TOOLS": "read,grep,glob,ls",
 		"SCANNER_GUARD_WRITE_TOOLS": "write,edit,multiedit,notebookedit,apply_patch",
 		"SCANNER_GUARD_SHELL_TOOLS": "bash,shell",

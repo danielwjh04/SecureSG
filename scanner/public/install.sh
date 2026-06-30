@@ -191,7 +191,7 @@ NODE
 write_config() {
   mkdir -p "${SECUREAI_DIR}"
   CONFIG_PATH="${CONFIG_PATH}" \
-  SECUREAI_API_KEY="${API_KEY}" \
+  SECUREAI_API_KEY="${GUARD_API_KEY}" \
   SECUREAI_API_URL="${API_URL}" \
   SECUREAI_DEVICE_ID="${DEVICE_ID}" \
   SECUREAI_PRIVACY_MODE="${PRIVACY_MODE}" \
@@ -210,11 +210,55 @@ NODE
   ok "Saved config to ${CONFIG_PATH}"
 }
 
+register_guard_device() {
+  if [ "${DRY_RUN}" = "1" ]; then
+    printf '%s\n' "${API_KEY}"
+    return
+  fi
+  API_URL="${API_URL}" \
+  ACCOUNT_API_KEY="${API_KEY}" \
+  SECUREAI_DEVICE_ID="${DEVICE_ID}" \
+  SELECTED_AGENTS="${SELECTED_AGENTS}" \
+  node <<'NODE'
+const os = require('os')
+
+async function main() {
+  const apiUrl = process.env.API_URL.replace(/\/+$/, '')
+  const response = await fetch(`${apiUrl}/api/guard/devices`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${process.env.ACCOUNT_API_KEY}`,
+    },
+    body: JSON.stringify({
+      deviceId: process.env.SECUREAI_DEVICE_ID,
+      name: os.hostname(),
+      integration: `installer:${process.env.SELECTED_AGENTS.trim().replace(/\s+/g, ',')}`,
+      scopes: ['guard:decision'],
+    }),
+  })
+  if (!response.ok) {
+    throw new Error(`device registration failed with HTTP ${response.status}`)
+  }
+  const body = await response.json()
+  if (!body || typeof body.credential !== 'string' || body.credential.length === 0) {
+    throw new Error('device registration returned no credential')
+  }
+  process.stdout.write(body.credential)
+}
+
+main().catch((error) => {
+  process.stderr.write(`${error.message}\n`)
+  process.exit(1)
+})
+NODE
+}
+
 wire_claude() {
   download_adapter "${CLAUDE_GUARD_URL}" "${CLAUDE_GUARD_PATH}" "Claude Code"
   mkdir -p "$(dirname "${CLAUDE_SETTINGS_PATH}")"
   SETTINGS_PATH="${CLAUDE_SETTINGS_PATH}" \
-  HOOK_COMMAND="SECUREAI_API_KEY=${API_KEY} SECUREAI_API_URL=${API_URL} SECUREAI_DEVICE_ID=${DEVICE_ID} SECUREAI_PRIVACY_MODE=${PRIVACY_MODE} node \"${CLAUDE_GUARD_PATH}\"" \
+  HOOK_COMMAND="SECUREAI_API_KEY=${GUARD_API_KEY} SECUREAI_API_URL=${API_URL} SECUREAI_DEVICE_ID=${DEVICE_ID} SECUREAI_PRIVACY_MODE=${PRIVACY_MODE} node \"${CLAUDE_GUARD_PATH}\"" \
   GUARD_MARKER="secureai-guard.mjs" \
   node <<'NODE'
 const fs = require('fs')
@@ -369,7 +413,7 @@ open_url() {
 }
 
 wire_browser() {
-  local pairing="${BROWSER_PAIRING_URL}${API_KEY}"
+  local pairing="${BROWSER_PAIRING_URL}${ACCOUNT_API_KEY}"
   if [ -n "${BROWSER_STORE_URL}" ]; then
     open_url "${BROWSER_STORE_URL}"
     info "Browser store page: ${BROWSER_STORE_URL}"
@@ -397,8 +441,12 @@ if [ -z "${API_KEY}" ]; then
 fi
 API_KEY="$(printf '%s' "${API_KEY}" | tr -d '[:space:]')"
 [ -n "${API_KEY}" ] || fail "An API key is required."
+ACCOUNT_API_KEY="${API_KEY}"
 
 DEVICE_ID="$(resolve_device_id)"
+if ! GUARD_API_KEY="$(register_guard_device)"; then
+  fail "Could not register this device with SecureAI."
+fi
 write_config
 
 if has_agent claude; then

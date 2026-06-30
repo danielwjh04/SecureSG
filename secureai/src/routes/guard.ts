@@ -41,7 +41,7 @@ import { DenylistReputationClient, type IndicatorKv } from '../pipeline/indicato
 import { preToolUseSchema } from '../schemas/validate'
 import { d1Database, type Database } from '../db/database'
 import { d1FeedStore } from '../db/feed'
-import { authenticate } from '../middleware/auth'
+import { authenticateGuard } from '../middleware/guardAuth'
 import { aiAllowedForTier, enforceDailyCap } from '../middleware/gate'
 import { recordVerdict } from '../db/usage'
 import { log } from '../observability/logger'
@@ -144,9 +144,10 @@ export async function handleGuard(
     const today = new Date().toISOString().slice(0, 10)
 
     const sessionSecret = typeof env.SESSION_SECRET === 'string' ? env.SESSION_SECRET : undefined
+    const now = new Date()
     const ctx = db !== null
-      ? await authenticate(request, db, sessionSecret)
-      : ({ subject: 'anon:unmetered', tier: 'anonymous' } as const)
+      ? await authenticateGuard(request, db, config, now.toISOString(), sessionSecret)
+      : ({ subject: 'anon:unmetered', tier: 'anonymous', credentialKind: 'anonymous' } as const)
 
     if (db !== null) {
       if (config.guardRequireAuth && ctx.tier === 'anonymous') {
@@ -155,7 +156,15 @@ export async function handleGuard(
       await enforceDailyCap(db, ctx.subject, ctx.tier, today, config)
     }
 
-    const now = new Date()
+    const guardPayload: PreToolUsePayload =
+      db !== null && ctx.credentialKind === 'guard_device'
+        ? ({
+            ...payload,
+            device_id: ctx.deviceId,
+            provider: (payload as unknown as Record<string, unknown>).provider ?? ctx.integration,
+          } as PreToolUsePayload)
+        : payload
+
     const ticketSecret =
       typeof env.GUARD_TICKET_SECRET === 'string' ? env.GUARD_TICKET_SECRET : undefined
     const ticketContext: GuardTicketContext | null = ticketSecret === undefined
@@ -169,10 +178,10 @@ export async function handleGuard(
         }
     let decision: GuardDecision | null = null
     const presentedTicket = parseGuardDecisionTicket(
-      (payload as unknown as Record<string, unknown>).decision_ticket,
+      (guardPayload as unknown as Record<string, unknown>).decision_ticket,
     )
     if (ticketContext !== null && presentedTicket !== null) {
-      const verification = await verifyGuardDecisionTicket(payload, presentedTicket, ticketContext)
+      const verification = await verifyGuardDecisionTicket(guardPayload, presentedTicket, ticketContext)
       if (verification.ok && presentedTicket.decision === 'allow') {
         decision = {
           decision: 'allow',
@@ -222,11 +231,11 @@ export async function handleGuard(
     if (decision === null) {
       inferenceMetered = inference !== null
       decision = await resolveCachedDecision(
-        payload,
+        guardPayload,
         guardCacheKv,
         config.verdictCacheTtlSeconds,
         () =>
-          guardDecision(payload, {
+          guardDecision(guardPayload, {
             config,
             reputation,
             inference,
@@ -243,7 +252,7 @@ export async function handleGuard(
       decision.ticket === undefined &&
       ticketContext !== null
     ) {
-      const ticket = await signGuardDecisionTicket(payload, decision.decision, ticketContext)
+      const ticket = await signGuardDecisionTicket(guardPayload, decision.decision, ticketContext)
       if (ticket !== null) {
         decision = { ...decision, ticket }
       }

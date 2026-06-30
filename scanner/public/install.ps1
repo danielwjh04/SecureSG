@@ -129,6 +129,53 @@ const config = {
   deviceId: process.env.SECUREAI_DEVICE_ID,
   privacyMode: process.env.SECUREAI_PRIVACY_MODE,
 }
+
+function Register-GuardDevice([string]$AccountApiKey) {
+  if ($DryRun) {
+    return $AccountApiKey
+  }
+  $env:API_URL = $ApiUrl
+  $env:ACCOUNT_API_KEY = $AccountApiKey
+  $env:SECUREAI_DEVICE_ID = $DeviceId
+  $env:SELECTED_AGENTS = ($agents -join ',')
+  $credential = @'
+const os = require('os')
+
+async function main() {
+  const apiUrl = process.env.API_URL.replace(/\/+$/, '')
+  const response = await fetch(`${apiUrl}/api/guard/devices`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${process.env.ACCOUNT_API_KEY}`,
+    },
+    body: JSON.stringify({
+      deviceId: process.env.SECUREAI_DEVICE_ID,
+      name: os.hostname(),
+      integration: `installer:${process.env.SELECTED_AGENTS}`,
+      scopes: ['guard:decision'],
+    }),
+  })
+  if (!response.ok) {
+    throw new Error(`device registration failed with HTTP ${response.status}`)
+  }
+  const body = await response.json()
+  if (!body || typeof body.credential !== 'string' || body.credential.length === 0) {
+    throw new Error('device registration returned no credential')
+  }
+  process.stdout.write(body.credential)
+}
+
+main().catch((error) => {
+  process.stderr.write(`${error.message}\n`)
+  process.exit(1)
+})
+'@ | node
+  if ($LASTEXITCODE -ne 0 -or -not $credential) {
+    Fail 'Could not register this device with SecureAI.'
+  }
+  return $credential
+}
 fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 })
 '@
   Ok "Saved config to $ConfigPath"
@@ -292,15 +339,17 @@ if (-not $apiKey) {
 }
 $apiKey = ($apiKey -replace '\s', '')
 if (-not $apiKey) { Fail 'An API key is required.' }
+$accountApiKey = $apiKey
 
 $DeviceId = Resolve-DeviceId
 $agents = Normalize-Agents (Get-AgentSelection)
-Write-SecureAiConfig $apiKey
+$guardApiKey = Register-GuardDevice $accountApiKey
+Write-SecureAiConfig $guardApiKey
 
-if ($agents -contains 'claude') { Wire-Claude $apiKey }
+if ($agents -contains 'claude') { Wire-Claude $guardApiKey }
 if ($agents -contains 'cursor') { Wire-Cursor }
 if ($agents -contains 'codex') { Wire-Codex }
-if ($agents -contains 'browser') { Wire-Browser $apiKey }
+if ($agents -contains 'browser') { Wire-Browser $accountApiKey }
 
 Write-Host ''
 Write-Host 'SecureAI setup complete.'

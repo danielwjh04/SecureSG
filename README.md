@@ -110,6 +110,8 @@ Before the Claude Code, Cursor, Codex, or browser-served guard adapters call `/a
 
 On DB-backed deployments, Guard requires an authenticated API key by default. A missing, malformed, expired, or unknown credential returns 401, which the local adapters treat as a fail-closed deny. The public scanner can still support anonymous scans; runtime Guard actions do not silently fall back to anonymous mode.
 
+Runtime Guard hooks now use device-scoped credentials instead of broad account API keys. The installer uses the account API key once to call `POST /api/guard/devices`, stores the returned `gd_secureai_...` credential locally, and uses that credential for `/api/guard`. Accounts can call `GET /api/guard/devices` to list registered Guard devices and `POST /api/guard/devices/revoke` to revoke one. Set `SCANNER_GUARD_ALLOW_ACCOUNT_CREDENTIALS=true` only as a compatibility fallback.
+
 Guard cache keys bind repeated decisions to the policy version, trust revision, project scope, device identity, integration version, content hash, tool name, and exact tool input when those fields are present. Bumping `SCANNER_GUARD_POLICY_VERSION` or `SCANNER_GUARD_TRUST_REVISION` invalidates old Guard cache entries without changing code.
 
 When `GUARD_TICKET_SECRET` is set, `/api/guard` also returns a short-lived signed allow ticket for an exact repeated action. Tickets bind to the action hash, policy version, trust revision, project scope, device identity, and integration version. `SCANNER_GUARD_TICKET_TTL_S` controls expiry, and a changed action or revision forces a fresh decision.

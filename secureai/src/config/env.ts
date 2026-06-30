@@ -118,6 +118,10 @@ export interface ScannerConfig {
   readonly guardTrustRevision: string
   /** TTL, in seconds, for signed Guard decision tickets. Zero disables issuance. */
   readonly guardTicketTtlSeconds: number
+  /** Whether Guard may accept account API keys or sessions instead of device credentials. */
+  readonly guardAllowAccountCredentials: boolean
+  /** Lifetime, in days, for newly minted Guard device credentials. */
+  readonly guardDeviceCredentialTtlDays: number
   /** Guard tool names treated as low-risk filesystem reads when paths are not sensitive. */
   readonly guardReadTools: ReadonlySet<string>
   /** Guard tool names treated as filesystem writes. */
@@ -325,6 +329,14 @@ export function loadConfig(env: Env): ScannerConfig {
   const guardPolicyVersion = readString(env, 'SCANNER_GUARD_POLICY_VERSION', '1')
   const guardTrustRevision = readString(env, 'SCANNER_GUARD_TRUST_REVISION', '1')
   const guardTicketTtlSeconds = readIntInRange(env, 'SCANNER_GUARD_TICKET_TTL_S', 300, 0, 3600)
+  const guardAllowAccountCredentials = readBool(env, 'SCANNER_GUARD_ALLOW_ACCOUNT_CREDENTIALS', false)
+  const guardDeviceCredentialTtlDays = readIntInRange(
+    env,
+    'SCANNER_GUARD_DEVICE_TTL_DAYS',
+    90,
+    1,
+    365,
+  )
   const guardReadTools = readSet(env, 'SCANNER_GUARD_READ_TOOLS', 'read,grep,glob,ls')
   const guardWriteTools = readSet(
     env,
@@ -517,6 +529,8 @@ export function loadConfig(env: Env): ScannerConfig {
     guardPolicyVersion,
     guardTrustRevision,
     guardTicketTtlSeconds,
+    guardAllowAccountCredentials,
+    guardDeviceCredentialTtlDays,
     guardReadTools,
     guardWriteTools,
     guardShellTools,

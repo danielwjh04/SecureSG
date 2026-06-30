@@ -49,6 +49,20 @@ interface ApiKeyRecord {
   created_at: string
 }
 
+interface GuardDeviceCredentialRecord {
+  id: string
+  credential_sha256: string
+  user_id: string
+  device_id: string
+  name: string | null
+  integration: string
+  scopes: string
+  status: string
+  created_at: string
+  expires_at: string
+  last_seen_at: string | null
+}
+
 interface UsageRecord {
   subject: string
   day: string
@@ -113,6 +127,8 @@ export class MemoryStore {
   public readonly users = new Map<string, UserRecord>()
   /** Keyed by `key_sha256`, so the raw key never appears as a key or value. */
   public readonly apiKeys = new Map<string, ApiKeyRecord>()
+  /** Keyed by `credential_sha256`, mirroring guard device credential lookup. */
+  public readonly guardDeviceCredentials = new Map<string, GuardDeviceCredentialRecord>()
   /** Keyed by `${subject} ${day}`. */
   public readonly usage = new Map<string, UsageRecord>()
   /** Keyed by `user_id` (the subscription mirror's primary key). */
@@ -167,6 +183,27 @@ export class MemoryStore {
         return null
       }
       return { id: user.id, tier: user.tier }
+    }
+    if (sql.includes('FROM guard_device_credentials g JOIN users u')) {
+      const credential = this.guardDeviceCredentials.get(String(params[0]))
+      if (credential === undefined || credential.status !== 'active') {
+        return null
+      }
+      if (credential.expires_at <= String(params[1])) {
+        return null
+      }
+      const user = this.users.get(credential.user_id)
+      if (user === undefined || user.email_verified !== 1) {
+        return null
+      }
+      return {
+        id: credential.id,
+        user_id: credential.user_id,
+        device_id: credential.device_id,
+        integration: credential.integration,
+        scopes: credential.scopes,
+        tier: user.tier,
+      }
     }
     if (sql.includes('FROM usage WHERE subject')) {
       const record = this.usage.get(usageKey(String(params[0]), String(params[1])))
@@ -414,6 +451,28 @@ export class MemoryStore {
       rows.sort((a, b) => String(b['scanned_at']).localeCompare(String(a['scanned_at'])))
       return rows.slice(0, limit)
     }
+    if (sql.includes('FROM guard_device_credentials WHERE user_id')) {
+      const userId = String(params[0])
+      const rows: Record<string, unknown>[] = []
+      for (const record of this.guardDeviceCredentials.values()) {
+        if (record.user_id === userId) {
+          rows.push({
+            id: record.id,
+            user_id: record.user_id,
+            device_id: record.device_id,
+            name: record.name,
+            integration: record.integration,
+            scopes: record.scopes,
+            status: record.status,
+            created_at: record.created_at,
+            expires_at: record.expires_at,
+            last_seen_at: record.last_seen_at,
+          })
+        }
+      }
+      rows.sort((a, b) => String(b['created_at']).localeCompare(String(a['created_at'])))
+      return rows
+    }
     // Admin: accounts grouped by tier.
     if (sql.includes('COUNT(*) AS count FROM users GROUP BY tier')) {
       const byTier = new Map<string, number>()
@@ -593,6 +652,23 @@ export class MemoryStore {
       })
       return { changes: 1 }
     }
+    if (sql.startsWith('INSERT INTO guard_device_credentials')) {
+      const credentialHash = String(params[1])
+      this.guardDeviceCredentials.set(credentialHash, {
+        id: String(params[0]),
+        credential_sha256: credentialHash,
+        user_id: String(params[2]),
+        device_id: String(params[3]),
+        name: params[4] === null ? null : String(params[4]),
+        integration: String(params[5]),
+        scopes: String(params[6]),
+        status: String(params[7]),
+        created_at: String(params[8]),
+        expires_at: String(params[9]),
+        last_seen_at: params[10] === null ? null : String(params[10]),
+      })
+      return { changes: 1 }
+    }
     if (sql.startsWith('INSERT INTO usage') && sql.includes('allows')) {
       // recordVerdict: scans + ai_scans + the verdict column + flagged.
       // Params: subject, day, aiDelta, allowsDelta, reviewsDelta, blocksDelta,
@@ -733,6 +809,28 @@ export class MemoryStore {
       }
       return { changes }
     }
+    if (sql.startsWith('UPDATE guard_device_credentials SET last_seen_at = ? WHERE id')) {
+      const seenAt = String(params[0])
+      const id = String(params[1])
+      for (const record of this.guardDeviceCredentials.values()) {
+        if (record.id === id) {
+          record.last_seen_at = seenAt
+          return { changes: 1 }
+        }
+      }
+      return { changes: 0 }
+    }
+    if (sql.startsWith("UPDATE guard_device_credentials SET status = 'revoked'")) {
+      const userId = String(params[0])
+      const id = String(params[1])
+      for (const record of this.guardDeviceCredentials.values()) {
+        if (record.user_id === userId && record.id === id && record.status === 'active') {
+          record.status = 'revoked'
+          return { changes: 1 }
+        }
+      }
+      return { changes: 0 }
+    }
     if (sql.startsWith('INSERT INTO scan_history')) {
       const id = String(params[0])
       this.scanHistory.set(id, {
@@ -802,6 +900,17 @@ export class MemoryStore {
       for (const [keyHash, key] of this.apiKeys) {
         if (key.user_id === userId) {
           this.apiKeys.delete(keyHash)
+          changes += 1
+        }
+      }
+      return { changes }
+    }
+    if (sql.startsWith('DELETE FROM guard_device_credentials WHERE user_id')) {
+      const userId = String(params[0])
+      let changes = 0
+      for (const [keyHash, credential] of this.guardDeviceCredentials) {
+        if (credential.user_id === userId) {
+          this.guardDeviceCredentials.delete(keyHash)
           changes += 1
         }
       }

@@ -55,6 +55,20 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ SCANNER_GUARD_TICKET_TTL_S: '3601' })).toThrow(ConfigError)
   })
 
+  it('defaults and parses Guard device credential settings', () => {
+    const defaults = loadConfig({})
+    expect(defaults.guardAllowAccountCredentials).toBe(false)
+    expect(defaults.guardDeviceCredentialTtlDays).toBe(90)
+
+    const config = loadConfig({
+      SCANNER_GUARD_ALLOW_ACCOUNT_CREDENTIALS: 'true',
+      SCANNER_GUARD_DEVICE_TTL_DAYS: '30',
+    })
+    expect(config.guardAllowAccountCredentials).toBe(true)
+    expect(config.guardDeviceCredentialTtlDays).toBe(30)
+    expect(() => loadConfig({ SCANNER_GUARD_DEVICE_TTL_DAYS: '0' })).toThrow(ConfigError)
+  })
+
   it('defaults and parses the personal-tier daily cap', () => {
     expect(loadConfig({}).capPersonalPerDay).toBe(1000)
     expect(loadConfig({ SCANNER_CAP_PERSONAL_PER_DAY: '2500' }).capPersonalPerDay).toBe(2500)

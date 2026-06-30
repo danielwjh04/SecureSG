@@ -5,11 +5,13 @@ import { loadConfig } from '../config/env'
 import { MemoryStore, MemoryD1 } from '../db/memory.test'
 import { d1Database } from '../db/database'
 import { createFreeUser, setUserTier } from '../db/accounts'
+import { createGuardDeviceCredential } from '../db/guardDevices'
 import { getUsage, incrementUsage } from '../db/usage'
 import { handleGuard } from './guard'
 
 const config = loadConfig({})
 const optionalGuardAuthConfig = loadConfig({ SCANNER_GUARD_REQUIRE_AUTH: 'false' })
+const accountFallbackGuardConfig = loadConfig({ SCANNER_GUARD_ALLOW_ACCOUNT_CREDENTIALS: 'true' })
 
 function post(body: unknown, raw?: string, headers?: Record<string, string>): Request {
   return new Request('https://secureai.test/api/guard', {
@@ -182,6 +184,19 @@ describe('handleGuard, metering and caps', () => {
     return { env: { DB: d1 }, db: d1Database(d1) }
   }
 
+  async function guardCredentialFor(db: ReturnType<typeof d1Database>, userId: string): Promise<string> {
+    const minted = await createGuardDeviceCredential(db, {
+      userId,
+      deviceId: `dev_${userId}`,
+      name: 'test device',
+      integration: 'codex-test',
+      scopes: ['guard:decision'],
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 86400000).toISOString(),
+    })
+    return minted.credential
+  }
+
   it('runs the guard but does NOT meter when env.DB is absent', async () => {
     const res = await handleGuard(post(benign), {}, config)
     expect(res.status).toBe(200)
@@ -222,10 +237,29 @@ describe('handleGuard, metering and caps', () => {
     expect(body.error).toBe('AuthError')
   })
 
+  it('rejects broad account API keys for Guard unless fallback is explicitly enabled', async () => {
+    const { env, db } = fixture()
+    const { apiKey } = await createFreeUser(db, 'account-key-guard@example.com')
+    const strict = await handleGuard(
+      post(benign, undefined, { Authorization: `Bearer ${apiKey}` }),
+      env,
+      config,
+    )
+    expect(strict.status).toBe(401)
+
+    const fallback = await handleGuard(
+      post(benign, undefined, { Authorization: `Bearer ${apiKey}` }),
+      env,
+      accountFallbackGuardConfig,
+    )
+    expect(fallback.status).toBe(200)
+  })
+
   it('gates AI off for a free caller and on for a pro caller', async () => {
     const { env, db } = fixture()
     const freeAi = new SpyAiRunner()
-    const { apiKey: freeKey } = await createFreeUser(db, 'free-guard@example.com')
+    const { user: freeUser } = await createFreeUser(db, 'free-guard@example.com')
+    const freeKey = await guardCredentialFor(db, freeUser.id)
     const freeRes = await handleGuard(
       post(benign, undefined, { Authorization: `Bearer ${freeKey}` }),
       { ...env, AI: freeAi },
@@ -235,8 +269,9 @@ describe('handleGuard, metering and caps', () => {
     expect(freeAi.calls).toBe(0)
 
     const proAi = new SpyAiRunner()
-    const { user, apiKey: proKey } = await createFreeUser(db, 'pro-guard@example.com')
+    const { user } = await createFreeUser(db, 'pro-guard@example.com')
     await setUserTier(db, user.id, 'pro')
+    const proKey = await guardCredentialFor(db, user.id)
     const proRes = await handleGuard(
       post(benign, undefined, { Authorization: `Bearer ${proKey}` }),
       { ...env, AI: proAi },
