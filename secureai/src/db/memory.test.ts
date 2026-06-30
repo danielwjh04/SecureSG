@@ -203,6 +203,7 @@ export class MemoryStore {
         integration: credential.integration,
         scopes: credential.scopes,
         tier: user.tier,
+        last_seen_at: credential.last_seen_at,
       }
     }
     if (sql.includes('FROM usage WHERE subject')) {

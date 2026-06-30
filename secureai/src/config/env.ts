@@ -155,6 +155,13 @@ export interface ScannerConfig {
   readonly guardTicketKeyIdPrevious: string
   /** Whether Guard may accept account API keys or sessions instead of device credentials. */
   readonly guardAllowAccountCredentials: boolean
+  /**
+   * Minimum seconds between `last_seen_at` writes for a Guard device credential.
+   * A credential seen within this window is not re-written, keeping the hot-path
+   * D1 write at O(1) amortized cost. `0` writes on every authenticated call.
+   * Default 300 (5 minutes); range 0..86400.
+   */
+  readonly guardLastSeenThrottleSeconds: number
   /** Lifetime, in days, for newly minted Guard device credentials. */
   readonly guardDeviceCredentialTtlDays: number
   /** Guard tool names treated as low-risk filesystem reads when paths are not sensitive. */
@@ -367,6 +374,13 @@ export function loadConfig(env: Env): ScannerConfig {
   const guardTicketKeyId = readString(env, 'SCANNER_GUARD_TICKET_KEY_ID', 'guard-ticket-v1')
   const guardTicketKeyIdPrevious = readStringOrEmpty(env, 'SCANNER_GUARD_TICKET_KEY_ID_PREVIOUS')
   const guardAllowAccountCredentials = readBool(env, 'SCANNER_GUARD_ALLOW_ACCOUNT_CREDENTIALS', false)
+  const guardLastSeenThrottleSeconds = readIntInRange(
+    env,
+    'SCANNER_GUARD_LAST_SEEN_THROTTLE_S',
+    300,
+    0,
+    86400,
+  )
   const guardDeviceCredentialTtlDays = readIntInRange(
     env,
     'SCANNER_GUARD_DEVICE_TTL_DAYS',
@@ -569,6 +583,7 @@ export function loadConfig(env: Env): ScannerConfig {
     guardTicketKeyId,
     guardTicketKeyIdPrevious,
     guardAllowAccountCredentials,
+    guardLastSeenThrottleSeconds,
     guardDeviceCredentialTtlDays,
     guardReadTools,
     guardWriteTools,

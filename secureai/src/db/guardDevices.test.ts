@@ -6,6 +6,7 @@ import {
   findGuardDeviceByCredential,
   listGuardDevices,
   revokeGuardDevice,
+  touchGuardDeviceCredential,
 } from './guardDevices'
 
 function tomorrow(): string {
@@ -63,6 +64,28 @@ describe('guard device credentials', () => {
     await expect(
       findGuardDeviceByCredential(db, minted.credential, '2026-06-30T12:00:00.000Z'),
     ).resolves.toBeNull()
+  })
+
+  it('findGuardDeviceByCredential returns lastSeenAt', async () => {
+    const { db } = memoryDatabase()
+    const { user } = await createFreeUser(db, 'last-seen@example.com')
+    const minted = await createGuardDeviceCredential(db, {
+      userId: user.id,
+      deviceId: 'dev_ls',
+      name: null,
+      integration: 'claude-code',
+      scopes: ['guard:decision'],
+      createdAt: '2026-06-30T00:00:00.000Z',
+      expiresAt: '2026-07-30T00:00:00.000Z',
+    })
+
+    const fresh = await findGuardDeviceByCredential(db, minted.credential, '2026-06-30T12:00:00.000Z')
+    expect(fresh?.lastSeenAt).toBeNull()
+
+    await touchGuardDeviceCredential(db, minted.device.id, '2026-06-30T13:00:00.000Z')
+
+    const seen = await findGuardDeviceByCredential(db, minted.credential, '2026-06-30T14:00:00.000Z')
+    expect(seen?.lastSeenAt).toBe('2026-06-30T13:00:00.000Z')
   })
 
   it('lists devices without exposing raw credentials', async () => {

@@ -39,6 +39,7 @@ export interface ResolvedGuardDeviceCredential {
   readonly integration: string
   readonly scopes: readonly string[]
   readonly credentialId: string
+  readonly lastSeenAt: string | null
 }
 
 export interface CreateGuardDeviceInput {
@@ -177,7 +178,7 @@ export async function findGuardDeviceByCredential(
   const credentialHash = await sha256Hex(rawCredential)
   const row = await db.queryOne(
     'SELECT g.id AS id, g.user_id AS user_id, g.device_id AS device_id, g.integration AS integration, ' +
-      'g.scopes AS scopes, u.tier AS tier ' +
+      'g.scopes AS scopes, u.tier AS tier, g.last_seen_at AS last_seen_at ' +
       'FROM guard_device_credentials g JOIN users u ON u.id = g.user_id ' +
       "WHERE g.credential_sha256 = ? AND g.status = 'active' AND g.expires_at > ? AND u.email_verified = 1",
     [credentialHash, nowIso],
@@ -196,6 +197,7 @@ export async function findGuardDeviceByCredential(
     integration: requireString(row, 'integration'),
     scopes,
     credentialId: requireString(row, 'id'),
+    lastSeenAt: optionalString(row, 'last_seen_at'),
   }
 }
 

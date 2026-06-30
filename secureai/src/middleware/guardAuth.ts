@@ -13,6 +13,7 @@ import {
   findGuardDeviceByCredential,
   touchGuardDeviceCredential,
 } from '../db/guardDevices'
+import { log, errorClassOf } from '../observability/logger'
 
 const AUTHORIZATION_HEADER = 'Authorization'
 const BEARER_SCHEME = /^Bearer\s+(.+)$/i
@@ -53,6 +54,23 @@ function anonymousContext(request: Request): GuardAuthContext {
 }
 
 /**
+ * Return true when a last_seen_at write is due: null means never written, or
+ * the elapsed time since the last write meets or exceeds the throttle window.
+ *
+ * Time complexity: O(1). Space complexity: O(1).
+ */
+function lastSeenWriteDue(
+  lastSeenAt: string | null,
+  nowIso: string,
+  throttleSeconds: number,
+): boolean {
+  if (lastSeenAt === null) {
+    return true
+  }
+  return Date.parse(nowIso) - Date.parse(lastSeenAt) >= throttleSeconds * 1000
+}
+
+/**
  * Resolve a runtime Guard caller. A valid device credential wins. Account API
  * keys or sessions are accepted only when `guardAllowAccountCredentials` is on.
  *
@@ -70,7 +88,13 @@ export async function authenticateGuard(
   if (rawKey !== null) {
     const device = await findGuardDeviceByCredential(db, rawKey, nowIso)
     if (device !== null) {
-      await touchGuardDeviceCredential(db, device.credentialId, nowIso)
+      if (lastSeenWriteDue(device.lastSeenAt, nowIso, config.guardLastSeenThrottleSeconds)) {
+        try {
+          await touchGuardDeviceCredential(db, device.credentialId, nowIso)
+        } catch (error: unknown) {
+          log.warn('guardAuth', 'last-seen update failed', { errorClass: errorClassOf(error) })
+        }
+      }
       return {
         subject: device.userId,
         tier: device.tier,

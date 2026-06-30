@@ -123,6 +123,10 @@
 		// Device-scoped Guard credentials. Keep account credential fallback false
 		// for production Guard so broad account keys do not authorize runtime hooks.
 		"SCANNER_GUARD_ALLOW_ACCOUNT_CREDENTIALS": "false",
+		// Throttle the last_seen_at write: skip the D1 update when the credential
+		// was seen within this many seconds. Default 300 (5 min); 0 disables
+		// throttling (writes on every authenticated Guard call). Range 0..86400.
+		"SCANNER_GUARD_LAST_SEEN_THROTTLE_S": "300",
 		"SCANNER_GUARD_DEVICE_TTL_DAYS": "90",
 		"SCANNER_GUARD_READ_TOOLS": "read,grep,glob,ls",
 		"SCANNER_GUARD_WRITE_TOOLS": "write,edit,multiedit,notebookedit,apply_patch",
