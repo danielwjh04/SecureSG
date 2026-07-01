@@ -1,8 +1,9 @@
 /**
- * The hero: the dark cinematic landing surface. A security-forward tagline, a
- * Instrument Serif headline, a one-line explanation of the pipeline, and the
- * scan control. While a scan runs, the control swaps to the live pipeline
- * stepper in place (same focal point), then the app transitions to the result.
+ * The hero: the dark cinematic landing surface. A category tagline, a threat-led
+ * Instrument Serif headline, a one-line explanation of what SecureAI does, and the
+ * scan control. While a scan runs, the control swaps to the live pipeline stepper
+ * in place (same focal point), then the app transitions to the result. The
+ * marketing narrative and the How it works sections scroll below this hero.
  */
 
 import { AnimatePresence, motion } from 'motion/react'
@@ -40,7 +41,7 @@ export function Hero({ state, onScan }: HeroProps) {
           className="flex items-center gap-2 text-white/70 text-[10px] md:text-[11px] font-medium tracking-[0.22em] uppercase font-mono"
         >
           <span className="w-1.5 h-1.5 rounded-full bg-allow live-dot" />
-          Verify a skill before your agent learns it
+          Antivirus and firewall for AI agents
         </motion.p>
 
         <motion.h1
@@ -50,8 +51,8 @@ export function Hero({ state, onScan }: HeroProps) {
           style={{ fontFamily: "'Instrument Serif', serif" }}
           className="text-5xl md:text-[68px] font-medium tracking-[-0.01em] leading-[1.05] text-white drop-shadow-[0_2px_20px_rgba(0,0,0,0.5)]"
         >
-          Don't trust the skill.
-          <br className="hidden md:block" /> Verify it.
+          Stop your AI agent
+          <br className="hidden md:block" /> from getting hacked.
         </motion.h1>
 
         <motion.p
@@ -60,10 +61,9 @@ export function Hero({ state, onScan }: HeroProps) {
           transition={{ delay: 0.3 }}
           className="text-white/75 text-[15px] md:text-base leading-relaxed max-w-xl -mt-1"
         >
-          Paste a SKILL.md, drop a file, or point us at a GitHub repo. We trace
-          redirects behind an SSRF guard, screen against known-bad indicators and
-          structural rules, check for prompt injection, and seal the verdict into
-          a proof you can re-verify yourself.
+          Your agent trusts every skill, tool, and link it's handed. SecureAI scans
+          each one, blocks the dangerous ones inline before they run, and seals
+          every decision into a proof you can re-verify yourself.
         </motion.p>
 
         <motion.div

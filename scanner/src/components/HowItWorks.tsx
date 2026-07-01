@@ -1,8 +1,8 @@
 /**
- * The "How it works" page (route `#how`): the real
- * six-layer, fail-closed scan pipeline, each shown as a glass card, followed by
- * the two invariants that hold across every scan (fail-closed, tighten-only).
- * Purely presentational, no state.
+ * The "How it works" landing section (anchored at `#how`): the real six-layer,
+ * fail-closed scan pipeline, each shown as a glass card, followed by the two
+ * invariants that hold across every scan (fail-closed, tighten-only). Purely
+ * presentational, no state.
  */
 
 import { motion } from 'motion/react'

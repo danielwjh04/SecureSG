@@ -20,8 +20,6 @@ import {
   LayoutDashboard,
   Menu,
   PlugZap,
-  Settings,
-  Shield,
   ShieldCheck,
   X,
 } from 'lucide-react'
@@ -45,9 +43,7 @@ interface NavLink {
 }
 
 const APP_LINKS: readonly NavLink[] = [
-  { href: '#how', label: 'How it works', route: 'howItWorks', Icon: BookOpen },
-  { href: '#dashboard', label: 'Dashboard', route: 'dashboard', Icon: LayoutDashboard },
-  { href: '#protection', label: 'Protection', route: 'protection', Icon: Shield },
+  { href: '#how', label: 'How it works', route: 'scanner', Icon: BookOpen },
   { href: '#activity', label: 'Activity', route: 'activity', Icon: Activity },
   { href: '#integrations', label: 'Integrations', route: 'integrations', Icon: PlugZap },
 ]
@@ -99,7 +95,7 @@ export function Navbar({ onHome, auth }: NavbarProps) {
                   <a
                     href="#how"
                     onClick={closeMenu}
-                    className={`whitespace-nowrap ${linkClass(route === 'howItWorks')}`}
+                    className={`whitespace-nowrap ${linkClass(route === 'scanner')}`}
                   >
                     How it works
                   </a>
@@ -126,13 +122,13 @@ export function Navbar({ onHome, auth }: NavbarProps) {
                   </a>
                 )}
                 <a
-                  href="#settings"
+                  href="#dashboard"
                   className={`glass-pill inline-flex items-center gap-1.5 px-3 sm:px-4 py-1.5 ${
-                    route === 'settings' ? 'text-white' : 'text-white/70 hover:text-white'
+                    route === 'dashboard' ? 'text-white' : 'text-white/70 hover:text-white'
                   } transition-colors`}
                 >
-                  <Settings className="w-4 h-4" />
-                  <span className="hidden sm:inline">Settings</span>
+                  <LayoutDashboard className="w-4 h-4" />
+                  <span className="hidden sm:inline">Dashboard</span>
                 </a>
               </>
             ) : auth.status === 'anonymous' ? (

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Settings } from './Settings'
 import type { AuthState } from '../hooks/useAuth'
@@ -52,63 +52,30 @@ afterEach(() => {
 })
 
 describe('Settings billing', () => {
-  it('opens the Stripe billing portal for a paid (pro) account', async () => {
+  it('routes Manage plan to the dynamic pricing page for a paid account', () => {
     const { calls } = stubAssign()
-    const portal = vi
-      .spyOn(client, 'openPortal')
-      .mockResolvedValue({ url: 'https://billing.stripe.test/portal' })
-    const checkout = vi.spyOn(client, 'startCheckout')
+    const portal = vi.spyOn(client, 'openPortal')
 
     render(<Settings user={user('pro')} auth={authState()} />)
 
     fireEvent.click(screen.getByRole('button', { name: /Manage plan/ }))
 
-    await waitFor(() => expect(portal).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(calls).toContain('https://billing.stripe.test/portal'))
-    expect(checkout).not.toHaveBeenCalled()
-  })
-
-  it('opens the billing portal for a personal account too', async () => {
-    const { calls } = stubAssign()
-    const portal = vi
-      .spyOn(client, 'openPortal')
-      .mockResolvedValue({ url: 'https://billing.stripe.test/portal2' })
-
-    render(<Settings user={user('personal')} auth={authState()} />)
-
-    expect(screen.getByRole('button', { name: /Manage plan/ })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: /Manage plan/ }))
-
-    await waitFor(() => expect(portal).toHaveBeenCalledTimes(1))
-    await waitFor(() => expect(calls).toContain('https://billing.stripe.test/portal2'))
-  })
-
-  it('starts a Personal checkout for a free account', async () => {
-    const { calls } = stubAssign()
-    const checkout = vi
-      .spyOn(client, 'startCheckout')
-      .mockResolvedValue({ url: 'https://checkout.stripe.test/session' })
-    const portal = vi.spyOn(client, 'openPortal')
-
-    render(<Settings user={user('free')} auth={authState()} />)
-
-    fireEvent.click(screen.getByRole('button', { name: /Start Personal/ }))
-
-    await waitFor(() => expect(checkout).toHaveBeenCalledWith('personal'))
-    await waitFor(() => expect(calls).toContain('https://checkout.stripe.test/session'))
+    // Manage plan now leads to #pricing (which adapts to the tier), not straight
+    // to Stripe: no portal/checkout call is made from Settings.
+    expect(calls).toContain('#pricing')
     expect(portal).not.toHaveBeenCalled()
   })
 
-  it('surfaces an inline error when the portal cannot be opened', async () => {
-    stubAssign()
-    vi.spyOn(client, 'openPortal').mockRejectedValue(new client.ApiError(422, 'no customer'))
+  it('routes Manage plan to the pricing page for a free account too', () => {
+    const { calls } = stubAssign()
+    const checkout = vi.spyOn(client, 'startCheckout')
 
-    render(<Settings user={user('pro')} auth={authState()} />)
+    render(<Settings user={user('free')} auth={authState()} />)
 
+    // The button is always "Manage plan" now (the pricing page adapts per tier).
     fireEvent.click(screen.getByRole('button', { name: /Manage plan/ }))
 
-    await waitFor(() =>
-      expect(screen.getByText('Could not open billing.')).toBeInTheDocument(),
-    )
+    expect(calls).toContain('#pricing')
+    expect(checkout).not.toHaveBeenCalled()
   })
 })

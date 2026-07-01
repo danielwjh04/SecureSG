@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'motion/react'
-import { FileText, Link2, Server, ShieldAlert } from 'lucide-react'
+import { ChevronRight, FileText, Link2, Server, ShieldAlert } from 'lucide-react'
 import { fetchRecentScans } from '../api/client'
 import { hostname, relativeTime } from '../lib/format'
 import type { RecentScan, Verdict } from '../api/types'
+import { ScanReportModal } from './ScanReportModal'
 
 const ACTIVITY_LIMIT = 20
 
@@ -21,6 +22,8 @@ const VERDICT_CLASS: Record<Verdict, string> = {
 /** Authenticated scan activity page. */
 export function Activity() {
   const [state, setState] = useState<LoadState>({ phase: 'loading' })
+  // The scan id whose block report is open, or null when the modal is closed.
+  const [openId, setOpenId] = useState<string | null>(null)
 
   useEffect(() => {
     let active = true
@@ -59,12 +62,15 @@ export function Activity() {
           {state.phase === 'ready' && state.scans.length > 0 && (
             <ul className="flex flex-col divide-y divide-white/[0.06]">
               {state.scans.map((scan) => (
-                <ActivityRow key={scan.id} scan={scan} />
+                <ActivityRow key={scan.id} scan={scan} onOpen={setOpenId} />
               ))}
             </ul>
           )}
         </div>
       </div>
+      {openId !== null && (
+        <ScanReportModal scanId={openId} onClose={() => setOpenId(null)} />
+      )}
     </section>
   )
 }
@@ -90,7 +96,7 @@ function Header() {
   )
 }
 
-function ActivityRow({ scan }: { scan: RecentScan }) {
+function ActivityRow({ scan, onOpen }: { scan: RecentScan; onOpen: (id: string) => void }) {
   const SourceIcon =
     scan.source.kind === 'url' ? Link2 : scan.source.kind === 'mcp' ? Server : FileText
   const source =
@@ -100,9 +106,12 @@ function ActivityRow({ scan }: { scan: RecentScan }) {
         ? 'MCP config'
         : 'Pasted content'
   const label = scan.verdict === 'HUMAN_APPROVAL_REQUIRED' ? 'REVIEW' : scan.verdict
+  // Only BLOCK/REVIEW scans retain a stored detail, so only they open a report;
+  // an ALLOW row has nothing to show and stays a plain, non-interactive row.
+  const clickable = scan.verdict !== 'ALLOW'
 
-  return (
-    <li className="flex flex-col sm:flex-row sm:items-center gap-3 py-3 first:pt-0 last:pb-0">
+  const inner = (
+    <>
       <span
         className={`inline-flex w-fit items-center justify-center rounded-full px-2.5 py-1 text-[10px] font-mono font-bold uppercase tracking-[0.1em] ${VERDICT_CLASS[scan.verdict]}`}
       >
@@ -126,6 +135,27 @@ function ActivityRow({ scan }: { scan: RecentScan }) {
       <span className="font-mono text-[10px] text-white/25 truncate sm:max-w-[140px]">
         {scan.headHash.slice(0, 12)}
       </span>
+      {clickable && <ChevronRight className="w-4 h-4 shrink-0 text-white/30" />}
+    </>
+  )
+
+  if (!clickable) {
+    return (
+      <li className="flex flex-col sm:flex-row sm:items-center gap-3 py-3 first:pt-0 last:pb-0">
+        {inner}
+      </li>
+    )
+  }
+  return (
+    <li className="first:pt-0 last:pb-0">
+      <button
+        type="button"
+        onClick={() => onOpen(scan.id)}
+        aria-label={`View ${label} report for ${source}`}
+        className="flex w-full flex-col sm:flex-row sm:items-center gap-3 py-3 text-left rounded-lg hover:bg-white/[0.03] transition-colors cursor-pointer"
+      >
+        {inner}
+      </button>
     </li>
   )
 }

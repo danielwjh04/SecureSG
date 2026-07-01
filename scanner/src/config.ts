@@ -31,6 +31,9 @@ export const API = {
   rotateKey: `${API_BASE}/api/key/rotate`,
   checkout: `${API_BASE}/api/checkout`,
   portal: `${API_BASE}/api/portal`,
+  billingChange: `${API_BASE}/api/billing/change`,
+  billingCancel: `${API_BASE}/api/billing/cancel`,
+  billingSubscription: `${API_BASE}/api/billing/subscription`,
   contact: `${API_BASE}/api/contact`,
   adminOverview: `${API_BASE}/api/admin/overview`,
   adminMembers: `${API_BASE}/api/admin/members`,
@@ -48,6 +51,17 @@ export const API = {
  */
 export function adminScanDetailPath(id: string): string {
   return `${API_BASE}/api/admin/scans/${encodeURIComponent(id)}`
+}
+
+/**
+ * The owner-scoped per-scan detail endpoint, `GET /api/scans/<id>`, the "block
+ * report" the Activity view opens for one of the caller's OWN scans (only
+ * BLOCK/REVIEW scans retain a detail). Parameterized by the scan id, so it is a
+ * builder; the id is percent-encoded so an unexpected character can never break
+ * out of the path segment.
+ */
+export function scanDetailPath(id: string): string {
+  return `${API_BASE}/api/scans/${encodeURIComponent(id)}`
 }
 
 /** How many trailing days the dashboard trend chart covers (zero-filled). */
@@ -72,6 +86,14 @@ export const ADMIN_THREATS_LIMIT = 50
 
 /** Static path to the prebuilt gallery dataset shipped alongside the SPA. */
 export const GALLERY_DATA_PATH = '/gallery.json' as const
+
+/**
+ * Static path to the real-world AI-agent incident list rendered on the landing
+ * page's "It's already happening" section. A public JSON asset (like the gallery)
+ * so the list is edited as data, not code, and every entry is a real, sourced
+ * event with a link. Reuses the gallery fetch timeout/attempts.
+ */
+export const INCIDENTS_DATA_PATH = '/incidents.json' as const
 
 /**
  * Per-attempt timeout (ms) and attempt count for loading the gallery dataset.

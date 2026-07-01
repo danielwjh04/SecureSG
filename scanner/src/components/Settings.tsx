@@ -11,7 +11,7 @@ import {
   ShieldCheck,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { logout, openPortal, rotateApiKey, startCheckout } from '../api/client'
+import { logout, rotateApiKey } from '../api/client'
 import type { AuthState } from '../hooks/useAuth'
 import type { MeResponse } from '../api/types'
 
@@ -20,7 +20,7 @@ const COPY_FEEDBACK_MS = 1500
 /** Authenticated account settings page. */
 export function Settings({ user, auth }: { user: MeResponse; auth: AuthState }) {
   const [apiKey, setApiKey] = useState<string | null>(null)
-  const [busy, setBusy] = useState<'key' | 'billing' | 'logout' | null>(null)
+  const [busy, setBusy] = useState<'key' | 'logout' | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const rotate = async (): Promise<void> => {
@@ -36,20 +36,10 @@ export function Settings({ user, auth }: { user: MeResponse; auth: AuthState }) 
     }
   }
 
-  // A free account starts a checkout to subscribe; a paid account (personal /
-  // pro / enterprise) opens the Stripe billing portal to switch plan or cancel.
-  const isPaid = user.tier !== 'free'
-
-  const manageBilling = async (): Promise<void> => {
-    setBusy('billing')
-    setError(null)
-    try {
-      const { url } = isPaid ? await openPortal() : await startCheckout('personal')
-      window.location.assign(url)
-    } catch {
-      setError('Could not open billing.')
-      setBusy(null)
-    }
+  // Manage plan routes to the pricing page, which adapts to the current tier
+  // (upgrade / downgrade / cancel in place) rather than a single static page.
+  const manageBilling = (): void => {
+    window.location.assign('#pricing')
   }
 
   const signOut = async (): Promise<void> => {
@@ -83,11 +73,10 @@ export function Settings({ user, auth }: { user: MeResponse; auth: AuthState }) 
             <button
               type="button"
               onClick={manageBilling}
-              disabled={busy !== null}
-              className="mt-3 inline-flex items-center justify-center gap-2 rounded-full bg-white px-5 py-2.5 text-[13px] font-semibold text-black hover:bg-white/90 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="mt-3 inline-flex items-center justify-center gap-2 rounded-full bg-white px-5 py-2.5 text-[13px] font-semibold text-black hover:bg-white/90 transition-colors cursor-pointer"
             >
-              <RefreshCw className={`w-4 h-4 ${busy === 'billing' ? 'animate-spin' : ''}`} />
-              {isPaid ? 'Manage plan' : 'Start Personal'}
+              <CreditCard className="w-4 h-4" />
+              Manage plan
             </button>
           </Panel>
         </div>

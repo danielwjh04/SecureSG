@@ -10,7 +10,6 @@ import type { Route } from '../hooks/useHashRoute'
 
 const AUTH_ROUTES = new Set<Route>([
   'dashboard',
-  'protection',
   'activity',
   'integrations',
   'settings',

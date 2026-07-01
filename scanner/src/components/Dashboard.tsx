@@ -28,10 +28,12 @@ import {
   Copy,
   Download,
   FileText,
+  Globe2,
   Key,
   Link2,
   RefreshCw,
   ScanLine,
+  Settings,
   ShieldAlert,
   ShieldCheck,
   ShieldX,
@@ -135,8 +137,74 @@ export function Dashboard({ user }: DashboardProps) {
         <ApiKeyCard apiKeyPrefix={user.apiKeyPrefix} />
 
         <GuardSetupCard />
+
+        <Coverage />
       </div>
     </section>
+  )
+}
+
+/**
+ * What SecureAI can observe, moved here from the former standalone Protection
+ * page: three coverage cards and the browser-boundary note. Static copy (no data
+ * fetch), so it renders immediately alongside the stats.
+ */
+function Coverage() {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay: 0.09, ease: [0.16, 1, 0.3, 1] }}
+      className="flex flex-col gap-4"
+    >
+      <div className="flex items-center gap-2">
+        <ShieldCheck className="w-4 h-4 text-white/70" />
+        <h3 className="text-[12px] font-mono uppercase tracking-[0.14em] text-white/55">
+          Your SecureAI coverage
+        </h3>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <CoverageCard
+          Icon={Terminal}
+          title="Agent hooks"
+          body="Claude Code, Cursor, and Codex actions can be checked through local hooks before execution."
+        />
+        <CoverageCard
+          Icon={Globe2}
+          title="Browser ingestion"
+          body="Browser-visible pages, selected text, pasted text, and submit flows can be scanned before supported AI tools read them."
+        />
+        <CoverageCard
+          Icon={ShieldX}
+          title="Local egress"
+          body="Risky destinations learned from your own scans can be blocked in the browser through MV3 DNR rules."
+        />
+      </div>
+      <p className="liquid-glass rounded-2xl p-5 text-white/60 text-[13px] leading-relaxed">
+        SecureAI cannot see actions an AI provider runs only on its own servers.
+        Protection covers observable agent actions, browser-visible ingestion, and
+        local browser destination blocking.
+      </p>
+    </motion.div>
+  )
+}
+
+/** One coverage card: an icon, a title, and a short body. */
+function CoverageCard({
+  Icon,
+  title,
+  body,
+}: {
+  Icon: LucideIcon
+  title: string
+  body: string
+}) {
+  return (
+    <div className="liquid-glass rounded-2xl p-5 flex flex-col gap-3">
+      <Icon className="w-5 h-5 text-white/75" />
+      <h4 className="text-white text-sm font-semibold">{title}</h4>
+      <p className="text-white/55 text-[13px] leading-relaxed">{body}</p>
+    </div>
   )
 }
 
@@ -148,7 +216,12 @@ interface DashboardHeaderProps {
   onUpgrade: () => void
 }
 
-/** The greeting row: a "Hi <name>!" heading (email fallback), tier badge, and upgrade (free only). */
+/**
+ * The greeting row: a "Hi <name>!" heading (email fallback) on the left, and on
+ * the right, on the same line, the tier badge, the upgrade CTA (free/personal),
+ * and a Settings gear. The gear is the account's single entry to the settings
+ * page now that Settings has left the navbar.
+ */
 function DashboardHeader({ email, firstName, tier, onUpgrade }: DashboardHeaderProps) {
   // Greet by first name when the account has one; a nameless (legacy / API-key)
   // account falls back to its email so the heading is never empty.
@@ -183,6 +256,13 @@ function DashboardHeader({ email, firstName, tier, onUpgrade }: DashboardHeaderP
             Upgrade to Pro
           </button>
         )}
+        <a
+          href="#settings"
+          aria-label="Settings"
+          className="glass-pill inline-flex items-center justify-center w-9 h-9 text-white/70 hover:text-white transition-colors"
+        >
+          <Settings className="w-4 h-4" />
+        </a>
       </div>
     </motion.div>
   )

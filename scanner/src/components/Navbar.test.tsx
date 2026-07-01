@@ -66,58 +66,66 @@ describe('Navbar app navigation', () => {
         auth={authState({ status: 'authenticated', user: user(false), isAdmin: false })}
       />,
     )
-    // Settings moved to the right-side pill cluster (asserted separately), so the
-    // inline row is these five.
-    for (const label of ['How it works', 'Dashboard', 'Protection', 'Activity', 'Integrations']) {
+    // Dashboard and Settings moved to the right-side pill cluster (asserted
+    // separately) and Protection was merged into the Dashboard, so the inline row
+    // is just these three.
+    for (const label of ['How it works', 'Activity', 'Integrations']) {
       expect(screen.getByRole('link', { name: label })).toBeInTheDocument()
     }
+    // Protection is gone from the bar entirely (its coverage lives in Dashboard).
+    expect(screen.queryByRole('link', { name: 'Protection' })).toBeNull()
     // The redundant "Scan" item (it duplicated the logo) is gone.
     expect(screen.queryByRole('link', { name: 'Scan' })).toBeNull()
     expect(screen.queryByRole('link', { name: 'Enterprise' })).toBeNull()
   })
 
-  it('orders How it works first among the authenticated app links', () => {
+  it('orders How it works first among the inline app links', () => {
     render(
       <Navbar
         auth={authState({ status: 'authenticated', user: user(false), isAdmin: false })}
       />,
     )
     const how = screen.getByRole('link', { name: 'How it works' })
-    const dashboard = screen.getByRole('link', { name: 'Dashboard' })
-    // How it works precedes Dashboard in the DOM (it leads the cluster).
+    const activity = screen.getByRole('link', { name: 'Activity' })
+    // How it works precedes Activity in the DOM (it leads the inline cluster).
     expect(
-      how.compareDocumentPosition(dashboard) & Node.DOCUMENT_POSITION_FOLLOWING,
+      how.compareDocumentPosition(activity) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
   })
 })
 
 describe('Navbar right cluster', () => {
-  it('puts Settings at the right after the Admin pill for an admin, with no Log out button', () => {
+  it('puts Dashboard at the right after the Admin pill for an admin, with no Log out button', () => {
     render(
       <Navbar
         auth={authState({ status: 'authenticated', user: user(true), isAdmin: true })}
       />,
     )
-    const settings = screen.getByRole('link', { name: 'Settings' })
+    const dashboard = screen.getByRole('link', { name: 'Dashboard' })
     const admin = screen.getByRole('link', { name: /Admin/ })
-    expect(settings).toHaveAttribute('href', '#settings')
-    // Admin sits to the LEFT of Settings: Admin appears earlier in the DOM.
+    expect(dashboard).toHaveAttribute('href', '#dashboard')
+    // Admin sits to the LEFT of Dashboard: Admin appears earlier in the DOM.
     expect(
-      admin.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING,
+      admin.compareDocumentPosition(dashboard) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
     // The redundant nav Log out button is gone; sign-out lives on the Settings page.
     expect(screen.queryByRole('button', { name: 'Log out' })).toBeNull()
+    // Settings has left the navbar; its entry is now the Dashboard header gear.
+    expect(screen.queryByRole('link', { name: 'Settings' })).toBeNull()
+    expect(document.querySelector('a[href="#settings"]')).toBeNull()
   })
 
-  it('shows the Settings pill for an authenticated non-admin (no Admin pill, no Log out)', () => {
+  it('shows the Dashboard pill for an authenticated non-admin (no Admin pill, no Log out)', () => {
     render(
       <Navbar
         auth={authState({ status: 'authenticated', user: user(false), isAdmin: false })}
       />,
     )
-    expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '#settings')
+    expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveAttribute('href', '#dashboard')
     expect(screen.queryByRole('link', { name: /Admin/ })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Log out' })).toBeNull()
+    // Settings is not in the bar for a non-admin either.
+    expect(screen.queryByRole('link', { name: 'Settings' })).toBeNull()
   })
 
   it('shows no Log out button for an anonymous visitor', () => {

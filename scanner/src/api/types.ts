@@ -35,6 +35,25 @@ export interface GalleryData {
   entries: GalleryEntry[]
 }
 
+/**
+ * One real-world AI-agent security incident shown on the landing page. Every
+ * field is real and sourced: `title` is a plain-language headline, `source` names
+ * the outlet / advisory, `date` is a short display date, and `url` links to the
+ * original report.
+ */
+export interface Incident {
+  id: string
+  title: string
+  source: string
+  date: string
+  url: string
+}
+
+/** The incident list loaded from {@link INCIDENTS_DATA_PATH}. */
+export interface IncidentsData {
+  incidents: Incident[]
+}
+
 /** The account tier returned by the auth + stats endpoints. */
 export type AccountTier = 'free' | 'personal' | 'pro' | 'enterprise'
 
@@ -195,6 +214,23 @@ export interface CheckoutResponse {
 }
 
 /**
+ * Response body for `GET /api/billing/subscription` (and `POST /api/billing/cancel`):
+ * whether the account has an active subscription, whether a cancellation is
+ * already scheduled, and the ISO end of the current period (or `null`). Drives the
+ * dynamic pricing page's current-plan and "cancels on <date>" states.
+ */
+export interface SubscriptionStatus {
+  hasSubscription: boolean
+  cancelAtPeriodEnd: boolean
+  currentPeriodEnd: string | null
+}
+
+/** Response body for `POST /api/billing/change`: the newly active paid tier. */
+export interface ChangePlanResponse {
+  tier: 'personal' | 'pro'
+}
+
+/**
  * Request body for `POST /api/contact`: an enterprise sales enquiry from the
  * pricing page's contact form. The recipient addresses live server-side; this
  * body carries only what the visitor typed. The worker re-validates every field.
@@ -316,6 +352,28 @@ export interface AdminThreatsPage {
 export interface AdminScanDetail {
   id: string
   email: string
+  verdict: Verdict
+  source: { kind: 'paste' | 'url' | 'mcp'; ref: string }
+  scannedAt: string
+  flagged: number
+  headHash: string
+  content: string | null
+  findings: RuleFinding[]
+  chains: LinkChain[]
+  injections: InjectionFinding[]
+  reputation: ReputationReport[]
+}
+
+/**
+ * The owner-scoped per-scan detail a user opens from an Activity row, served by
+ * `GET /api/scans/<id>`. Same evidence as {@link AdminScanDetail} minus the owner
+ * `email` (the caller is the owner): the verdict, scan `source`, `scannedAt`, the
+ * `flagged` count, the `headHash` proving the sealed re-verifiable chain, the
+ * scanned `content` (or `null`), and the parsed rule / redirect / injection /
+ * reputation evidence.
+ */
+export interface ScanReport {
+  id: string
   verdict: Verdict
   source: { kind: 'paste' | 'url' | 'mcp'; ref: string }
   scannedAt: string

@@ -18,7 +18,7 @@ describe('guardRedirect', () => {
     })
   })
 
-  it.each(['protection', 'activity', 'integrations', 'settings'] as const)(
+  it.each(['activity', 'integrations', 'settings'] as const)(
     'gates #%s for authenticated users',
     (route) => {
       expect(guardRedirect(route, 'anonymous', false)).toBe('#login')

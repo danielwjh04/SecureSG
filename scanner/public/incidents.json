@@ -1,0 +1,39 @@
+{
+  "incidents": [
+    {
+      "id": "anthropic-gtg1002",
+      "title": "Attackers manipulated Claude Code to run about 90% of a cyber-espionage campaign against roughly 30 organizations.",
+      "source": "Anthropic",
+      "date": "Nov 2025",
+      "url": "https://www.anthropic.com/news/disrupting-AI-espionage"
+    },
+    {
+      "id": "amazon-q-wiper",
+      "title": "A wiper prompt was slipped into Amazon's Q coding extension, telling the AI to erase local files and cloud resources.",
+      "source": "SC Media",
+      "date": "Jul 2025",
+      "url": "https://www.scworld.com/news/amazon-q-extension-for-vs-code-reportedly-injected-with-wiper-prompt"
+    },
+    {
+      "id": "echoleak",
+      "title": "EchoLeak: a single crafted email silently exfiltrated corporate data through Microsoft 365 Copilot, with zero clicks.",
+      "source": "Aim Security · CVE-2025-32711",
+      "date": "Jun 2025",
+      "url": "https://arxiv.org/abs/2509.10540"
+    },
+    {
+      "id": "camoleak",
+      "title": "CamoLeak: hidden text in a pull request made GitHub Copilot Chat leak private source code and secrets.",
+      "source": "Legit Security · CVE-2025-59145",
+      "date": "Oct 2025",
+      "url": "https://www.legitsecurity.com/blog/camoleak-critical-github-copilot-vulnerability-leaks-private-source-code"
+    },
+    {
+      "id": "slack-ai",
+      "title": "Indirect prompt injection let attackers pull private-channel data straight out of Slack AI.",
+      "source": "The Register",
+      "date": "Aug 2024",
+      "url": "https://www.theregister.com/2024/08/21/slack_ai_prompt_injection/"
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import { adminScanDetailPath, API } from '../config'
+import { adminScanDetailPath, API, scanDetailPath } from '../config'
 import type {
   AccountTier,
   AdminMembersPage,
@@ -8,9 +8,11 @@ import type {
   AssignableRole,
   AuthCredentials,
   AuthResponse,
+  ChangePlanResponse,
   CheckoutResponse,
   ContactRequest,
   ContactResponse,
+  SubscriptionStatus,
   LoginResponse,
   MeResponse,
   Proof,
@@ -19,6 +21,7 @@ import type {
   RemoveMemberResponse,
   ResendResponse,
   RotateKeyResponse,
+  ScanReport,
   ScanRequest,
   ScanResult,
   SetRoleResponse,
@@ -284,6 +287,17 @@ export async function fetchScanDetail(id: string): Promise<AdminScanDetail> {
 }
 
 /**
+ * Fetch the full detail of one of the CALLER'S OWN scans for the Activity block
+ * report, keyed by the scan id from a {@link RecentScan} row. Only BLOCK/REVIEW
+ * scans retain a detail, so an ALLOW row (or a scan owned by someone else) is a
+ * 404. Throws {@link ApiError}(404) when the scan has no detail / is not owned,
+ * or (401) when logged out.
+ */
+export async function fetchOwnScanDetail(id: string): Promise<ScanReport> {
+  return request<ScanReport>(scanDetailPath(id), { ...WITH_CREDENTIALS })
+}
+
+/**
  * Grant a role to another account (owner-only). Throws {@link ApiError}(403)
  * when the caller is not an owner or the target is an owner, (404) for an unknown
  * user, (422) for an invalid role.
@@ -362,6 +376,44 @@ export async function openPortal(): Promise<CheckoutResponse> {
     method: 'POST',
     ...WITH_CREDENTIALS,
   })
+}
+
+/**
+ * Change an active subscription to another paid tier IN PLACE (upgrade/downgrade),
+ * without leaving the site. Returns the newly active tier. Throws
+ * {@link ApiError}(422) when there is no active subscription or it is already on
+ * that plan, or (401) when logged out.
+ */
+export async function changePlan(tier: 'personal' | 'pro'): Promise<ChangePlanResponse> {
+  return request<ChangePlanResponse>(API.billingChange, {
+    method: 'POST',
+    headers: JSON_HEADERS,
+    body: JSON.stringify({ tier }),
+    ...WITH_CREDENTIALS,
+  })
+}
+
+/**
+ * Schedule the active subscription to cancel at the end of the current period
+ * (access is kept until then). Returns the updated subscription snapshot so the
+ * caller can show the effective date. Throws {@link ApiError}(422) when there is
+ * no active subscription, or (401) when logged out.
+ */
+export async function cancelPlan(): Promise<SubscriptionStatus> {
+  return request<SubscriptionStatus>(API.billingCancel, {
+    method: 'POST',
+    ...WITH_CREDENTIALS,
+  })
+}
+
+/**
+ * Fetch the account's live subscription snapshot for the dynamic pricing page:
+ * whether a subscription is active, whether a cancellation is scheduled, and when
+ * the current period ends. Degrades to `hasSubscription: false` server-side when
+ * billing is unavailable, so it never blocks the page.
+ */
+export async function fetchSubscriptionStatus(): Promise<SubscriptionStatus> {
+  return request<SubscriptionStatus>(API.billingSubscription, { ...WITH_CREDENTIALS })
 }
 
 /**

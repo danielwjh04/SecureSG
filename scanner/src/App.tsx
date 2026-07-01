@@ -3,8 +3,9 @@
  * fullscreen background video behind a glass navbar. `useScan` owns the scan
  * lifecycle and `useHashRoute` selects the top-level surface:
  *   - #pricing           -> the pricing page
- *   - #how               -> the public How it works page (explainer + examples)
- *   - scanner, idle/scan -> the cinematic hero landing (just the scan box)
+ *   - scanner, idle      -> the landing: hero + problem / incidents / solution /
+ *                           example scan / How it works (#how, #verify anchor here)
+ *   - scanner, scanning  -> the hero with the live pipeline stepper
  *   - scanner, done      -> the full result report (scrolls; video dimmed behind)
  *   - scanner, error     -> a fail-closed error card
  * The navbar mark calls `reset`, so it always returns to a fresh scanner
@@ -21,12 +22,14 @@ import { HowItWorks } from './components/HowItWorks'
 import { EaseOfUse } from './components/EaseOfUse'
 import { VerifyIt } from './components/VerifyIt'
 import { Gallery } from './components/Gallery'
+import { Problem } from './components/landing/Problem'
+import { Incidents } from './components/landing/Incidents'
+import { Solution } from './components/landing/Solution'
 import { ResultView } from './components/ResultView'
 import { Pricing } from './components/Pricing'
 import { Auth } from './components/Auth'
 import { Dashboard } from './components/Dashboard'
 import { AdminDashboard } from './components/AdminDashboard'
-import { Protection } from './components/Protection'
 import { Activity } from './components/Activity'
 import { Integrations } from './components/Integrations'
 import { Settings } from './components/Settings'
@@ -153,9 +156,9 @@ function App(): ReactNode {
   const { state } = controller
   const previousRouteRef = useRef(route)
 
-  // Picking an example from the How it works gallery loads it as a finished
-  // result, then clears the hash so the scanner route's result view renders
-  // (state.phase === 'done') instead of the How it works page.
+  // Picking an example from the landing gallery loads it as a finished result,
+  // then clears the hash so the scanner route's result view renders
+  // (state.phase === 'done') instead of the landing sections.
   const handleGalleryPick = (result: ScanResult): void => {
     controller.loadResult(result)
     window.location.hash = ''
@@ -172,15 +175,21 @@ function App(): ReactNode {
     }
   }, [route, auth.status, auth.isAdmin])
 
-  // Every route lands at the top: the How it works sections now live on their
-  // own page rather than as scroll anchors on the landing, so there is no
-  // deep-link target to honour. A same-route navigation scrolls with the
-  // browser default; a route change jumps instantly.
+  // Scroll behavior on navigation: if the hash names an on-page anchor that
+  // exists (e.g. #how / #verify, folded onto the landing), scroll it into view;
+  // otherwise land at the top. A same-route navigation animates; a route change
+  // jumps.
   useEffect(() => {
     const sameRoute = previousRouteRef.current === route
     previousRouteRef.current = route
+    const anchorId = window.location.hash.replace(/^#/, '')
     const frame = window.requestAnimationFrame(() => {
-      window.scrollTo({ top: 0, left: 0, behavior: sameRoute ? 'auto' : 'instant' })
+      const anchor = anchorId.length > 0 ? document.getElementById(anchorId) : null
+      if (anchor !== null) {
+        anchor.scrollIntoView({ behavior: sameRoute ? 'smooth' : 'auto', block: 'start' })
+      } else {
+        window.scrollTo({ top: 0, left: 0, behavior: sameRoute ? 'auto' : 'instant' })
+      }
     })
     return () => window.cancelAnimationFrame(frame)
   }, [route])
@@ -224,22 +233,6 @@ function App(): ReactNode {
           <section className="relative z-10 flex-1 flex items-center justify-center px-6 py-20">
             <p className="text-white/45 font-mono text-sm">Loading your dashboard…</p>
           </section>
-        )}
-        <Footer />
-      </main>
-    )
-  }
-
-  if (route === 'protection') {
-    return (
-      <main id="top" className={SHELL}>
-        <BackgroundVideo />
-        <div className="fixed inset-0 bg-black/55" aria-hidden="true" />
-        <Navbar onHome={controller.reset} auth={auth} />
-        {auth.status === 'authenticated' && auth.user !== null ? (
-          <Protection />
-        ) : (
-          <LoadingSurface label="Loading protection..." />
         )}
         <Footer />
       </main>
@@ -314,28 +307,6 @@ function App(): ReactNode {
     )
   }
 
-  // Public "How it works" page: the explainer sections and the example gallery
-  // that once sat under the landing, now their own destination in the standard
-  // app-page shell over the dimmed video.
-  if (route === 'howItWorks') {
-    return (
-      <main id="top" className={SHELL}>
-        <BackgroundVideo />
-        <div className="fixed inset-0 bg-black/55" aria-hidden="true" />
-        <Navbar onHome={controller.reset} auth={auth} />
-        <div className="relative z-10">
-          <HowItWorks />
-          <EaseOfUse />
-          <VerifyIt />
-          <section className="max-w-5xl mx-auto px-6 pb-20">
-            <Gallery onPick={handleGalleryPick} />
-          </section>
-        </div>
-        <Footer />
-      </main>
-    )
-  }
-
   // Finished report.
   if (state.phase === 'done') {
     return (
@@ -361,14 +332,28 @@ function App(): ReactNode {
     )
   }
 
-  // Landing (idle / scanning): just the cinematic hero over the video. The
-  // explainer sections and the example gallery now live on the How it works
-  // page (#how), reachable from the navbar.
+  // Landing (idle / scanning): the cinematic hero over the video, then, when idle,
+  // the marketing narrative (problem -> incidents -> solution -> example scan) and
+  // the folded How it works sections (#how / #verify anchor here). During a scan
+  // only the hero shows, so the pipeline stepper stays the focus.
   return (
     <main id="top" className={SHELL}>
       <BackgroundVideo />
       <Navbar onHome={controller.reset} auth={auth} />
       <Hero state={state} onScan={controller.scan} />
+      {state.phase === 'idle' && (
+        <div className="relative z-10 bg-black">
+          <Problem />
+          <Incidents />
+          <Solution />
+          <section className="max-w-5xl mx-auto px-6 pt-4 pb-8">
+            <Gallery onPick={handleGalleryPick} />
+          </section>
+          <HowItWorks />
+          <EaseOfUse />
+          <VerifyIt />
+        </div>
+      )}
       <Footer />
     </main>
   )
