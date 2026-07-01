@@ -12,6 +12,7 @@
  */
 
 import { useState } from 'react'
+import type { MouseEvent } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   Activity,
@@ -61,6 +62,25 @@ export function Navbar({ onHome, auth }: NavbarProps) {
   }
   const closeMenu = (): void => setMenuOpen(false)
 
+  // Clicking a link to the route already on screen leaves the URL hash
+  // unchanged, so no `hashchange` fires and the top-of-page scroll effect in
+  // App.tsx never runs. Left to the browser's default same-document
+  // navigation, a link whose target id exists in the DOM (e.g. `#how`) still
+  // triggers a native fragment scroll that ignores the sticky navbar's
+  // in-flow height, landing the page part-way down with its heading hidden
+  // behind the navbar. Suppressing the default and scrolling to the true top
+  // ourselves keeps every revisit clean, matching the "every route lands at
+  // the top" rule the rest of routing already follows.
+  const handleNavClick =
+    (itemRoute: Route) =>
+    (event: MouseEvent<HTMLAnchorElement>): void => {
+      closeMenu()
+      if (route === itemRoute) {
+        event.preventDefault()
+        window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
+      }
+    }
+
   return (
     <motion.nav
       initial={{ y: -20, opacity: 0 }}
@@ -83,7 +103,7 @@ export function Navbar({ onHome, auth }: NavbarProps) {
                   <a
                     key={href}
                     href={href}
-                    onClick={closeMenu}
+                    onClick={handleNavClick(itemRoute)}
                     className={`inline-flex items-center gap-1.5 whitespace-nowrap ${linkClass(route === itemRoute)}`}
                   >
                     <Icon className="w-3.5 h-3.5" />
@@ -94,12 +114,16 @@ export function Navbar({ onHome, auth }: NavbarProps) {
                 <>
                   <a
                     href="#how"
-                    onClick={closeMenu}
+                    onClick={handleNavClick('howItWorks')}
                     className={`whitespace-nowrap ${linkClass(route === 'howItWorks')}`}
                   >
                     How it works
                   </a>
-                  <a href="#pricing" className={linkClass(route === 'pricing')}>
+                  <a
+                    href="#pricing"
+                    onClick={handleNavClick('pricing')}
+                    className={linkClass(route === 'pricing')}
+                  >
                     Pricing
                   </a>
                 </>
@@ -113,6 +137,7 @@ export function Navbar({ onHome, auth }: NavbarProps) {
                 {auth.isAdmin && (
                   <a
                     href="#admin"
+                    onClick={handleNavClick('admin')}
                     className={`glass-pill inline-flex items-center gap-1.5 px-3 sm:px-4 py-1.5 ${
                       route === 'admin' ? 'text-white' : 'text-white/70 hover:text-white'
                     } transition-colors`}
@@ -123,6 +148,7 @@ export function Navbar({ onHome, auth }: NavbarProps) {
                 )}
                 <a
                   href="#dashboard"
+                  onClick={handleNavClick('dashboard')}
                   className={`glass-pill inline-flex items-center gap-1.5 px-3 sm:px-4 py-1.5 ${
                     route === 'dashboard' ? 'text-white' : 'text-white/70 hover:text-white'
                   } transition-colors`}
@@ -170,11 +196,11 @@ export function Navbar({ onHome, auth }: NavbarProps) {
             >
               <div className="flex flex-col gap-1 pt-3 mt-3 border-t border-white/10 text-sm font-medium">
                 {auth.status === 'authenticated' ? (
-                  APP_LINKS.map(({ href, label, Icon }) => (
+                  APP_LINKS.map(({ href, label, route: itemRoute, Icon }) => (
                     <a
                       key={href}
                       href={href}
-                      onClick={closeMenu}
+                      onClick={handleNavClick(itemRoute)}
                       className="px-2 py-2.5 rounded-xl hover:bg-white/5 text-white/80 hover:text-white transition-colors inline-flex items-center gap-2"
                     >
                       <Icon className="w-4 h-4" />
@@ -185,14 +211,14 @@ export function Navbar({ onHome, auth }: NavbarProps) {
                   <>
                     <a
                       href="#how"
-                      onClick={closeMenu}
+                      onClick={handleNavClick('howItWorks')}
                       className="px-2 py-2.5 rounded-xl hover:bg-white/5 text-white/80 hover:text-white transition-colors"
                     >
                       How it works
                     </a>
                     <a
                       href="#pricing"
-                      onClick={closeMenu}
+                      onClick={handleNavClick('pricing')}
                       className="px-2 py-2.5 rounded-xl hover:bg-white/5 text-white/80 hover:text-white transition-colors"
                     >
                       Pricing
