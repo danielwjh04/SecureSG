@@ -17,10 +17,11 @@
  * signup reads as "finish creating your account" while login reads as "sign in".
  */
 
-import { useState, type FormEvent } from 'react'
+import { useState, type FormEvent, type ReactNode } from 'react'
 import { motion } from 'motion/react'
-import { ShieldCheck, MailCheck } from 'lucide-react'
+import { ShieldCheck, MailCheck, AtSign, Lock } from 'lucide-react'
 import { ApiError, login, loginResend, loginVerify, register } from '../api/client'
+import { AuthSidebar } from './AuthSidebar'
 import type { AuthState } from '../hooks/useAuth'
 import type { LoginResponse } from '../api/types'
 
@@ -88,6 +89,7 @@ function codeErrorMessage(error: unknown, mode: AuthMode): string {
 const COPY: Record<AuthMode, {
   eyebrow: string
   title: string
+  subtitle: string
   submit: string
   busy: string
   toggleText: string
@@ -97,6 +99,7 @@ const COPY: Record<AuthMode, {
   login: {
     eyebrow: 'Welcome back',
     title: 'Log in',
+    subtitle: 'Sign in to your SecureAI account.',
     submit: 'Log in',
     busy: 'Logging in…',
     toggleText: 'New to SecureAI?',
@@ -106,6 +109,7 @@ const COPY: Record<AuthMode, {
   register: {
     eyebrow: 'Get started',
     title: 'Create your account',
+    subtitle: 'Protect your agent in a few minutes.',
     submit: 'Create account',
     busy: 'Creating account…',
     toggleText: 'Already have an account?',
@@ -156,10 +160,64 @@ const cardMotion = {
 }
 
 const inputClass =
-  'rounded-xl bg-white/[0.04] border border-white/10 px-4 py-2.5 text-[14px] text-white placeholder:text-white/30 outline-none focus:border-white/30 transition-colors'
+  'w-full rounded-xl bg-white/[0.04] border border-white/10 px-4 py-2.5 text-[14px] text-white placeholder:text-white/30 outline-none focus:border-white/30 transition-colors'
+
+/** {@link inputClass} with left padding for a leading field icon. */
+const iconInputClass = `${inputClass} pl-10`
 
 const submitClass =
-  'rounded-full bg-white text-black px-6 py-2.5 text-[14px] font-semibold hover:bg-white/90 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
+  'w-full rounded-full bg-white text-black px-6 py-2.5 text-[14px] font-semibold hover:bg-white/90 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed'
+
+/**
+ * The shared split-card frame for every auth step: an animated {@link AuthSidebar}
+ * on the left (from the `lg` breakpoint up) and the step's form column on the
+ * right. Purely presentational; each step passes its own content as children.
+ */
+function AuthShell({ children }: { children: ReactNode }) {
+  return (
+    <section className="relative z-10 flex-1 flex items-center justify-center px-6 py-16">
+      <motion.div
+        {...cardMotion}
+        className="liquid-glass rounded-3xl w-full max-w-md lg:max-w-4xl lg:min-h-[540px] grid lg:grid-cols-2"
+      >
+        <AuthSidebar />
+        <div className="flex flex-col justify-center gap-6 p-8 sm:p-10">{children}</div>
+      </motion.div>
+    </section>
+  )
+}
+
+/**
+ * A labelled text field with a leading icon, matching the auth form's style.
+ * The icon is decorative (`aria-hidden`); the visible label text remains the
+ * field's accessible name via the wrapping `<label>`.
+ */
+function IconField({
+  label,
+  icon,
+  children,
+}: {
+  label: string
+  icon: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <label className="flex flex-col gap-1.5">
+      <span className="text-[11px] font-mono uppercase tracking-[0.16em] text-white/45">
+        {label}
+      </span>
+      <div className="relative">
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-white/30"
+        >
+          {icon}
+        </span>
+        {children}
+      </div>
+    </label>
+  )
+}
 
 export function Auth({ mode, auth }: AuthProps) {
   const copy = COPY[mode]
@@ -260,27 +318,28 @@ export function Auth({ mode, auth }: AuthProps) {
   if (challenge !== null) {
     const codeCopy = CODE_COPY[mode]
     return (
-      <section className="relative z-10 flex-1 flex items-center justify-center px-6 py-16">
-        <motion.div {...cardMotion} className="liquid-glass rounded-3xl w-full max-w-md p-8 flex flex-col gap-6">
-          <div className="flex flex-col items-center text-center gap-3">
-            <MailCheck className="w-7 h-7 text-allow" />
+      <AuthShell>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <MailCheck className="w-5 h-5 text-allow" />
             <span className="text-[10px] font-mono uppercase tracking-[0.22em] text-white/45">
               {codeCopy.eyebrow}
             </span>
-            <h1
-              style={{ fontFamily: "'Instrument Serif', serif" }}
-              className="text-3xl md:text-[34px] font-medium tracking-[-0.01em] text-white"
-            >
-              {codeCopy.title}
-            </h1>
-            <p className="text-[13px] text-white/50">
-              {codeCopy.bodyBefore}
-              <span className="text-white/80">{challenge.email}</span>
-              {codeCopy.bodyAfter}
-            </p>
           </div>
+          <h1
+            style={{ fontFamily: "'Instrument Serif', serif" }}
+            className="text-3xl md:text-[34px] font-medium tracking-[-0.01em] text-white"
+          >
+            {codeCopy.title}
+          </h1>
+          <p className="text-[13px] text-white/50">
+            {codeCopy.bodyBefore}
+            <span className="text-white/80">{challenge.email}</span>
+            {codeCopy.bodyAfter}
+          </p>
+        </div>
 
-          <form onSubmit={handleVerify} className="flex flex-col gap-4" noValidate>
+        <form onSubmit={handleVerify} className="flex flex-col gap-4" noValidate>
             <label className="flex flex-col gap-1.5">
               <span className="text-[11px] font-mono uppercase tracking-[0.16em] text-white/45">
                 Sign-in code
@@ -311,40 +370,41 @@ export function Auth({ mode, auth }: AuthProps) {
             </button>
           </form>
 
-          <p className="text-center text-[13px] text-white/50">
-            Did not get it?{' '}
-            <button
-              type="button"
-              onClick={handleResend}
-              disabled={busy}
-              className="text-white hover:text-allow transition-colors disabled:opacity-50 cursor-pointer"
-            >
-              Resend code
-            </button>
-          </p>
-        </motion.div>
-      </section>
+        <p className="text-[13px] text-white/50">
+          Did not get it?{' '}
+          <button
+            type="button"
+            onClick={handleResend}
+            disabled={busy}
+            className="text-white hover:text-allow transition-colors disabled:opacity-50 cursor-pointer"
+          >
+            Resend code
+          </button>
+        </p>
+      </AuthShell>
     )
   }
 
   // ----------------------------------------------------- credentials step ---
   return (
-    <section className="relative z-10 flex-1 flex items-center justify-center px-6 py-16">
-      <motion.div {...cardMotion} className="liquid-glass rounded-3xl w-full max-w-md p-8 flex flex-col gap-6">
-        <div className="flex flex-col items-center text-center gap-3">
-          <ShieldCheck className="w-7 h-7 text-allow" />
+    <AuthShell>
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="w-5 h-5 text-allow" />
           <span className="text-[10px] font-mono uppercase tracking-[0.22em] text-white/45">
             {copy.eyebrow}
           </span>
-          <h1
-            style={{ fontFamily: "'Instrument Serif', serif" }}
-            className="text-3xl md:text-[34px] font-medium tracking-[-0.01em] text-white"
-          >
-            {copy.title}
-          </h1>
         </div>
+        <h1
+          style={{ fontFamily: "'Instrument Serif', serif" }}
+          className="text-3xl md:text-[34px] font-medium tracking-[-0.01em] text-white"
+        >
+          {copy.title}
+        </h1>
+        <p className="text-[13px] text-white/50">{copy.subtitle}</p>
+      </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4" noValidate>
           {mode === 'register' && (
             <div className="grid grid-cols-2 gap-3">
               <label className="flex flex-col gap-1.5">
@@ -380,10 +440,7 @@ export function Auth({ mode, auth }: AuthProps) {
             </div>
           )}
 
-          <label className="flex flex-col gap-1.5">
-            <span className="text-[11px] font-mono uppercase tracking-[0.16em] text-white/45">
-              Email
-            </span>
+          <IconField label="Email" icon={<AtSign className="w-4 h-4" />}>
             <input
               type="email"
               name="email"
@@ -392,14 +449,11 @@ export function Auth({ mode, auth }: AuthProps) {
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               placeholder="you@company.com"
-              className={inputClass}
+              className={iconInputClass}
             />
-          </label>
+          </IconField>
 
-          <label className="flex flex-col gap-1.5">
-            <span className="text-[11px] font-mono uppercase tracking-[0.16em] text-white/45">
-              Password
-            </span>
+          <IconField label="Password" icon={<Lock className="w-4 h-4" />}>
             <input
               type="password"
               name="password"
@@ -408,9 +462,9 @@ export function Auth({ mode, auth }: AuthProps) {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               placeholder="••••••••"
-              className={inputClass}
+              className={iconInputClass}
             />
-          </label>
+          </IconField>
 
           {error && (
             <p role="alert" className="text-block/90 font-mono text-[12px] leading-snug">
@@ -423,13 +477,12 @@ export function Auth({ mode, auth }: AuthProps) {
           </button>
         </form>
 
-        <p className="text-center text-[13px] text-white/50">
-          {copy.toggleText}{' '}
-          <a href={copy.toggleHref} className="text-white hover:text-allow transition-colors">
-            {copy.toggleCta}
-          </a>
-        </p>
-      </motion.div>
-    </section>
+      <p className="text-[13px] text-white/50">
+        {copy.toggleText}{' '}
+        <a href={copy.toggleHref} className="text-white hover:text-allow transition-colors">
+          {copy.toggleCta}
+        </a>
+      </p>
+    </AuthShell>
   )
 }
