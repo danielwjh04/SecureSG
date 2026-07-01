@@ -29,7 +29,7 @@ import type { Role } from '../auth/roles'
 import { ParseError } from '../errors'
 import { authenticate } from '../middleware/auth'
 import { findRoleByUserId, getAccountProfile, parseAccountTier, setUserTier } from '../db/accounts'
-import { getScanDetail } from '../db/scans'
+import { getScanDetail, parseScanEvidence } from '../db/scans'
 import { getScanContent, type ObjectStore } from '../storage/r2'
 import { canManageRoles, canViewAdmin, effectiveRole, parseAssignableRole } from '../auth/roles'
 import {
@@ -148,14 +148,6 @@ export interface AdminScanDetail {
   readonly headHash: string
   /** The scanned skill/artifact text (truncated at write time), or `null`. */
   readonly content: string | null
-  readonly findings: readonly RuleFinding[]
-  readonly chains: readonly LinkChain[]
-  readonly injections: readonly InjectionFinding[]
-  readonly reputation: readonly ReputationReport[]
-}
-
-/** The parsed shape of a `scan_details.result_json` payload. */
-interface StoredScanEvidence {
   readonly findings: readonly RuleFinding[]
   readonly chains: readonly LinkChain[]
   readonly injections: readonly InjectionFinding[]
@@ -445,40 +437,14 @@ export async function handleAdminThreats(request: Request, deps: AdminDeps): Pro
 }
 
 /**
- * Parse a stored `result_json` string into the structured evidence shape. A
- * corrupt / non-object payload yields empty arrays for every field rather than
- * throwing, a malformed evidence blob must not 500 the detail read; the rest of
- * the row (verdict, source, proof, content) is still useful for review.
- *
- * Time complexity: O(n) in the JSON length. Space complexity: O(n).
- */
-function parseStoredEvidence(resultJson: string): StoredScanEvidence {
-  let raw: unknown
-  try {
-    raw = JSON.parse(resultJson)
-  } catch (error: unknown) {
-    const className = error instanceof Error ? error.constructor.name : typeof error
-    log.warn('handleAdminScanDetail', 'unparseable result_json; empty evidence', { errorClass: className })
-    return { findings: [], chains: [], injections: [], reputation: [] }
-  }
-  const obj = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {}
-  const asArray = <T>(value: unknown): readonly T[] => (Array.isArray(value) ? (value as T[]) : [])
-  return {
-    findings: asArray<RuleFinding>(obj['findings']),
-    chains: asArray<LinkChain>(obj['chains']),
-    injections: asArray<InjectionFinding>(obj['injections']),
-    reputation: asArray<ReputationReport>(obj['reputation']),
-  }
-}
-
-/**
  * Project a stored {@link ScanDetail} to the {@link AdminScanDetail} response,
- * parsing the `result_json` evidence back into typed arrays.
+ * parsing the `result_json` evidence back into typed arrays via the shared
+ * {@link parseScanEvidence}.
  *
  * Time complexity: O(n) in the stored evidence length. Space complexity: O(n).
  */
 function toAdminScanDetail(detail: ScanDetail): AdminScanDetail {
-  const evidence = parseStoredEvidence(detail.resultJson)
+  const evidence = parseScanEvidence(detail.resultJson)
   return {
     id: detail.id,
     email: detail.email,

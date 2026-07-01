@@ -310,6 +310,21 @@ export const memberTierSchema = z
 export type MemberTierPayload = z.infer<typeof memberTierSchema>
 
 /**
+ * Body of `POST /api/billing/change`: the paid tier to switch an existing
+ * subscription to, in place. Only the self-serve paid tiers are switchable
+ * (`enterprise` is contact-sales; `free` is the cancel flow). `.strict()` rejects
+ * unexpected fields so a malformed payload fails closed.
+ */
+export const billingChangeSchema = z
+  .object({
+    tier: z.enum(['personal', 'pro']),
+  })
+  .strict()
+
+/** The validated payload `POST /api/billing/change` operates on. */
+export type BillingChangePayload = z.infer<typeof billingChangeSchema>
+
+/**
  * Body of `POST /api/admin/members/remove`: the target account id to hard-delete.
  * `.strict()` rejects unexpected fields so a malformed payload fails closed at
  * the boundary. The route enforces the owner-only gate and the

@@ -19,7 +19,7 @@
  */
 
 import Stripe from 'stripe'
-import type { ScannerConfig } from '../config/env'
+import type { ProrationBehavior, ScannerConfig } from '../config/env'
 import { BillingError } from '../errors'
 import type { CircuitBreaker } from '../resilience/circuitBreaker'
 import { log } from '../observability/logger'
@@ -50,6 +50,28 @@ export interface PortalSessionParams {
 }
 
 /**
+ * A snapshot of a customer's single active subscription: enough to change its
+ * price or cancel it in place, plus the fields the dynamic pricing page renders
+ * (whether a cancellation is already scheduled, and when the current period ends).
+ */
+export interface ActiveSubscription {
+  readonly subscriptionId: string
+  readonly itemId: string
+  readonly priceId: string
+  readonly cancelAtPeriodEnd: boolean
+  readonly currentPeriodEnd: string | null
+}
+
+/** Inputs for an in-place subscription price change (upgrade/downgrade). */
+export interface SubscriptionChangeParams {
+  readonly subscriptionId: string
+  readonly itemId: string
+  readonly newPriceId: string
+  readonly tier: PaidCheckoutTier
+  readonly prorationBehavior: ProrationBehavior
+}
+
+/**
  * The narrow billing surface routes and tests depend on. Each method maps to a
  * single Stripe operation; the methods that return a redirect URL fail closed
  * (raise {@link BillingError}) when Stripe omits the URL.
@@ -67,6 +89,28 @@ export interface BillingGateway {
 
   /** Create a Billing Portal Session; returns the hosted portal URL. */
   createPortalSession(params: PortalSessionParams): Promise<string>
+
+  /**
+   * Fetch the customer's single active subscription, or `null` when they have
+   * none. Used to change or cancel a subscription in place, and to render the
+   * current-plan / cancellation state on the dynamic pricing page.
+   */
+  getActiveSubscription(customerId: string): Promise<ActiveSubscription | null>
+
+  /**
+   * Swap an active subscription's price in place (upgrade/downgrade), applying the
+   * configured proration and stamping the granted SecureAI tier into the
+   * subscription metadata so the resulting `customer.subscription.updated` webhook
+   * grants the right tier.
+   */
+  changeSubscriptionPrice(params: SubscriptionChangeParams): Promise<void>
+
+  /**
+   * Schedule a subscription to cancel at the end of the current period (access is
+   * kept until then), returning the updated snapshot so the caller can surface the
+   * effective date.
+   */
+  cancelSubscription(subscriptionId: string): Promise<ActiveSubscription>
 
   /**
    * Verify a webhook signature and return the typed event. A failed verification
@@ -223,6 +267,76 @@ export class StripeBillingGateway implements BillingGateway {
   }
 
   /**
+   * List the customer's single active subscription and project it to an
+   * {@link ActiveSubscription}, or `null` when none is active. Listing by customer
+   * (rather than storing the subscription id) keeps the mirror schema unchanged and
+   * always reflects Stripe's truth.
+   *
+   * Time complexity: O(1), one Stripe API round-trip. Space complexity: O(1).
+   *
+   * @throws {BillingError} On any Stripe API failure.
+   */
+  public async getActiveSubscription(customerId: string): Promise<ActiveSubscription | null> {
+    return this.breaker.run(async () => {
+      try {
+        const list = await this.stripe.subscriptions.list({
+          customer: customerId,
+          status: 'active',
+          limit: 1,
+        })
+        const subscription = list.data[0]
+        return subscription === undefined ? null : toActiveSubscription(subscription)
+      } catch (error: unknown) {
+        throw billingFault('getActiveSubscription', error)
+      }
+    })
+  }
+
+  /**
+   * Swap the subscription's single line item to a new price, applying the
+   * configured proration and stamping `secureai_tier` into the subscription
+   * metadata so the follow-on webhook grants the matching tier.
+   *
+   * Time complexity: O(1), one Stripe API round-trip. Space complexity: O(1).
+   *
+   * @throws {BillingError} On any Stripe API failure.
+   */
+  public async changeSubscriptionPrice(params: SubscriptionChangeParams): Promise<void> {
+    return this.breaker.run(async () => {
+      try {
+        await this.stripe.subscriptions.update(params.subscriptionId, {
+          items: [{ id: params.itemId, price: params.newPriceId }],
+          proration_behavior: params.prorationBehavior,
+          metadata: { secureai_tier: params.tier },
+        })
+      } catch (error: unknown) {
+        throw billingFault('changeSubscriptionPrice', error)
+      }
+    })
+  }
+
+  /**
+   * Schedule cancellation at period end (`cancel_at_period_end: true`), keeping
+   * access until then, and return the updated snapshot.
+   *
+   * Time complexity: O(1), one Stripe API round-trip. Space complexity: O(1).
+   *
+   * @throws {BillingError} On any Stripe API failure.
+   */
+  public async cancelSubscription(subscriptionId: string): Promise<ActiveSubscription> {
+    return this.breaker.run(async () => {
+      try {
+        const subscription = await this.stripe.subscriptions.update(subscriptionId, {
+          cancel_at_period_end: true,
+        })
+        return toActiveSubscription(subscription)
+      } catch (error: unknown) {
+        throw billingFault('cancelSubscription', error)
+      }
+    })
+  }
+
+  /**
    * Verify a webhook signature and decode the event, using the async,
    * SubtleCrypto-backed verifier (the only one that works on Workers).
    *
@@ -245,6 +359,29 @@ export class StripeBillingGateway implements BillingGateway {
       // is expected adversarial traffic, not an internal fault.
       throw billingFault('constructEvent', error)
     }
+  }
+}
+
+/**
+ * Project a Stripe Subscription to the narrow {@link ActiveSubscription} snapshot.
+ * The current period end is read from the first line item (per the pinned API
+ * version, `current_period_end` sits on the item, not the subscription), matching
+ * the webhook's own field access.
+ *
+ * Time complexity: O(1). Space complexity: O(1).
+ */
+function toActiveSubscription(subscription: Stripe.Subscription): ActiveSubscription {
+  const item = subscription.items.data[0]
+  const periodEndSeconds = item?.current_period_end
+  return {
+    subscriptionId: subscription.id,
+    itemId: item !== undefined ? item.id : '',
+    priceId: item !== undefined ? item.price.id : '',
+    cancelAtPeriodEnd: subscription.cancel_at_period_end,
+    currentPeriodEnd:
+      typeof periodEndSeconds === 'number'
+        ? new Date(periodEndSeconds * 1000).toISOString()
+        : null,
   }
 }
 

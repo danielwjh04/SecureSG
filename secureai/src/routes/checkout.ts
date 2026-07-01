@@ -47,7 +47,7 @@ const checkoutSchema = z
  *
  * @throws {ConfigError} When the tier's Price id is still a placeholder.
  */
-function priceIdForTier(tier: PaidCheckoutTier, config: ScannerConfig): string {
+export function priceIdForTier(tier: PaidCheckoutTier, config: ScannerConfig): string {
   const priceId = tier === 'personal' ? config.stripePricePersonal : config.stripePricePro
   if (priceId.startsWith('price_REPLACE')) {
     throw new ConfigError(`Stripe price for the ${tier} tier is not configured`)
@@ -65,7 +65,7 @@ function priceIdForTier(tier: PaidCheckoutTier, config: ScannerConfig): string {
  *
  * @throws {AuthError} When the caller is not an authenticated account.
  */
-async function requireUserId(
+export async function requireUserId(
   request: Request,
   db: Database,
   sessionSecret: string | null,

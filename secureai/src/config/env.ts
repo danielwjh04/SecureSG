@@ -12,6 +12,14 @@ import { ConfigError } from '../errors'
 import type { LogLevel } from '../observability/logger'
 
 /**
+ * Proration behavior for an in-place subscription price change (upgrade/
+ * downgrade). Mirrors Stripe's `proration_behavior` enum; lives here so it is a
+ * configured value the billing gateway consumes, keeping config free of any
+ * import from the billing layer.
+ */
+export type ProrationBehavior = 'create_prorations' | 'none' | 'always_invoice'
+
+/**
  * Worker bindings and string vars. Bindings (AI, DB, KV, RATE_LIMITER, ASSETS)
  * are declared optional here and become required as the features that use them
  * land with their `wrangler.jsonc` binding declarations.
@@ -206,6 +214,12 @@ export interface ScannerConfig {
   readonly stripePricePro: string
   /** Public base URL for billing redirect (success/cancel) and portal returns. */
   readonly appBaseUrl: string
+  /**
+   * Proration behavior applied when a subscriber changes plan in place (in-app
+   * upgrade/downgrade). Default `create_prorations` (Stripe prorates the switch);
+   * `none` bills the new price next cycle; `always_invoice` invoices immediately.
+   */
+  readonly stripeProrationBehavior: ProrationBehavior
   /**
    * PBKDF2-HMAC-SHA256 iteration count for password hashing. A non-secret cost
    * tunable (raise it as hardware improves); the per-hash salt and iteration
@@ -471,6 +485,13 @@ export function loadConfig(env: Env): ScannerConfig {
   const stripePricePersonal = readString(env, 'STRIPE_PRICE_PERSONAL', 'price_REPLACE_PERSONAL')
   const stripePricePro = readString(env, 'STRIPE_PRICE_PRO', 'price_REPLACE')
   const appBaseUrl = readString(env, 'SCANNER_APP_BASE_URL', 'https://secureai.software')
+  // Proration for an in-app plan change; constrained to Stripe's enum.
+  const stripeProrationBehavior = readEnum<ProrationBehavior>(
+    env,
+    'SCANNER_STRIPE_PRORATION_BEHAVIOR',
+    'create_prorations',
+    new Set(['create_prorations', 'none', 'always_invoice']),
+  )
   // Auth tunables (non-secret). IMPORTANT: the Cloudflare Workers runtime caps
   // crypto.subtle PBKDF2 at 100_000 iterations and THROWS above it (the Node test
   // runtime has no cap, which hid this). So 100k is the platform ceiling and our
@@ -629,6 +650,7 @@ export function loadConfig(env: Env): ScannerConfig {
     stripePricePersonal,
     stripePricePro,
     appBaseUrl,
+    stripeProrationBehavior,
     pbkdf2Iterations,
     sessionTtlSeconds,
     adminEmails,
