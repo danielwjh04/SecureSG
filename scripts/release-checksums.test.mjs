@@ -26,7 +26,7 @@ async function tempRoot() {
 }
 
 async function tempWorkspaceRoot() {
-  const dir = await mkdtemp(path.join(PROJECT_ROOT, '.superpowers', 'sdd', 'installer-test-'))
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'installer-test-'))
   tempDirs.push(dir)
   return dir
 }
