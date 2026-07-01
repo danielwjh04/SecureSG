@@ -13,6 +13,7 @@ import type { AuthDeps } from './routes/auth'
 import type { ContactDeps, ContactRateLimitKv } from './routes/contact'
 import type { StatsDeps } from './routes/stats'
 import type { RecentScansDeps } from './routes/recentScans'
+import type { ScanDetailDeps } from './routes/scanDetail'
 import type { AdminDeps } from './routes/admin'
 import type { GuardDeviceDeps } from './routes/guardDevices'
 import type { RateLimitKv } from './middleware/rateLimit'
@@ -28,6 +29,11 @@ import { handleSignup } from './routes/signup'
 import { handleVerify } from './routes/verify'
 import { handleCheckout } from './routes/checkout'
 import { handlePortal } from './routes/portal'
+import {
+  handleCancelPlan,
+  handleChangePlan,
+  handleSubscriptionStatus,
+} from './routes/billing'
 import { handleWebhook } from './routes/webhook'
 import {
   handleKeyRotate,
@@ -41,6 +47,7 @@ import {
 import { handleContact } from './routes/contact'
 import { handleStats } from './routes/stats'
 import { handleRecentScans } from './routes/recentScans'
+import { handleScanDetail } from './routes/scanDetail'
 import {
   handleAdminMemberRemove,
   handleAdminMemberRole,
@@ -71,6 +78,9 @@ const ROUTE_SIGNUP = '/api/signup'
 const ROUTE_CONTACT = '/api/contact'
 const ROUTE_CHECKOUT = '/api/checkout'
 const ROUTE_PORTAL = '/api/portal'
+const ROUTE_BILLING_CHANGE = '/api/billing/change'
+const ROUTE_BILLING_CANCEL = '/api/billing/cancel'
+const ROUTE_BILLING_SUBSCRIPTION = '/api/billing/subscription'
 const ROUTE_WEBHOOK = '/api/webhook'
 const ROUTE_REGISTER = '/api/register'
 const ROUTE_LOGIN = '/api/login'
@@ -80,6 +90,8 @@ const ROUTE_LOGOUT = '/api/logout'
 const ROUTE_ME = '/api/me'
 const ROUTE_STATS = '/api/stats'
 const ROUTE_SCANS_RECENT = '/api/scans/recent'
+/** Prefix of the owner-scoped scan-detail path; the scan id follows as `:id`. */
+const ROUTE_SCANS_DETAIL_PREFIX = '/api/scans/'
 const ROUTE_ADMIN_OVERVIEW = '/api/admin/overview'
 const ROUTE_ADMIN_THREATS = '/api/admin/threats'
 const ROUTE_ADMIN_MEMBERS = '/api/admin/members'
@@ -225,6 +237,36 @@ export default {
       )
     }
 
+    if (url.pathname === ROUTE_BILLING_CHANGE) {
+      if (request.method !== 'POST') {
+        return jsonError('method not allowed', 405)
+      }
+      // handleChangePlan owns its own error→status mapping and never throws.
+      return await stamp(
+        handleChangePlan(request, db, billingGateway(env, config), config, sessionSecretOf(env)),
+      )
+    }
+
+    if (url.pathname === ROUTE_BILLING_CANCEL) {
+      if (request.method !== 'POST') {
+        return jsonError('method not allowed', 405)
+      }
+      // handleCancelPlan owns its own error→status mapping and never throws.
+      return await stamp(
+        handleCancelPlan(request, db, billingGateway(env, config), sessionSecretOf(env)),
+      )
+    }
+
+    if (url.pathname === ROUTE_BILLING_SUBSCRIPTION) {
+      if (request.method !== 'GET') {
+        return jsonError('method not allowed', 405)
+      }
+      // handleSubscriptionStatus owns its own error→status mapping and never throws.
+      return await stamp(
+        handleSubscriptionStatus(request, db, billingGateway(env, config), sessionSecretOf(env)),
+      )
+    }
+
     if (url.pathname === ROUTE_WEBHOOK) {
       if (request.method !== 'POST') {
         return jsonError('method not allowed', 405)
@@ -289,6 +331,21 @@ export default {
         return jsonError('method not allowed', 405)
       }
       return await stamp(handleRecentScans(request, recentScansDeps(env, db)))
+    }
+
+    // Owner-scoped caught-scan detail: GET /api/scans/:id. Matched AFTER the exact
+    // /api/scans/recent route above (that path returns there and never reaches
+    // here). The id is the path segment after the prefix, URL-decoded, and must be
+    // a single non-empty segment (a bare /api/scans/ or an id with a '/' is a 404).
+    if (url.pathname.startsWith(ROUTE_SCANS_DETAIL_PREFIX)) {
+      if (request.method !== 'GET') {
+        return jsonError('method not allowed', 405)
+      }
+      const scanId = decodeURIComponent(url.pathname.slice(ROUTE_SCANS_DETAIL_PREFIX.length))
+      if (scanId.length === 0 || scanId.includes('/')) {
+        return jsonError('not found', 404)
+      }
+      return await stamp(handleScanDetail(request, scanDetailDeps(env, db), scanId))
     }
 
     if (url.pathname === ROUTE_ADMIN_OVERVIEW) {
@@ -469,6 +526,11 @@ function statsDeps(env: Env, config: ScannerConfig, db: Database | null): StatsD
 
 /** Assemble the recent-scans route's dependencies (DB seam threaded from `fetch`). */
 function recentScansDeps(env: Env, db: Database | null): RecentScansDeps {
+  return { db, sessionSecret: sessionSecretOf(env) }
+}
+
+/** Assemble the scan-detail route's dependencies (DB seam threaded from `fetch`). */
+function scanDetailDeps(env: Env, db: Database | null): ScanDetailDeps {
   return { db, sessionSecret: sessionSecretOf(env) }
 }
 

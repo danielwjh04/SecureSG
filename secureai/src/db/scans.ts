@@ -14,6 +14,13 @@
  */
 
 import type { BatchStatement, Database, Row } from './database'
+import type {
+  InjectionFinding,
+  LinkChain,
+  ReputationReport,
+  RuleFinding,
+} from '../schemas/contract'
+import { log } from '../observability/logger'
 
 /** A row to persist into `scan_history`, one successful authenticated scan. */
 export interface ScanHistoryRow {
@@ -72,6 +79,32 @@ export interface ScanDetail {
   readonly content: string | null
   /** The serialized `{ findings, chains, injections, reputation }` evidence. */
   readonly resultJson: string
+}
+
+/**
+ * One caught-scan detail as read back for the OWNER-scoped detail endpoint
+ * (`GET /api/scans/:id`): the same evidence as {@link ScanDetail} minus the owner
+ * email (the caller IS the owner). The read is gated on `user_id` so a caller can
+ * only ever read their own scans.
+ */
+export interface UserScanDetail {
+  readonly id: string
+  readonly verdict: string
+  readonly source: { readonly kind: string; readonly ref: string }
+  readonly flagged: number
+  readonly headHash: string
+  readonly scannedAt: string
+  readonly content: string | null
+  /** The serialized `{ findings, chains, injections, reputation }` evidence. */
+  readonly resultJson: string
+}
+
+/** The parsed shape of a `scan_details.result_json` payload. */
+export interface StoredScanEvidence {
+  readonly findings: readonly RuleFinding[]
+  readonly chains: readonly LinkChain[]
+  readonly injections: readonly InjectionFinding[]
+  readonly reputation: readonly ReputationReport[]
 }
 
 /** Read a column as a string, defaulting to `''` for a malformed/absent value. */
@@ -259,5 +292,84 @@ export async function getScanDetail(db: Database, scanId: string): Promise<ScanD
     scannedAt: readString(row, 'scanned_at'),
     content: readNullableString(row, 'content'),
     resultJson: readString(row, 'result_json'),
+  }
+}
+
+/**
+ * Read one of the CALLER'S OWN caught-scan details by scan id, or `null` when no
+ * detail row exists for that id OR the scan is not owned by `userId`.
+ *
+ * One INNER JOIN `scan_details → scan_history` on the scan id, with the ownership
+ * check `s.user_id = ?` in the query itself so a scan belonging to another
+ * account reads as `null` (a 404 at the route) and never leaks a peer's evidence.
+ * No `users` join is needed: the owner is the authenticated caller.
+ *
+ * Time complexity: O(1), two primary-key/indexed lookups. Space complexity: O(d)
+ * in the stored content length.
+ *
+ * @param db - The persistence seam.
+ * @param scanId - The `scan_history.id` (= `scan_details.scan_id`) to read.
+ * @param userId - The authenticated account id; the scan must belong to it.
+ * @returns The joined owner-scoped detail, or `null` when absent / not owned.
+ */
+export async function getUserScanDetail(
+  db: Database,
+  scanId: string,
+  userId: string,
+): Promise<UserScanDetail | null> {
+  const row = await db.queryOne(
+    'SELECT s.id AS id, s.verdict AS verdict, ' +
+      's.source_kind AS source_kind, s.source_ref AS source_ref, ' +
+      's.flagged AS flagged, s.head_hash AS head_hash, s.scanned_at AS scanned_at, ' +
+      'd.content AS content, d.result_json AS result_json ' +
+      'FROM scan_details d ' +
+      'JOIN scan_history s ON s.id = d.scan_id ' +
+      'WHERE d.scan_id = ? AND s.user_id = ?',
+    [scanId, userId],
+  )
+  if (row === null) {
+    return null
+  }
+  return {
+    id: readString(row, 'id'),
+    verdict: readString(row, 'verdict'),
+    source: { kind: readString(row, 'source_kind'), ref: readString(row, 'source_ref') },
+    flagged: readCount(row, 'flagged'),
+    headHash: readString(row, 'head_hash'),
+    scannedAt: readString(row, 'scanned_at'),
+    content: readNullableString(row, 'content'),
+    resultJson: readString(row, 'result_json'),
+  }
+}
+
+/**
+ * Parse a stored `result_json` string into the structured evidence shape. A
+ * corrupt / non-object payload yields empty arrays for every field rather than
+ * throwing: a malformed evidence blob must not fail the detail read; the rest of
+ * the row (verdict, source, proof, content) is still useful for review. Shared by
+ * the admin threat-detail and the owner-scoped scan-detail routes so the parse is
+ * identical.
+ *
+ * Time complexity: O(n) in the JSON length. Space complexity: O(n).
+ *
+ * @param resultJson - The stored `scan_details.result_json` string.
+ * @returns The parsed evidence, or all-empty arrays on a malformed payload.
+ */
+export function parseScanEvidence(resultJson: string): StoredScanEvidence {
+  let raw: unknown
+  try {
+    raw = JSON.parse(resultJson)
+  } catch (error: unknown) {
+    const className = error instanceof Error ? error.constructor.name : typeof error
+    log.warn('scans', 'unparseable result_json; empty evidence', { errorClass: className })
+    return { findings: [], chains: [], injections: [], reputation: [] }
+  }
+  const obj = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {}
+  const asArray = <T>(value: unknown): readonly T[] => (Array.isArray(value) ? (value as T[]) : [])
+  return {
+    findings: asArray<RuleFinding>(obj['findings']),
+    chains: asArray<LinkChain>(obj['chains']),
+    injections: asArray<InjectionFinding>(obj['injections']),
+    reputation: asArray<ReputationReport>(obj['reputation']),
   }
 }

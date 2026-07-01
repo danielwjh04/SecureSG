@@ -154,6 +154,9 @@
 		"STRIPE_PRICE_PERSONAL": "price_1TnsldPZTz6qwIUpusmRwmzm",
 		"STRIPE_PRICE_PRO": "price_1TnNM9PZTz6qwIUp2lhMHLDL",
 		"SCANNER_APP_BASE_URL": "https://secureai.software",
+		// Proration for an in-app plan change (upgrade/downgrade). One of
+		// create_prorations | none | always_invoice.
+		"SCANNER_STRIPE_PRORATION_BEHAVIOR": "create_prorations",
 		// Email/password auth tunables (non-secret). The SESSION_SECRET that signs
 		// session cookies is a SECRET, not a var, set it with
 		// `wrangler secret put SESSION_SECRET`; without it the /api/register and

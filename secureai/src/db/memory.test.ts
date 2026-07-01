@@ -388,9 +388,9 @@ export class MemoryStore {
             created_at: challenge.created_at,
           }
     }
-    // Caught-scan detail: scan_details INNER JOIN scan_history INNER JOIN users
-    // on the scan id / user id. A detail whose scan or owner is gone is excluded
-    // (reads as null → 404), mirroring the INNER JOINs.
+    // Caught-scan detail: scan_details INNER JOIN scan_history (+ users for the
+    // admin variant). A detail whose scan is gone is excluded (reads as null →
+    // 404), mirroring the INNER JOINs.
     if (sql.includes('FROM scan_details d')) {
       const detail = this.scanDetails.get(String(params[0]))
       if (detail === undefined) {
@@ -400,6 +400,27 @@ export class MemoryStore {
       if (scan === undefined) {
         return null
       }
+      // Owner-scoped variant (getUserScanDetail): `AND s.user_id = ?` gates on the
+      // caller (params[1]); a scan owned by another account reads as null, and no
+      // owner email is selected.
+      if (sql.includes('AND s.user_id = ?')) {
+        if (scan.user_id !== String(params[1])) {
+          return null
+        }
+        return {
+          id: scan.id,
+          verdict: scan.verdict,
+          source_kind: scan.source_kind,
+          source_ref: scan.source_ref,
+          flagged: scan.flagged,
+          head_hash: scan.head_hash,
+          scanned_at: scan.scanned_at,
+          content: detail.content,
+          result_json: detail.result_json,
+        }
+      }
+      // Admin variant (getScanDetail): INNER JOIN users adds the owner email; a
+      // detail whose owner is gone is excluded.
       const user = this.users.get(scan.user_id)
       if (user === undefined) {
         return null

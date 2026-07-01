@@ -5,9 +5,11 @@ import { memoryDatabase } from './memory.test'
 import { createFreeUser } from './accounts'
 import {
   getScanDetail,
+  getUserScanDetail,
   insertScan,
   insertScanDetail,
   listRecentScans,
+  parseScanEvidence,
   scanDetailStatement,
   scanHistoryStatement,
 } from './scans'
@@ -197,5 +199,81 @@ describe('scan-details repository', () => {
     await expect(
       insertScanDetail(db, { scanId, content: 'x', resultJson: '{}', createdAt: 't' }),
     ).rejects.toThrow()
+  })
+
+  it('reads back the caller own detail owner-scoped, without the owner email', async () => {
+    const { db } = memoryDatabase()
+    const { userId, scanId } = await seedCaughtScan(db, 'owner-scoped@example.com')
+    await insertScanDetail(db, {
+      scanId,
+      content: 'malicious skill body',
+      resultJson: '{"findings":[{"ruleId":"r"}]}',
+      createdAt: '2026-06-28T01:00:00.000Z',
+    })
+    expect(await getUserScanDetail(db, scanId, userId)).toEqual({
+      id: scanId,
+      verdict: 'BLOCK',
+      source: { kind: 'url', ref: 'https://evil.test/skill' },
+      flagged: 2,
+      headHash: 'head-detail',
+      scannedAt: '2026-06-28T01:00:00.000Z',
+      content: 'malicious skill body',
+      resultJson: '{"findings":[{"ruleId":"r"}]}',
+    })
+  })
+
+  it('returns null when the scan belongs to another account (no peer leak)', async () => {
+    const { db } = memoryDatabase()
+    const { scanId } = await seedCaughtScan(db, 'owner@example.com')
+    await insertScanDetail(db, { scanId, content: 'x', resultJson: '{}', createdAt: 't' })
+    const { user: peer } = await createFreeUser(db, 'peer@example.com')
+    expect(await getUserScanDetail(db, scanId, peer.id)).toBeNull()
+  })
+
+  it('returns null for an unknown scan id (owner-scoped)', async () => {
+    const { db } = memoryDatabase()
+    const { user } = await createFreeUser(db, 'nobody@example.com')
+    expect(await getUserScanDetail(db, 'no-such-scan', user.id)).toBeNull()
+  })
+})
+
+describe('parseScanEvidence', () => {
+  it('parses each evidence array from a well-formed payload', () => {
+    const parsed = parseScanEvidence(
+      JSON.stringify({
+        findings: [{ ruleId: 'r1' }],
+        chains: [{ origin: 'https://a.test' }],
+        injections: [{ label: 'i' }],
+        reputation: [{ source: 'feed' }],
+      }),
+    )
+    expect(parsed.findings).toHaveLength(1)
+    expect(parsed.chains).toHaveLength(1)
+    expect(parsed.injections).toHaveLength(1)
+    expect(parsed.reputation).toHaveLength(1)
+  })
+
+  it('yields all-empty arrays for an unparseable payload rather than throwing', () => {
+    expect(parseScanEvidence('{not json')).toEqual({
+      findings: [],
+      chains: [],
+      injections: [],
+      reputation: [],
+    })
+  })
+
+  it('yields all-empty arrays for a non-object / missing-field payload', () => {
+    expect(parseScanEvidence('42')).toEqual({
+      findings: [],
+      chains: [],
+      injections: [],
+      reputation: [],
+    })
+    expect(parseScanEvidence('{}')).toEqual({
+      findings: [],
+      chains: [],
+      injections: [],
+      reputation: [],
+    })
   })
 })

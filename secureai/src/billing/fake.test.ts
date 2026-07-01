@@ -11,9 +11,11 @@
 import { describe, expect, it } from 'vitest'
 import type Stripe from 'stripe'
 import type {
+  ActiveSubscription,
   BillingGateway,
   CheckoutSessionParams,
   PortalSessionParams,
+  SubscriptionChangeParams,
 } from './stripe'
 import { BillingError } from '../errors'
 
@@ -30,11 +32,16 @@ export class FakeBillingGateway implements BillingGateway {
   /** When true, the session-creating methods throw a {@link BillingError}. */
   public failSessions = false
 
+  /** Canned active subscription returned by {@link getActiveSubscription}. */
+  public activeSubscription: ActiveSubscription | null = null
+
   /** Call log for assertions. */
   public readonly calls: string[] = []
   public lastCheckout: CheckoutSessionParams | null = null
   public lastPortal: PortalSessionParams | null = null
   public lastEnsure: { userId: string; email: string | null } | null = null
+  public lastChange: SubscriptionChangeParams | null = null
+  public lastCancelId: string | null = null
 
   public async ensureCustomer(userId: string, email: string | null): Promise<string> {
     this.calls.push('ensureCustomer')
@@ -58,6 +65,38 @@ export class FakeBillingGateway implements BillingGateway {
       throw new BillingError('fake: portal failed')
     }
     return this.portalUrl
+  }
+
+  public async getActiveSubscription(_customerId: string): Promise<ActiveSubscription | null> {
+    this.calls.push('getActiveSubscription')
+    if (this.failSessions) {
+      throw new BillingError('fake: getActiveSubscription failed')
+    }
+    return this.activeSubscription
+  }
+
+  public async changeSubscriptionPrice(params: SubscriptionChangeParams): Promise<void> {
+    this.calls.push('changeSubscriptionPrice')
+    this.lastChange = params
+    if (this.failSessions) {
+      throw new BillingError('fake: change failed')
+    }
+  }
+
+  public async cancelSubscription(subscriptionId: string): Promise<ActiveSubscription> {
+    this.calls.push('cancelSubscription')
+    this.lastCancelId = subscriptionId
+    if (this.failSessions) {
+      throw new BillingError('fake: cancel failed')
+    }
+    const base: ActiveSubscription = this.activeSubscription ?? {
+      subscriptionId,
+      itemId: 'si_fake',
+      priceId: 'price_fake',
+      cancelAtPeriodEnd: false,
+      currentPeriodEnd: null,
+    }
+    return { ...base, subscriptionId, cancelAtPeriodEnd: true }
   }
 
   public async constructEvent(_rawBody: string, _signature: string): Promise<Stripe.Event> {
