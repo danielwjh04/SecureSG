@@ -169,10 +169,11 @@ Each tier has a daily scan cap, and the AI injection judge is reserved for paid 
 | Free | 100 / day | No |
 | Personal (S$4.90/mo) | 1,000 / day | Yes |
 | Pro (S$9.90/mo) | 5,000 / day | Yes |
+| Enterprise (custom) | Custom | Yes |
 
 > These caps and paid price ids mirror `secureai/wrangler.jsonc`. They are config, not code, so change them there and keep this table in sync.
 
-Free accounts subscribe to Personal or Pro through Stripe Checkout (idempotent webhooks); paid accounts manage or cancel from Settings through the Stripe billing portal. Your app navigation is How it works, Dashboard, Protection, Activity, Integrations, and Settings, with Log out on the right. The dashboard shows protection stats, a 30-day trend, recent scans, your API key (with one-click rotation), and the one-line Guard installer.
+Free accounts subscribe to Personal or Pro through Stripe Checkout (idempotent webhooks). Managing a plan opens a pricing page that adapts to your current tier, so you upgrade, downgrade, or cancel in place without leaving the site. Enterprise is a contact-sales tier: a "Contact us" form on the pricing page emails the sales inbox. Your app navigation keeps the left side light with How it works, Activity, and Integrations, and flushes the Dashboard (plus Admin, for admins) to the right; Settings is a gear on the dashboard header, next to the greeting. The dashboard shows your protection coverage and stats, a 30-day trend, recent scans, your API key (with one-click rotation), and the one-line Guard installer. From the Activity view you can open any blocked or flagged decision and see its full report.
 
 ## 👥 Team & admin
 
