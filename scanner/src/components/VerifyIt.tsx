@@ -72,7 +72,7 @@ const PROOF_FLOW = `# 1 · Scan a skill; the verdict carries a proof.
 POST ${API.scan}
   { "sourceUrl": "https://github.com/owner/skill" }
 -> { "verdict": "...",
-     "proof": { "genesisHash", "steps", "headHash" } }
+     "proof": { "genesisHash": "...", "steps": ["..."], "headHash": "..." } }
 
 # 2 · Re-check that exact proof, client-side.
 POST ${API.verify}
@@ -141,35 +141,33 @@ export function VerifyIt() {
           </div>
         </motion.div>
 
-        {/* "Live" stat row, derived from the committed public gallery. */}
+        {/* "Live" stat row, derived from the committed public gallery. The
+            eyebrow label sits inside the panel as its header, so it reads as
+            the title for the metrics beneath it rather than a floating tag. */}
         <motion.div {...RISE} className="flex flex-col gap-3">
-          <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.22em] text-white/45">
-            <span className="w-1.5 h-1.5 rounded-full bg-allow live-dot" />
-            Live from our public gallery
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 gap-3">
-            {STATS.map(({ Icon, key, label, footnote, accent }) => (
-              <div
-                key={key}
-                className="liquid-glass rounded-2xl p-5 flex items-center gap-4"
-              >
-                <Icon className={`w-5 h-5 shrink-0 ${accent}`} />
-                <div className="flex flex-col">
-                  <span
-                    className={`text-3xl font-medium tabular-nums ${accent}`}
-                    style={{ fontFamily: "'Instrument Serif', serif" }}
-                  >
-                    {stats ? String(stats[key]) : '…'}
-                  </span>
-                  <span className="text-white/80 text-sm font-medium">
-                    {label}
-                  </span>
-                  <span className="text-white/45 text-[11px] leading-snug font-mono">
-                    {footnote}
-                  </span>
+          <div className="liquid-glass rounded-2xl overflow-hidden">
+            <div className="flex items-center gap-2 px-5 py-3.5 border-b border-white/[0.06] text-[10px] font-mono uppercase tracking-[0.22em] text-white/45">
+              <span className="w-1.5 h-1.5 rounded-full bg-allow live-dot" />
+              Live from our public gallery
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 divide-y divide-white/[0.06] sm:divide-y-0 sm:divide-x lg:divide-x-0 lg:divide-y">
+              {STATS.map(({ Icon, key, label, footnote, accent }) => (
+                <div key={key} className="p-5 flex items-center gap-4">
+                  <Icon className={`w-5 h-5 shrink-0 ${accent}`} />
+                  <div className="flex flex-col">
+                    <span className={`text-3xl font-semibold font-mono tabular-nums ${accent}`}>
+                      {stats ? String(stats[key]) : '…'}
+                    </span>
+                    <span className="text-white/80 text-sm font-medium">
+                      {label}
+                    </span>
+                    <span className="text-white/45 text-[11px] leading-snug font-mono">
+                      {footnote}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
           <div className="liquid-glass rounded-2xl p-5 flex items-start gap-3">
             <FileCheck className="w-5 h-5 text-allow shrink-0 mt-0.5" />
