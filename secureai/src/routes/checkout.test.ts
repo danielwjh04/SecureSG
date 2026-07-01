@@ -66,6 +66,23 @@ describe('handleCheckout', () => {
     expect(gw.lastCheckout?.tier).toBe('personal')
   })
 
+  it('rejects a checkout when the tier price is an unconfigured placeholder', async () => {
+    const placeholderConfig = loadConfig({
+      STRIPE_PRICE_PERSONAL: 'price_REPLACE_PERSONAL',
+      STRIPE_PRICE_PRO: 'price_pro_12',
+    })
+    const { db } = memoryDatabase()
+    const { apiKey } = await createFreeUser(db, 'placeholder-price@example.com')
+    const gw = new FakeBillingGateway()
+
+    const res = await handleCheckout(postTier(apiKey, 'personal'), db, gw, placeholderConfig)
+    expect(res.status).toBe(500)
+    const body = (await res.json()) as { error: string }
+    expect(body.error).toBe('ConfigError')
+    // The unconfigured price never reached Stripe: no customer, no session.
+    expect(gw.calls).toEqual([])
+  })
+
   it('rejects an unknown checkout tier with 422', async () => {
     const { db } = memoryDatabase()
     const { apiKey } = await createFreeUser(db, 'bad-tier@example.com')

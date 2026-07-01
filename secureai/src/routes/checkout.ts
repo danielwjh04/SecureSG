@@ -15,7 +15,7 @@
 import type { ScannerConfig } from '../config/env'
 import type { Database } from '../db/database'
 import type { BillingGateway, PaidCheckoutTier } from '../billing/stripe'
-import { AuthError, BillingError, ParseError, ScannerError } from '../errors'
+import { AuthError, BillingError, ConfigError, ParseError, ScannerError } from '../errors'
 import { authenticate } from '../middleware/auth'
 import { getUserById, setStripeCustomerId } from '../db/billing'
 import { log } from '../observability/logger'
@@ -38,8 +38,21 @@ const checkoutSchema = z
   })
   .strict()
 
+/**
+ * Resolve the Stripe Price id for a paid tier, failing loudly on an unconfigured
+ * placeholder (`price_REPLACE...`) so a misconfigured tier is a clear
+ * {@link ConfigError} rather than an opaque Stripe fault at session creation.
+ *
+ * Time complexity: O(1). Space complexity: O(1).
+ *
+ * @throws {ConfigError} When the tier's Price id is still a placeholder.
+ */
 function priceIdForTier(tier: PaidCheckoutTier, config: ScannerConfig): string {
-  return tier === 'personal' ? config.stripePricePersonal : config.stripePricePro
+  const priceId = tier === 'personal' ? config.stripePricePersonal : config.stripePricePro
+  if (priceId.startsWith('price_REPLACE')) {
+    throw new ConfigError(`Stripe price for the ${tier} tier is not configured`)
+  }
+  return priceId
 }
 
 /**
@@ -150,6 +163,11 @@ export async function handleCheckout(
       throw new AuthError('account not found')
     }
 
+    // Resolve the price before any Stripe write so a misconfigured tier fails
+    // fast (a clear ConfigError) instead of minting a customer and then a
+    // session against a placeholder price.
+    const priceId = priceIdForTier(tier, config)
+
     let customerId = user.stripeCustomerId
     if (customerId === null) {
       customerId = await billing.ensureCustomer(userId, user.email)
@@ -159,7 +177,7 @@ export async function handleCheckout(
     const base = config.appBaseUrl
     const url = await billing.createCheckoutSession({
       customerId,
-      priceId: priceIdForTier(tier, config),
+      priceId,
       tier,
       successUrl: `${base}${SUCCESS_PATH}`,
       cancelUrl: `${base}${CANCEL_PATH}`,

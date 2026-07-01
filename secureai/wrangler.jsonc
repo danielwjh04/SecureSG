@@ -151,7 +151,7 @@
 		// Billing (Stripe). Price ids come from Stripe Dashboard. The secrets
 		// STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET are NOT vars; set them with
 		// `wrangler secret put`.
-		"STRIPE_PRICE_PERSONAL": "price_REPLACE_PERSONAL",
+		"STRIPE_PRICE_PERSONAL": "price_1TnsldPZTz6qwIUpusmRwmzm",
 		"STRIPE_PRICE_PRO": "price_1TnNM9PZTz6qwIUp2lhMHLDL",
 		"SCANNER_APP_BASE_URL": "https://secureai.software",
 		// Email/password auth tunables (non-secret). The SESSION_SECRET that signs
