@@ -46,15 +46,16 @@ describe('VerifyIt', () => {
     ).toBeInTheDocument()
   })
 
-  it('clears the floating navbar with its own top padding on the #verify anchor', () => {
+  it('sits in the How it works page rhythm with an asymmetric top/bottom padding', () => {
     mockGallery({ generatedAt: '', entries: [] })
     const { container } = render(<VerifyIt />)
     const section = container.querySelector('#verify')
     expect(section).not.toBeNull()
-    // The anchor lands flush at the viewport top (no `:target` scroll-margin); its
-    // own top padding clears the floating navbar so the heading is not hidden
-    // behind it, while the lower rhythm (pb-20) stays asymmetric, not py-20.
-    expect(section?.className).toContain('pt-[8.5rem]')
+    // VerifyIt is the last section on the How it works page (after HowItWorks and
+    // EaseOfUse), not a scroll-target, so it uses the standard page rhythm
+    // (pt-10 pb-20) rather than a large navbar-clearing top pad.
+    expect(section?.className).toContain('pt-10')
+    expect(section?.className).toContain('pb-20')
     expect(section?.className).not.toContain('py-20')
   })
 

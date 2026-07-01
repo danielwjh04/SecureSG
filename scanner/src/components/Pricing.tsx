@@ -203,7 +203,7 @@ function resolveCta(plan: Plan, auth: AuthState, sub: SubscriptionStatus): Cta {
     return { kind: 'subscribe', tier: card, label: plan.cta }
   }
   const upgrade = TIER_RANK[card] > TIER_RANK[current]
-  return { kind: 'change', tier: card, label: `${upgrade ? 'Upgrade to' : 'Downgrade to'} ${plan.name}` }
+  return { kind: 'change', tier: card, label: `${upgrade ? 'Upgrade to' : 'Switch to'} ${plan.name}` }
 }
 
 interface PricingProps {
@@ -292,9 +292,9 @@ export function Pricing({ auth }: PricingProps) {
       {/* 1 · Intro --------------------------------------------------------- */}
       <section
         id="pricing-top"
-        className="relative z-10 min-h-[60svh] flex flex-col items-center justify-center px-6 pt-4 pb-12"
+        className="relative z-10 px-6 pt-10 md:pt-14 pb-10"
       >
-        <div className="text-center max-w-3xl mx-auto flex flex-col items-center justify-center w-full gap-6">
+        <div className="text-center max-w-3xl mx-auto flex flex-col items-center justify-center w-full gap-5">
           <motion.p
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -309,7 +309,7 @@ export function Pricing({ auth }: PricingProps) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 1, ease: [0.16, 1, 0.3, 1] }}
             style={{ fontFamily: "'Instrument Serif', serif" }}
-            className="text-5xl md:text-[64px] font-medium tracking-[-0.01em] leading-[1.05] text-white drop-shadow-[0_2px_20px_rgba(0,0,0,0.5)]"
+            className="text-4xl md:text-[56px] font-medium tracking-[-0.01em] leading-[1.05] text-white drop-shadow-[0_2px_20px_rgba(0,0,0,0.5)]"
           >
             Verifiable safety, priced simply.
           </motion.h1>

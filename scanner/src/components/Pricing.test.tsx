@@ -116,26 +116,26 @@ describe('Pricing', () => {
 })
 
 describe('Pricing · dynamic (signed-in)', () => {
-  it('marks the current plan and offers downgrade + cancel for a Pro account', async () => {
+  it('marks the current plan and offers a switch + cancel for a Pro account', async () => {
     vi.spyOn(client, 'fetchSubscriptionStatus').mockResolvedValue(NO_SUB)
     render(<Pricing auth={authAs('pro')} />)
 
-    // Pro is the current plan (a disabled pill); Personal offers a downgrade and
+    // Pro is the current plan (a disabled pill); Personal offers a switch and
     // Free offers to cancel.
     await waitFor(() => expect(screen.getByText('Current plan')).toBeInTheDocument())
-    expect(screen.getByRole('button', { name: /Downgrade to Personal/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Switch to Personal/ })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Cancel plan/ })).toBeInTheDocument()
     // Free → paid checkout button is NOT shown for a paid account.
     expect(screen.queryByRole('button', { name: /Start Personal/ })).toBeNull()
   })
 
-  it('changes plan in place (no redirect) when a downgrade is clicked', async () => {
+  it('changes plan in place (no redirect) when a lower-tier switch is clicked', async () => {
     vi.spyOn(client, 'fetchSubscriptionStatus').mockResolvedValue(NO_SUB)
     const change = vi.spyOn(client, 'changePlan').mockResolvedValue({ tier: 'personal' })
     const auth = authAs('pro')
     render(<Pricing auth={auth} />)
 
-    fireEvent.click(await screen.findByRole('button', { name: /Downgrade to Personal/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /Switch to Personal/ }))
 
     await waitFor(() => expect(change).toHaveBeenCalledWith('personal'))
     // The account tier is refreshed so the cards re-resolve.

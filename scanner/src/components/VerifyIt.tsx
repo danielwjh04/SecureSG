@@ -68,12 +68,13 @@ const STATS: Stat[] = [
  * is an accurate static depiction, not a runnable transcript, so the response
  * bodies are shown as the contract's real shapes.
  */
-const PROOF_FLOW = `# 1 · Scan a skill, the verdict carries a re-verifiable proof.
+const PROOF_FLOW = `# 1 · Scan a skill; the verdict carries a proof.
 POST ${API.scan}
-  { "sourceUrl": "https://github.com/owner/skill-repo" }
--> { "verdict": "...", "proof": { "genesisHash", "steps", "headHash" } }
+  { "sourceUrl": "https://github.com/owner/skill" }
+-> { "verdict": "...",
+     "proof": { "genesisHash", "steps", "headHash" } }
 
-# 2 · Re-check that exact proof, client-side or server-side.
+# 2 · Re-check that exact proof, client-side.
 POST ${API.verify}
   { "proof": { ...the proof from step 1... } }
 -> { "status": "CHAIN_OK", "firstInvalidIndex": null }
@@ -98,7 +99,7 @@ export function VerifyIt() {
   }, [])
 
   return (
-    <section id="verify" className="max-w-5xl mx-auto px-6 pt-[8.5rem] pb-20">
+    <section id="verify" className="max-w-5xl mx-auto px-6 pt-10 pb-20">
       <motion.div
         {...RISE}
         className="flex flex-col items-center text-center gap-3 mb-10"
@@ -120,19 +121,23 @@ export function VerifyIt() {
         </p>
       </motion.div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
         {/* The two-call proof round trip, on the real endpoints. */}
         <motion.div {...RISE} className="flex flex-col gap-3">
           <CodeBlock language="http" code={PROOF_FLOW} />
-          <div className="flex flex-wrap items-center gap-2 text-[12px] font-mono">
-            <span className="glass-pill px-3 py-1.5 text-allow">CHAIN_OK</span>
-            <span className="text-white/35">, untouched proof re-verifies.</span>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-[12px] font-mono">
-            <span className="glass-pill px-3 py-1.5 text-block">CHAIN_BROKEN</span>
-            <span className="text-white/35">
- one changed byte, flagged at the exact link.
-            </span>
+          <div className="liquid-glass rounded-2xl p-5 flex flex-col gap-3">
+            <div className="flex items-center gap-3 text-[13px]">
+              <span className="glass-pill shrink-0 px-3 py-1.5 font-mono text-[12px] text-allow">
+                CHAIN_OK
+              </span>
+              <span className="text-white/55">Untouched proof re-verifies.</span>
+            </div>
+            <div className="flex items-center gap-3 text-[13px]">
+              <span className="glass-pill shrink-0 px-3 py-1.5 font-mono text-[12px] text-block">
+                CHAIN_BROKEN
+              </span>
+              <span className="text-white/55">One changed byte, flagged at the exact link.</span>
+            </div>
           </div>
         </motion.div>
 

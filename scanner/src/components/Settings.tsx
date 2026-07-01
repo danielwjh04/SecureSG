@@ -55,7 +55,7 @@ export function Settings({ user, auth }: { user: MeResponse; auth: AuthState }) 
   return (
     <section className="relative z-10 flex-1">
       <div className="max-w-5xl mx-auto px-6 py-10 flex flex-col gap-6">
-        <Header />
+        <Header onLogout={signOut} disabled={busy !== null} />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Panel Icon={ShieldCheck} title="Account">
@@ -106,45 +106,41 @@ export function Settings({ user, auth }: { user: MeResponse; auth: AuthState }) 
           </div>
         </Panel>
 
-        <div className="liquid-glass rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div className="flex flex-col gap-1">
-            <span className="text-white text-sm font-semibold">Session</span>
-            <span className="text-white/50 text-[13px]">Sign out of this browser session.</span>
-          </div>
-          <button
-            type="button"
-            onClick={signOut}
-            disabled={busy !== null}
-            className="glass-pill inline-flex items-center gap-2 px-4 py-2 text-[13px] font-medium text-white/80 hover:text-white transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <LogOut className="w-3.5 h-3.5" />
-            Log out
-          </button>
-        </div>
-
         {error !== null && <p className="text-block/90 font-mono text-sm">{error}</p>}
       </div>
     </section>
   )
 }
 
-function Header() {
+function Header({ onLogout, disabled }: { onLogout: () => void; disabled: boolean }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-      className="flex flex-col gap-1.5"
+      className="flex items-start justify-between gap-4"
     >
-      <span className="text-[10px] font-mono uppercase tracking-[0.22em] text-white/45">
-        Settings
-      </span>
-      <h1
-        style={{ fontFamily: "'Instrument Serif', serif" }}
-        className="text-3xl md:text-[38px] font-medium text-white leading-tight"
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[10px] font-mono uppercase tracking-[0.22em] text-white/45">
+          Settings
+        </span>
+        <h1
+          style={{ fontFamily: "'Instrument Serif', serif" }}
+          className="text-3xl md:text-[38px] font-medium text-white leading-tight"
+        >
+          Account settings
+        </h1>
+      </div>
+      <button
+        type="button"
+        onClick={onLogout}
+        disabled={disabled}
+        aria-label="Log out"
+        title="Log out"
+        className="glass-pill inline-flex items-center justify-center w-10 h-10 shrink-0 text-white/70 hover:text-white transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
       >
-        Account settings
-      </h1>
+        <LogOut className="w-4 h-4" />
+      </button>
     </motion.div>
   )
 }
