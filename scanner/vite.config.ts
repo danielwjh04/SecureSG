@@ -1,3 +1,4 @@
+import { fileURLToPath, URL } from 'node:url'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { cloudflare } from '@cloudflare/vite-plugin'
@@ -10,6 +11,11 @@ import { defineConfig } from 'vitest/config'
 // server.proxy and no CORS to configure.
 export default defineConfig({
   plugins: [react(), tailwindcss(), cloudflare()],
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+    },
+  },
   test: {
     // Vitest 4 multi-project layout. Shared proof logic runs in a plain Node
     // environment; the React SPA runs in jsdom with the testing-library setup.

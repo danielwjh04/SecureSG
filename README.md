@@ -207,7 +207,7 @@ Both produce the same artifact: a SHA-256 hash-chained proof you can re-verify. 
 
 Built entirely on Cloudflare's serverless platform with Workers AI, D1, KV, Stripe, and Resend.
 
-**Scanner:** TypeScript on Cloudflare Workers (one Worker serves the SPA via Static Assets plus the API on one origin), Workers AI for paid-tier injection checks (no per-request key), D1 (edge SQLite) for accounts, roles, API keys, usage and verdict metering, billing, scan history, and the proof rows, KV for the indicator and verdict cache, Stripe for Checkout, idempotent webhooks, and the portal, Resend for the one-time 6-digit login codes, Web Crypto (`crypto.subtle`) for the SHA-256 proof re-verified client-side plus PBKDF2 password hashing, HMAC-signed session cookies, and SHA-256-hashed API keys, and a React 19 + Vite + Tailwind v4 + recharts front end.
+**Scanner:** TypeScript on Cloudflare Workers (one Worker serves the SPA via Static Assets plus the API on one origin), Workers AI for paid-tier injection checks (no per-request key), D1 (edge SQLite) for accounts, roles, API keys, usage and verdict metering, billing, scan history, and the proof rows, KV for the indicator and verdict cache, Stripe for Checkout, idempotent webhooks, and the portal, Resend for the one-time 6-digit login codes, Web Crypto (`crypto.subtle`) for the SHA-256 proof re-verified client-side plus PBKDF2 password hashing, HMAC-signed session cookies, and SHA-256-hashed API keys, and a React 19 + Vite + Tailwind v4 + shadcn/ui + recharts front end.
 
 **Guard:** zero-dependency Claude Code, Cursor, and Codex adapters that route supported tool calls through the same `/api/guard` engine and proof chain, returning a real inline `deny` and failing closed.
 

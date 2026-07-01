@@ -1,17 +1,14 @@
 import type { ReactNode } from 'react'
 import type { LinkChain, ScanResult, Verdict } from '../api/types'
-import {
-  formatTimestamp,
-  hostname,
-  truncateHash,
-  verdictClass,
-  verdictLabel,
-} from '../lib/format'
+import { cn } from '@/lib/utils'
+import { CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { DashboardCard } from '@/components/dashboard-card'
+import { formatTimestamp, hostname, truncateHash, verdictLabel } from '../lib/format'
 
 /**
  * The verdict severities in most-to-least severe order. This is the single
- * ordered runtime list of the {@link Verdict} union, so the severity bar and its
- * legend render worst-first without any other dashboard code re-listing the
+ * ordered runtime list of the {@link Verdict} union, so the severity chart and
+ * its legend render worst-first without any other dashboard code re-listing the
  * verdicts.
  */
 const VERDICTS_BY_SEVERITY: readonly Verdict[] = [
@@ -21,13 +18,15 @@ const VERDICTS_BY_SEVERITY: readonly Verdict[] = [
 ]
 
 /**
- * Map a verdict to its design-token suffix (`allow` / `approval` / `block`),
- * reusing the same pill-class idiom the verdict banner uses so the bar segments
- * and legend swatches track the exact same `--allow` / `--approval` / `--block`
- * tokens. Time complexity: O(1). Space complexity: O(1).
+ * Map a verdict to its design-token color reference, so the chart bars and the
+ * legend swatches track the exact same `--block` / `--review` / `--allow`
+ * tokens the rest of the app uses. Reading the token keeps the palette in
+ * config, never hardcoded here.
  */
-function severitySuffix(verdict: Verdict): string {
-  return verdictClass(verdict).replace('pill--', '')
+const VERDICT_TOKEN: Record<Verdict, string> = {
+  BLOCK: 'var(--block)',
+  HUMAN_APPROVAL_REQUIRED: 'var(--review)',
+  ALLOW: 'var(--allow)',
 }
 
 /**
@@ -109,7 +108,7 @@ function buildStatCards(result: ScanResult): StatCard[] {
 /**
  * Tally every screened signal, rule findings plus injection findings, by
  * verdict severity. Returns the per-verdict counts and their total so the caller
- * sizes the stacked bar without re-summing.
+ * sizes the chart and legend without re-summing.
  *
  * Time complexity: O(f + i). Space complexity: O(1).
  */
@@ -133,19 +132,53 @@ function sourceLabel(source: ScanResult['source']): string {
   return source.kind === 'url' ? hostname(source.ref) : 'Pasted skill'
 }
 
+/** One efferd-style KPI tile: label, big value, and a verdict-tinted detail. */
+function StatTile({ card }: { card: StatCard }): ReactNode {
+  return (
+    <DashboardCard
+      className="gap-0"
+      data-testid={`stat-${card.key}`}
+      data-danger={card.danger ? 'true' : 'false'}
+    >
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 pb-0">
+        <CardTitle
+          data-slot="stat-label"
+          className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
+        >
+          {card.label}
+        </CardTitle>
+        <span
+          aria-hidden="true"
+          className={cn(
+            'size-1.5 shrink-0 rounded-full',
+            card.danger ? 'bg-block' : 'bg-muted-foreground/40',
+          )}
+        />
+      </CardHeader>
+      <CardContent className="py-2">
+        <p data-slot="stat-value" className="font-semibold text-3xl tabular-nums">
+          {card.value}
+        </p>
+      </CardContent>
+      <CardFooter
+        data-slot="stat-detail"
+        className={cn(
+          'gap-1 border-t-0 bg-transparent pt-0 text-xs',
+          card.danger ? 'text-block' : 'text-muted-foreground',
+        )}
+      >
+        {card.detail}
+      </CardFooter>
+    </DashboardCard>
+  )
+}
+
 /**
- * The at-a-glance scan dashboard that sits above the detailed evidence panels.
- *
- * Purely presentational and fully derived: it reads only the {@link ScanResult}
- * prop and computes every tile value, danger tint, and severity-bar width from
- * it, so a benign scan and an attack scan render the same component with
- * different numbers and no hardcoded content.
- *
- * Time complexity: O(f + c + i + r) over the result's evidence arrays. Space
- * complexity: O(1) beyond the rendered tree.
+ * The severity-distribution card: a compact horizontal bar chart of screened
+ * signals by verdict, worst-first, with a per-verdict count legend. A scan with
+ * no screened signals renders an explicit "content clear" state instead.
  */
-export function ScanDashboard({ result }: { result: ScanResult }): ReactNode {
-  const cards = buildStatCards(result)
+function SeverityCard({ result }: { result: ScanResult }): ReactNode {
   const { counts, total } = tallySeverities(result)
   const severityLabel =
     total === 0
@@ -155,70 +188,99 @@ export function ScanDashboard({ result }: { result: ScanResult }): ReactNode {
         ).join(', ')
 
   return (
-    <section className="dashboard" aria-label="Scan overview">
-      <div className="dashboard__head">
-        <h2 className="dashboard__title">Scan Overview</h2>
-        <span className="dashboard__meta">
-          <span className="dashboard__source" title={result.source.ref}>
+    <DashboardCard className="col-span-2 gap-0 sm:col-span-3 lg:col-span-5">
+      <CardHeader className="border-b">
+        <CardTitle className="text-base">Signal severity</CardTitle>
+        <CardDescription>
+          Screened rule findings and injection signals by verdict.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="pt-4">
+        {total === 0 ? (
+          <p data-slot="severity-empty" className="text-sm text-muted-foreground">
+            No screened signals, content clear.
+          </p>
+        ) : (
+          <>
+            <div
+              role="img"
+              aria-label={severityLabel}
+              className="flex h-2.5 overflow-hidden rounded-full bg-muted"
+            >
+              {VERDICTS_BY_SEVERITY.filter((verdict) => counts[verdict] > 0).map(
+                (verdict) => (
+                  <span
+                    key={verdict}
+                    style={{
+                      width: `${(counts[verdict] / total) * 100}%`,
+                      background: VERDICT_TOKEN[verdict],
+                    }}
+                  />
+                ),
+              )}
+            </div>
+            <ul className="mt-3 flex flex-wrap gap-x-5 gap-y-1">
+              {VERDICTS_BY_SEVERITY.map((verdict) => (
+                <li
+                  key={verdict}
+                  className="flex items-center gap-2 text-xs text-muted-foreground"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="size-2 rounded-[2px]"
+                    style={{ background: VERDICT_TOKEN[verdict] }}
+                  />
+                  {verdictLabel(verdict)}
+                  <span
+                    data-slot="severity-count"
+                    className="tabular-nums text-foreground"
+                  >
+                    {counts[verdict]}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </CardContent>
+    </DashboardCard>
+  )
+}
+
+/**
+ * The at-a-glance scan dashboard that sits above the detailed evidence panels,
+ * rendered in the efferd seamed-tile layout: a header with the scan source and
+ * time, a grid of KPI tiles, and a severity-distribution chart.
+ *
+ * Purely presentational and fully derived: it reads only the {@link ScanResult}
+ * prop and computes every tile value, danger tint, and chart magnitude from it,
+ * so a benign scan and an attack scan render the same component with different
+ * numbers and no hardcoded content.
+ *
+ * Time complexity: O(f + c + i + r) over the result's evidence arrays. Space
+ * complexity: O(1) beyond the rendered tree.
+ */
+export function ScanDashboard({ result }: { result: ScanResult }): ReactNode {
+  const cards = buildStatCards(result)
+
+  return (
+    <section aria-label="Scan overview" className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-lg font-semibold">Scan Overview</h2>
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <span data-testid="scan-source" title={result.source.ref}>
             {sourceLabel(result.source)}
           </span>
-          <span className="dashboard__dot" aria-hidden="true">
-            ·
-          </span>
-          <span>{formatTimestamp(result.scannedAt)}</span>
+          <span aria-hidden="true">·</span>
+          <span className="font-mono">{formatTimestamp(result.scannedAt)}</span>
         </span>
       </div>
 
-      <div className="dashboard__grid">
+      <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl bg-border p-px ring-1 ring-foreground/10 sm:grid-cols-3 lg:grid-cols-5">
         {cards.map((card) => (
-          <div
-            key={card.key}
-            className={card.danger ? 'stat-card stat-card--danger' : 'stat-card'}
-          >
-            <span className="stat-card__label">{card.label}</span>
-            <span className="stat-card__value">{card.value}</span>
-            <span className="stat-card__detail">{card.detail}</span>
-          </div>
+          <StatTile key={card.key} card={card} />
         ))}
-      </div>
-
-      <div className="dashboard__severity">
-        <div className="severity-bar" role="img" aria-label={severityLabel}>
-          {total === 0 ? (
-            <span
-              className="severity-bar__seg severity-bar__seg--empty"
-              style={{ width: '100%' }}
-            />
-          ) : (
-            VERDICTS_BY_SEVERITY.filter((verdict) => counts[verdict] > 0).map(
-              (verdict) => (
-                <span
-                  key={verdict}
-                  className={`severity-bar__seg severity-bar__seg--${severitySuffix(verdict)}`}
-                  style={{ width: `${(counts[verdict] / total) * 100}%` }}
-                />
-              ),
-            )
-          )}
-        </div>
-        <div className="severity-legend">
-          {total === 0 ? (
-            <span className="severity-legend__item severity-legend__item--clear">
-              No screened signals, content clear
-            </span>
-          ) : (
-            VERDICTS_BY_SEVERITY.map((verdict) => (
-              <span key={verdict} className="severity-legend__item">
-                <span
-                  className={`severity-legend__swatch severity-legend__swatch--${severitySuffix(verdict)}`}
-                  aria-hidden="true"
-                />
-                {verdictLabel(verdict)}
-                <span className="severity-legend__count">{counts[verdict]}</span>
-              </span>
-            ))
-          )}
-        </div>
+        <SeverityCard result={result} />
       </div>
     </section>
   )

@@ -1,13 +1,15 @@
 import type { ReactNode } from 'react'
-import type { LinkChain, ScanResult } from '../api/types'
-import type { ApiResource } from '../hooks/useApiResource'
+import type { ScanResult } from '../api/types'
+import { cn } from '@/lib/utils'
+import { CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { DashboardCard } from '@/components/dashboard-card'
 import { VerdictBanner } from './VerdictBanner'
 import { ScanDashboard } from './ScanDashboard'
 import { RedirectChain } from './RedirectChain'
-import { Reputation } from './Reputation'
-import { InjectionFindings } from './InjectionFindings'
+import { ReputationRows } from './Reputation'
+import { InjectionRows } from './InjectionFindings'
 import { ProofViewer } from './ProofViewer'
-import { Panel } from './Panel'
 import { useScrollToTopOnChange } from '../hooks/useScrollToTopOnChange'
 import { formatTimestamp } from '../lib/format'
 
@@ -15,22 +17,62 @@ interface ResultViewProps {
   result: ScanResult
 }
 
-/** Wrap an already-resolved value in a settled resource for {@link Panel}. */
-function settled<T>(data: T): ApiResource<T> {
-  return { data, error: null, loading: false, reload: () => {} }
+interface EvidenceCardProps {
+  title: string
+  count: number
+  isEmpty: boolean
+  emptyText: string
+  className?: string
+  children: ReactNode
 }
 
 /**
- * The full scan report, identical for a live scan and a replayed gallery pick.
- *
- * Composes the evidence in fixed order, verdict banner, the at-a-glance scan
- * dashboard, one redirect cascade per traced origin, reputation, injection
- * findings, then the re-verifiable proof chain. It reads only the
- * {@link ScanResult} prop and owns no scan or network state, so the render path
- * is byte-for-byte the same regardless of where the result came from. Its sole
- * side effect resets the window scroll to the top when a new result is shown
- * (keyed on the proof head hash), so every report opens at the verdict and
- * dashboard instead of inheriting the page's prior scroll position.
+ * One efferd-style evidence cell: a borderless dashboard card with a titled,
+ * count-badged header and its content, or a muted empty state. It provides the
+ * shared header/empty chrome so each evidence section renders the same way in
+ * the seamed grid without repeating the markup.
+ */
+function EvidenceCard({
+  title,
+  count,
+  isEmpty,
+  emptyText,
+  className,
+  children,
+}: EvidenceCardProps): ReactNode {
+  return (
+    <DashboardCard className={cn('gap-0', className)}>
+      <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0 border-b">
+        <CardTitle className="text-base">{title}</CardTitle>
+        <Badge
+          variant="secondary"
+          className="border-none tabular-nums text-muted-foreground"
+        >
+          {count}
+        </Badge>
+      </CardHeader>
+      <CardContent className="pt-4">
+        {isEmpty ? (
+          <p className="text-sm text-muted-foreground">{emptyText}</p>
+        ) : (
+          children
+        )}
+      </CardContent>
+    </DashboardCard>
+  )
+}
+
+/**
+ * The full scan report, identical for a live scan and a replayed gallery pick,
+ * rendered in the efferd dashboard layout: the verdict banner, the at-a-glance
+ * {@link ScanDashboard} overview, then a seamed grid of evidence cards, one
+ * redirect cascade set, reputation, injection signals, and the re-verifiable
+ * proof chain. It reads only the {@link ScanResult} prop and owns no scan or
+ * network state, so the render path is byte-for-byte the same regardless of
+ * where the result came from. Its sole side effect resets the window scroll to
+ * the top when a new result is shown (keyed on the proof head hash), so every
+ * report opens at the verdict and dashboard instead of inheriting the page's
+ * prior scroll position.
  *
  * Time complexity: O(c + r + f + n) over chains, reputation reports, injection
  * findings and proof steps. Space complexity: O(1) beyond the rendered tree.
@@ -43,40 +85,50 @@ export function ResultView({ result }: ResultViewProps): ReactNode {
 
       <ScanDashboard result={result} />
 
-      <Panel<LinkChain[]>
-        title="Redirect Cascades"
-        count={result.chains.length}
-        resource={settled(result.chains)}
-        emptyText="No links to trace."
-        isEmpty={(data) => data.length === 0}
-      >
-        {(chains) => (
+      <div className="grid gap-px overflow-hidden rounded-xl bg-border p-px ring-1 ring-foreground/10 lg:grid-cols-2">
+        <EvidenceCard
+          title="Redirect Cascades"
+          count={result.chains.length}
+          isEmpty={result.chains.length === 0}
+          emptyText="No links to trace."
+          className="lg:col-span-2"
+        >
           <div className="result__chains">
-            {chains.map((chain, index) => (
+            {result.chains.map((chain, index) => (
               <RedirectChain key={chain.origin} chain={chain} index={index} />
             ))}
           </div>
-        )}
-      </Panel>
+        </EvidenceCard>
 
-      <Reputation reports={result.reputation} />
+        <EvidenceCard
+          title="Reputation"
+          count={result.reputation.length}
+          isEmpty={result.reputation.length === 0}
+          emptyText="No destinations assessed."
+        >
+          <ReputationRows reports={result.reputation} />
+        </EvidenceCard>
 
-      <InjectionFindings findings={result.injections} />
+        <EvidenceCard
+          title="Injection Signals"
+          count={result.injections.length}
+          isEmpty={result.injections.length === 0}
+          emptyText="No injection detected"
+        >
+          <InjectionRows findings={result.injections} />
+        </EvidenceCard>
 
-      <Panel<ScanResult>
-        title="Proof Chain"
-        count={result.proof.steps.length}
-        resource={settled(result)}
-        emptyText="No proof steps."
-        isEmpty={(data) => data.proof.steps.length === 0}
-      >
-        {(data) => (
-          <>
-            <p className="result__scanned">Scanned {formatTimestamp(data.scannedAt)}</p>
-            <ProofViewer proof={data.proof} />
-          </>
-        )}
-      </Panel>
+        <EvidenceCard
+          title="Proof Chain"
+          count={result.proof.steps.length}
+          isEmpty={result.proof.steps.length === 0}
+          emptyText="No proof steps."
+          className="lg:col-span-2"
+        >
+          <p className="result__scanned">Scanned {formatTimestamp(result.scannedAt)}</p>
+          <ProofViewer proof={result.proof} />
+        </EvidenceCard>
+      </div>
     </div>
   )
 }

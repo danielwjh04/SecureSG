@@ -60,52 +60,44 @@ function step(index: number): ProofStep {
   return { index, kind: 'VERDICT', payload: {}, prevHash: 'p', currHash: 'c' }
 }
 
-/** Locate a stat tile by its label and return one of its parts. */
-function card(container: HTMLElement, label: string): HTMLElement | undefined {
-  return Array.from(container.querySelectorAll<HTMLElement>('.stat-card')).find(
-    (node) => node.querySelector('.stat-card__label')?.textContent === label,
-  )
+/** Locate a stat tile by its metric key (`findings`, `chains`, ...). */
+function tile(container: HTMLElement, key: string): HTMLElement | null {
+  return container.querySelector<HTMLElement>(`[data-testid="stat-${key}"]`)
 }
 
-function value(container: HTMLElement, label: string): string | null | undefined {
-  return card(container, label)?.querySelector('.stat-card__value')?.textContent
+function value(container: HTMLElement, key: string): string | null | undefined {
+  return tile(container, key)?.querySelector('[data-slot="stat-value"]')?.textContent
 }
 
-function detail(container: HTMLElement, label: string): string | null | undefined {
-  return card(container, label)?.querySelector('.stat-card__detail')?.textContent
+function detail(container: HTMLElement, key: string): string | null | undefined {
+  return tile(container, key)?.querySelector('[data-slot="stat-detail"]')?.textContent
 }
 
-function isDanger(container: HTMLElement, label: string): boolean {
-  return card(container, label)?.classList.contains('stat-card--danger') ?? false
+function isDanger(container: HTMLElement, key: string): boolean {
+  return tile(container, key)?.getAttribute('data-danger') === 'true'
 }
 
 describe('ScanDashboard', () => {
-  it('renders all-zero tiles, an empty severity bar, and a clear legend for a benign scan', () => {
+  it('renders all-zero tiles, no danger tint, and a clear severity state for a benign scan', () => {
     const { container } = render(<ScanDashboard result={makeResult()} />)
 
-    expect(value(container, 'Rule Findings')).toBe('0')
-    expect(value(container, 'Redirect Cascades')).toBe('0')
-    expect(value(container, 'Injection Signals')).toBe('0')
-    expect(value(container, 'Reputation')).toBe('0')
-    expect(value(container, 'Proof Steps')).toBe('0')
+    expect(value(container, 'findings')).toBe('0')
+    expect(value(container, 'chains')).toBe('0')
+    expect(value(container, 'injections')).toBe('0')
+    expect(value(container, 'reputation')).toBe('0')
+    expect(value(container, 'proof')).toBe('0')
 
     // No metric contributes a blocking/flagged signal, so no tile is tinted.
-    expect(container.querySelectorAll('.stat-card--danger')).toHaveLength(0)
+    expect(container.querySelectorAll('[data-danger="true"]')).toHaveLength(0)
 
-    // The severity bar collapses to a single neutral segment, not a verdict tint.
-    expect(container.querySelector('.severity-bar__seg--empty')).not.toBeNull()
+    // With no screened signals the severity card shows the explicit clear state.
     expect(
-      container.querySelectorAll(
-        '.severity-bar__seg--block, .severity-bar__seg--approval, .severity-bar__seg--allow',
-      ),
-    ).toHaveLength(0)
-    expect(
-      container.querySelector('.severity-legend__item--clear')?.textContent,
+      container.querySelector('[data-slot="severity-empty"]')?.textContent,
     ).toContain('content clear')
 
     // The proof tile still summarizes the head hash even with zero steps.
-    expect(detail(container, 'Proof Steps')).toContain('…')
-    expect(container.querySelector('.dashboard__source')?.textContent).toBe(
+    expect(detail(container, 'proof')).toContain('…')
+    expect(container.querySelector('[data-testid="scan-source"]')?.textContent).toBe(
       'Pasted skill',
     )
   })
@@ -122,27 +114,27 @@ describe('ScanDashboard', () => {
     })
     const { container } = render(<ScanDashboard result={result} />)
 
-    expect(value(container, 'Rule Findings')).toBe('2')
-    expect(detail(container, 'Rule Findings')).toBe('1 blocking')
-    expect(isDanger(container, 'Rule Findings')).toBe(true)
+    expect(value(container, 'findings')).toBe('2')
+    expect(detail(container, 'findings')).toBe('1 blocking')
+    expect(isDanger(container, 'findings')).toBe(true)
 
-    expect(value(container, 'Redirect Cascades')).toBe('2')
-    expect(detail(container, 'Redirect Cascades')).toBe('1 dangerous')
-    expect(isDanger(container, 'Redirect Cascades')).toBe(true)
+    expect(value(container, 'chains')).toBe('2')
+    expect(detail(container, 'chains')).toBe('1 dangerous')
+    expect(isDanger(container, 'chains')).toBe(true)
 
-    expect(value(container, 'Injection Signals')).toBe('1')
-    expect(detail(container, 'Injection Signals')).toBe('1 high-severity')
-    expect(isDanger(container, 'Injection Signals')).toBe(true)
+    expect(value(container, 'injections')).toBe('1')
+    expect(detail(container, 'injections')).toBe('1 high-severity')
+    expect(isDanger(container, 'injections')).toBe(true)
 
-    expect(value(container, 'Reputation')).toBe('2')
-    expect(detail(container, 'Reputation')).toBe('1 flagged')
-    expect(isDanger(container, 'Reputation')).toBe(true)
+    expect(value(container, 'reputation')).toBe('2')
+    expect(detail(container, 'reputation')).toBe('1 flagged')
+    expect(isDanger(container, 'reputation')).toBe(true)
 
     // The proof tile counts steps and never tints, even on a blocking scan.
-    expect(value(container, 'Proof Steps')).toBe('2')
-    expect(isDanger(container, 'Proof Steps')).toBe(false)
+    expect(value(container, 'proof')).toBe('2')
+    expect(isDanger(container, 'proof')).toBe(false)
 
-    expect(container.querySelector('.dashboard__source')?.textContent).toBe(
+    expect(container.querySelector('[data-testid="scan-source"]')?.textContent).toBe(
       'malicious.test',
     )
   })
@@ -153,33 +145,25 @@ describe('ScanDashboard', () => {
     })
     const { container } = render(<ScanDashboard result={result} />)
 
-    expect(value(container, 'Redirect Cascades')).toBe('2')
-    expect(detail(container, 'Redirect Cascades')).toBe('2 dangerous')
-    expect(isDanger(container, 'Redirect Cascades')).toBe(true)
+    expect(value(container, 'chains')).toBe('2')
+    expect(detail(container, 'chains')).toBe('2 dangerous')
+    expect(isDanger(container, 'chains')).toBe(true)
   })
 
-  it('sizes the severity bar by the blended findings + injections distribution', () => {
+  it('reports the severity legend counts in worst-first order', () => {
     const result = makeResult({
       findings: [finding('BLOCK'), finding('HUMAN_APPROVAL_REQUIRED')],
       injections: [injection('BLOCK'), injection('ALLOW')],
     })
     const { container } = render(<ScanDashboard result={result} />)
 
-    // 2 BLOCK + 1 APPROVAL + 1 ALLOW over a total of 4 → 50% / 25% / 25%.
-    expect(
-      container.querySelector<HTMLElement>('.severity-bar__seg--block')?.style.width,
-    ).toBe('50%')
-    expect(
-      container.querySelector<HTMLElement>('.severity-bar__seg--approval')?.style.width,
-    ).toBe('25%')
-    expect(
-      container.querySelector<HTMLElement>('.severity-bar__seg--allow')?.style.width,
-    ).toBe('25%')
-
-    // The legend reports every verdict's count in worst-first order.
+    // 2 BLOCK + 1 APPROVAL + 1 ALLOW, listed worst-first in the legend.
     const counts = Array.from(
-      container.querySelectorAll('.severity-legend__count'),
+      container.querySelectorAll('[data-slot="severity-count"]'),
     ).map((node) => node.textContent)
     expect(counts).toEqual(['2', '1', '1'])
+
+    // With screened signals present the clear state is gone.
+    expect(container.querySelector('[data-slot="severity-empty"]')).toBeNull()
   })
 })

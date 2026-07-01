@@ -1,3 +1,4 @@
+import { fileURLToPath, URL } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
 
@@ -12,8 +13,14 @@ import { defineConfig } from 'vitest/config'
 //
 // Shared proof logic runs in a plain Node environment (Node exposes Web Crypto
 // globally); the React SPA runs in jsdom with the testing-library setup.
+// The `@/*` alias must be declared on each project that resolves it: Vitest
+// projects do not inherit the root `resolve.alias`, so the jsdom SPA project
+// (which imports the shadcn/ui primitives via `@/...`) carries it explicitly.
+const srcAlias = { '@': fileURLToPath(new URL('./src', import.meta.url)) }
+
 export default defineConfig({
   plugins: [react()],
+  resolve: { alias: srcAlias },
   test: {
     projects: [
       {
@@ -25,6 +32,8 @@ export default defineConfig({
         },
       },
       {
+        plugins: [react()],
+        resolve: { alias: srcAlias },
         test: {
           name: 'dom',
           environment: 'jsdom',

@@ -22,7 +22,8 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
     "paths": {
-      "@secureai/contract": ["../packages/contract/src/index.d.ts"]
+      "@secureai/contract": ["../packages/contract/src/index.d.ts"],
+      "@/*": ["./src/*"]
     }
   },
   "include": ["src", "shared"]
